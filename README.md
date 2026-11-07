@@ -6,6 +6,8 @@ Twitch's own progress bars only update when the page loads, and watch-time somet
 
 It is read-only. It never claims a drop, never simulates watching, and never opens a stream itself.
 
+![Drops Tracker on a Twitch channel: the chip in the chat row and the panel open above it, earning on AlphaTV with 30 of the last 30 minutes counted](docs/screenshots/hero.png)
+
 > Unofficial. It uses the same private GraphQL operations as twitch.tv, which can change without notice. Not affiliated with Twitch.
 
 ## Contents
@@ -29,6 +31,8 @@ It uses the Twitch login already in that browser. There is no build step. After 
 
 **Chip in the chat row**, beside your channel points: a progress ring with `82%`, `Hung 5m`, `Stopped`, `Claim` or `Drops ?`. Green is earning, amber needs attention or is slow, red is not counting, purple has just started. In a narrow chat column the label hides and the percentage moves inside the ring.
 
+![The chip in four states: earning at 85%, the ring with 85 inside in a narrow chat, Hung 6m in red, and Stopped in amber](docs/screenshots/chip-states.png)
+
 **Toolbar badge:**
 
 | Badge | Meaning |
@@ -44,6 +48,8 @@ It uses the Twitch login already in that browser. There is no build step. After 
 
 **Warnings:** one system notification and a small dismissible pill on Twitch pages, including in fullscreen. Nothing appears while things are healthy.
 
+![A stream that plays but earns nothing: the pill reads "Drops not counting for 6 min", the chip reads Hung 6m, and the panel says Not counting with a Reload stream button](docs/screenshots/hung.png)
+
 **Panel**, from the chip or the toolbar icon, laid out like Twitch's own Drops panel:
 
 - **My Drops**: the verdict, a 30-minute credit strip, the drops you can earn where you are, each open stream's state with a reload button, and earned rewards you have not claimed. On a channel with no drops it shows what another open tab can earn, headed `Watch Drops on <channel>`, or nothing.
@@ -51,12 +57,18 @@ It uses the Twitch login already in that browser. There is no build step. After 
 - **Badges**: the current channel's sub and watch badge drops. Watch badges are also tracked like any other drop.
 - **Debug**: settings, the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
 
+| My Drops | All Drops | Badges |
+|---|---|---|
+| ![My Drops tab](docs/screenshots/my-drops.png) | ![All Drops tab listing campaigns with box art, yours first](docs/screenshots/all-drops.png) | ![Badges tab with a sub badge and a watch badge](docs/screenshots/badges.png) |
+
 **Settings** (Debug tab, all off by default):
 
 - **Auto-refresh Drops page**: reloads open `twitch.tv/drops/*` tabs every 1, 5, 10 or 30 minutes, since that page never updates itself. Never touches stream tabs.
 - **Auto-reload hung streams**: reloads a stream tab after 6 minutes with no new minutes, counted from when that tab could last earn. At most 3 tries per hang, 10 minutes apart, never on a paused tab, with too many streams open, or when an unclaimed drop may be the cause. Whether a reload actually clears a hang is not yet measured.
 
 **Lost minutes** (Debug tab) records each watched minute: whether it was credited, how many streams were playing, tab in background, muted, picture height, playback speed, ad showing. Once both sides of a condition have 10 minutes it compares credit rates. Paused minutes are left out. A gap is a lead, not a cause, since the conditions overlap.
+
+<img src="docs/screenshots/debug.png" width="340" alt="Debug tab with settings and the Lost minutes comparison open">
 
 ## How it works
 
@@ -110,6 +122,7 @@ Measured facts behind the thresholds, the real failure shapes Twitch returns, an
 | `tests/*.test.mjs` | Unit tests (`node:test`), run against the real modules |
 | `tests/fixtures/` | Captured Twitch responses, with account data removed |
 | `scripts/e2e.mjs` | Real-browser test with fake channel pages |
+| `scripts/screenshots.mjs` | README screenshots, same setup as the e2e test |
 | `docs/twitch-drops-facts.md` | Measured Twitch behaviour, indexed by symptom |
 
 Everything in `extension/lib/` except `panel.js` is pure (no `chrome.*`), so it can be tested in Node.
@@ -127,7 +140,7 @@ npm run e2e     # real-browser test, see below
 
 `npm run e2e` launches a throwaway browser profile with the extension loaded and drives it with Playwright: real service worker, cookies, tabs and script injection, with Twitch's API answered by fixtures and channel pages faked. It also mounts the chip on a real `twitch.tv/popout/twitch/chat` page, which has no video. Screenshots go to `scripts/e2e-out/`. It looks for Brave at the default Windows path; set `E2E_BROWSER` to another Chromium executable to use that instead.
 
-`npm run icons` regenerates the toolbar icons.
+`npm run icons` regenerates the toolbar icons. `npm run screenshots` regenerates the images in `docs/screenshots/` the same way as the e2e test: the real extension on staged channel pages, with real campaign art from Twitch's CDN.
 
 Before changing behaviour, read [CONTRIBUTING.md](CONTRIBUTING.md). It lists the rules that are easy to break and expensive when broken.
 
