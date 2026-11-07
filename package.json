@@ -6,7 +6,8 @@
     "test": "node --test \"tests/*.test.mjs\"",
     "check": "node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/lib/tracker.js && node --check extension/lib/twitch.js && node --check extension/lib/chip.js && node --check extension/lib/panel.js && node --check extension/lib/settings.js && node --check extension/lib/directory.js && node --check extension/lib/badges.js && node --check extension/lib/minutelog.js && node --check extension/lib/debug.js && node --check extension/page-hook.js && node --check extension/page-bridge.js",
     "e2e": "node scripts/e2e.mjs",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.65.0"
