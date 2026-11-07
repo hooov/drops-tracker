@@ -1,0 +1,68 @@
+{
+  "_comment": "Real answers captured 2026-11-06 for channel-owned badge campaigns. Neither campaign appears in Inventory. mixed: one sub drop and one watch drop. subOnly: one sub drop, and its session comes back zeroed.",
+  "mixed": {
+    "id": "10000003",
+    "viewerDropCampaigns": [
+      {
+        "id": "c374d163-5e71-486e-bab9-b261404d2231",
+        "name": "The Big Three-O",
+        "game": null,
+        "detailsURL": "",
+        "endAt": "2026-11-08T22:30:00Z",
+        "imageURL": "https://static-cdn.jtvnw.net/badges/v1/acd48981-e7fd-4622-b331-bc1139f5c31d/3",
+        "eventBasedDrops": [],
+        "timeBasedDrops": [
+          {
+            "id": "692c747c-d659-11f1-9553-0a58a9feac02",
+            "name": "",
+            "startAt": "2026-11-02T13:00:00Z",
+            "endAt": "2026-11-08T22:30:00Z",
+            "benefitEdges": [{ "benefit": { "id": "692c7498-d659-11f1-9553-0a58a9feac02", "name": "The Big Three-O", "game": null, "imageAssetURL": "https://static-cdn.jtvnw.net/badges/v1/acd48981-e7fd-4622-b331-bc1139f5c31d/3" }, "entitlementLimit": 1 }],
+            "requiredMinutesWatched": 0,
+            "requiredSubs": 1
+          },
+          {
+            "id": "692c7608-d659-11f1-9553-0a58a9feac02",
+            "name": "",
+            "startAt": "2026-11-02T13:00:00Z",
+            "endAt": "2026-11-08T22:30:00Z",
+            "benefitEdges": [{ "benefit": { "id": "692c761e-d659-11f1-9553-0a58a9feac02", "name": "The Two Rings", "game": null, "imageAssetURL": "https://static-cdn.jtvnw.net/badges/v1/9e82f41a-6258-4dbe-9755-e6fd31b2869c/3" }, "entitlementLimit": 1 }],
+            "requiredMinutesWatched": 180,
+            "requiredSubs": 0
+          }
+        ],
+        "summary": { "includesMWRequirement": true, "includesSubRequirement": true, "isSitewide": false, "isRewardCampaign": true, "isPermanentlyDismissible": false }
+      }
+    ]
+  },
+  "mixedChannel": { "id": "10000003", "login": "charlie", "displayName": "Charlie", "stream": { "id": "1" } },
+  "mixedSession": {
+    "channel": { "displayName": "Charlie", "id": "10000003", "name": "charlie" },
+    "currentMinutesWatched": 3,
+    "dropID": "692c7608-d659-11f1-9553-0a58a9feac02",
+    "game": null,
+    "requiredMinutesWatched": 180
+  },
+  "subOnly": {
+    "id": "10000004",
+    "viewerDropCampaigns": [
+      {
+        "id": "e60b9bf3-7f26-4c76-b453-28d6f7d4f38a",
+        "name": "WoW Forever Pixel Badge",
+        "game": null,
+        "endAt": "2026-11-16T17:00:00Z",
+        "timeBasedDrops": [
+          {
+            "id": "sub-drop",
+            "name": "",
+            "benefitEdges": [{ "benefit": { "id": "sub-benefit", "name": "WoW Forever Pixel Badge", "game": null } }],
+            "requiredMinutesWatched": 0,
+            "requiredSubs": 1
+          }
+        ]
+      }
+    ]
+  },
+  "subOnlyChannel": { "id": "10000004", "login": "subonly", "displayName": "SubOnly", "stream": { "id": "2" } },
+  "zeroedSession": { "channel": null, "currentMinutesWatched": 0, "dropID": "", "game": null, "requiredMinutesWatched": 0 }
+}

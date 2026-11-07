@@ -1,0 +1,97 @@
+{
+  "_note": "Captured from live gql.twitch.tv on 2026-11-06. User ID and image URLs scrubbed, __typename and unused fields trimmed. Field names and null/empty shapes are verbatim.",
+  "campaigns": [
+    {
+      "accountLinkURL": "https://embark-games.embark.net/",
+      "endAt": "2026-11-04T12:44:59.999Z",
+      "game": { "id": "464339927", "name": "ARC Raiders", "slug": "arc-raiders" },
+      "id": "e4f226c6-c9c3-4d99-9c13-e0050e004f9a",
+      "name": "Frozen Trail",
+      "self": { "isAccountConnected": false },
+      "startAt": "2026-10-08T11:00:00Z",
+      "status": "EXPIRED",
+      "timeBasedDrops": [
+        {
+          "benefitEdges": [{ "benefit": { "id": "e2a2aacb-acce-4761-8960-3c7f814a3f55_CUSTOM_ID_BackpackAttachment_Mailbox", "name": "Mailbox" }, "entitlementLimit": 1 }],
+          "endAt": "2026-11-04T12:44:59.999Z",
+          "id": "e477336b-c0bb-11f1-b5a4-0a58a9feac02",
+          "name": "Mailbox",
+          "preconditionDrops": null,
+          "requiredMinutesWatched": 120,
+          "requiredSubs": 0,
+          "self": { "currentMinutesWatched": 73, "currentSubs": 0, "dropInstanceID": null, "hasPreconditionsMet": true, "isClaimed": false },
+          "startAt": "2026-10-08T11:00:00Z"
+        },
+        {
+          "benefitEdges": [{ "benefit": { "id": "e2a2aacb-acce-4761-8960-3c7f814a3f55_CUSTOM_ID_BackpackAttachment_OxygenRespirator", "name": "Oxygen Respirator" }, "entitlementLimit": 1 }],
+          "endAt": "2026-11-04T12:44:59.999Z",
+          "id": "eb56fc5f-c0bb-11f1-93f2-0a58a9feac02",
+          "name": "Oxygen Respirator",
+          "preconditionDrops": null,
+          "requiredMinutesWatched": 60,
+          "requiredSubs": 0,
+          "self": { "currentMinutesWatched": 60, "currentSubs": 0, "dropInstanceID": "USERID#e4f226c6-c9c3-4d99-9c13-e0050e004f9a#eb56fc5f-c0bb-11f1-93f2-0a58a9feac02", "hasPreconditionsMet": true, "isClaimed": false },
+          "startAt": "2026-10-08T11:00:00Z"
+        }
+      ]
+    },
+    {
+      "accountLinkURL": "https://account.battle.net/connections",
+      "endAt": "2026-11-12T12:29:59.999Z",
+      "game": { "id": "18122", "name": "World of Warcraft", "slug": "world-of-warcraft" },
+      "id": "29712bcd-e716-43f1-aa8a-26f69dae5fd8",
+      "name": "Pouch of Violet Dust Drop",
+      "self": { "isAccountConnected": true },
+      "startAt": "2026-11-05T00:30:00Z",
+      "status": "ACTIVE",
+      "timeBasedDrops": [
+        {
+          "benefitEdges": [{ "benefit": { "id": "9620a89d-b07c-4160-a851-ae832fa6985e_CUSTOM_ID_2161959", "name": "Pouch of Violet Dust" }, "entitlementLimit": 1 }],
+          "endAt": "2026-11-12T12:29:59.999Z",
+          "id": "d5ffa3e4-d6fe-11f1-adef-0a58a9feac02",
+          "name": "Pouch of Violet Dust",
+          "preconditionDrops": null,
+          "requiredMinutesWatched": 240,
+          "requiredSubs": 0,
+          "self": { "currentMinutesWatched": 195, "currentSubs": 0, "dropInstanceID": null, "hasPreconditionsMet": true, "isClaimed": false },
+          "startAt": "2026-11-05T00:30:00Z"
+        }
+      ]
+    }
+  ],
+  "rewardSample": { "id": "4abe2137-b19d-11f1-9fd5-0a58a9feac02", "lastAwardedAt": "2026-09-16T18:12:09.554Z", "name": "Easter Island", "requiredAccountLink": "", "totalCount": 1 },
+  "sessionCredited": {
+    "channel": { "displayName": "AlphaTV", "id": "10000001", "name": "alphatv" },
+    "currentMinutesWatched": 192,
+    "dropID": "d5ffa3e4-d6fe-11f1-adef-0a58a9feac02",
+    "game": { "displayName": "World of Warcraft", "id": "18122" },
+    "requiredMinutesWatched": 240
+  },
+  "sessionUnrelatedChannelId": { "channel": null, "currentMinutesWatched": 0, "dropID": "", "game": null, "requiredMinutesWatched": 0 },
+  "sessionEmptyChannelId": null,
+  "availableEligible": {
+    "id": "10000001",
+    "viewerDropCampaigns": [
+      {
+        "endAt": "2026-11-12T12:29:59.999Z",
+        "id": "29712bcd-e716-43f1-aa8a-26f69dae5fd8",
+        "name": "Pouch of Violet Dust Drop",
+        "summary": { "includesMWRequirement": true, "includesSubRequirement": false, "isRewardCampaign": false, "isSitewide": false },
+        "timeBasedDrops": [
+          {
+            "benefitEdges": [{ "benefit": { "id": "9620a89d-b07c-4160-a851-ae832fa6985e_CUSTOM_ID_2161959", "name": "Pouch of Violet Dust" }, "entitlementLimit": 1 }],
+            "endAt": "2026-11-12T12:29:59.999Z",
+            "id": "d5ffa3e4-d6fe-11f1-adef-0a58a9feac02",
+            "name": "Pouch of Violet Dust",
+            "requiredMinutesWatched": 240,
+            "requiredSubs": 0,
+            "startAt": "2026-11-05T00:30:00Z"
+          }
+        ]
+      }
+    ]
+  },
+  "availableNone": { "id": "10000002", "viewerDropCampaigns": null },
+  "channelAlpha": { "displayName": "AlphaTV", "id": "10000001", "login": "alphatv", "stream": { "id": "900000000001", "tags": [], "viewersCount": 1037 } },
+  "channelBravo": { "displayName": "Bravo", "id": "10000002", "login": "bravo", "stream": { "id": "fixture-live", "tags": [], "viewersCount": 1405 } }
+}

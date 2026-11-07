@@ -1,0 +1,102 @@
+{
+  "_comment": "Real ViewerDropsDashboard answer captured 2026-11-06 from Twitch's own page, cut to one campaign of each kind. User id and login replaced. multi, subOnly: ACTIVE and later seen still ACTIVE after their endAt.",
+  "data": {
+    "currentUser": {
+      "__typename": "User",
+      "id": "0",
+      "login": "fixture",
+      "dropCampaigns": [
+        {
+          "__typename": "DropCampaign",
+          "accountLinkURL": "https://signin.ea.com/p/thirdparty/login?client_id=twitch_client&platformId=twitch",
+          "detailsURL": "https://help.twitch.tv/s/article/mission-based-drops?language=en_US",
+          "endAt": "2026-11-06T17:59:59.999Z",
+          "game": { "__typename": "Game", "boxArtURL": "https://static-cdn.jtvnw.net/ttv-boxart/670138298_IGDB-120x160.jpg", "displayName": "Madden NFL 27", "id": "670138298" },
+          "id": "89483dd6-c9f5-47cb-9581-5449def6338c",
+          "name": "Madden Live",
+          "owner": { "__typename": "Organization", "id": "fa395b5e-cadd-47d9-989d-fe511aa3dbb1", "name": "Electronic Arts" },
+          "self": { "__typename": "DropCampaignSelfEdge", "isAccountConnected": false },
+          "startAt": "2026-11-05T18:00:00Z",
+          "status": "ACTIVE",
+          "timeBasedDrops": [
+            { "__typename": "TimeBasedDrop", "id": "813f770b-d7a3-11f1-b32c-0a58a9feac02", "requiredMinutesWatched": 15, "requiredSubs": 0, "requiredTurboSubs": 0 },
+            { "__typename": "TimeBasedDrop", "id": "84855c1f-d7a3-11f1-bc8d-0a58a9feac02", "requiredMinutesWatched": 30, "requiredSubs": 0, "requiredTurboSubs": 0 },
+            { "__typename": "TimeBasedDrop", "id": "966cef7f-d7a3-11f1-93cf-0a58a9feac02", "requiredMinutesWatched": 240, "requiredSubs": 0, "requiredTurboSubs": 0 }
+          ]
+        },
+        {
+          "__typename": "DropCampaign",
+          "accountLinkURL": "https://krunker.io/?twitch_auth",
+          "detailsURL": "https://krunker.io/",
+          "endAt": "2026-11-08T23:59:59.999Z",
+          "game": { "__typename": "Game", "boxArtURL": "https://static-cdn.jtvnw.net/ttv-boxart/508391-120x160.jpg", "displayName": "Krunker", "id": "508391" },
+          "id": "9574d558-1368-4b7a-b46e-c2cfe6f75a82",
+          "name": "November Spins Update",
+          "owner": { "__typename": "Organization", "id": "b225fd1d-6bdf-4807-a58d-8472b97efac4", "name": "FRVR" },
+          "self": { "__typename": "DropCampaignSelfEdge", "isAccountConnected": false },
+          "startAt": "2026-11-01T00:00:00Z",
+          "status": "ACTIVE",
+          "timeBasedDrops": [
+            { "__typename": "TimeBasedDrop", "id": "df938bf5-d3b1-11f1-8296-0a58a9feac02", "requiredMinutesWatched": 120, "requiredSubs": 0, "requiredTurboSubs": 0 },
+            { "__typename": "TimeBasedDrop", "id": "eebe2bd7-d3b1-11f1-902f-0a58a9feac02", "requiredMinutesWatched": 360, "requiredSubs": 0, "requiredTurboSubs": 0 },
+            { "__typename": "TimeBasedDrop", "id": "f43fd497-d3b1-11f1-906d-0a58a9feac02", "requiredMinutesWatched": 0, "requiredSubs": 2, "requiredTurboSubs": 0 }
+          ]
+        },
+        {
+          "__typename": "DropCampaign",
+          "accountLinkURL": "https://twitch.tv/settings/connections#riot-connection",
+          "detailsURL": "https://lolesports.com/",
+          "endAt": "2026-11-06T17:58:59.999Z",
+          "game": { "__typename": "Game", "boxArtURL": "https://static-cdn.jtvnw.net/ttv-boxart/21779-120x160.jpg", "displayName": "League of Legends", "id": "21779" },
+          "id": "f584b1fa-8acd-4d7e-b78d-d395b2d8243c",
+          "name": "Worlds - Sub Drop Pt. 1",
+          "owner": { "__typename": "Organization", "id": "931fd934-2149-4a85-a6d8-2190aa4439f3", "name": "Riot Games" },
+          "self": { "__typename": "DropCampaignSelfEdge", "isAccountConnected": false },
+          "startAt": "2026-10-21T18:00:00Z",
+          "status": "ACTIVE",
+          "timeBasedDrops": [
+            { "__typename": "TimeBasedDrop", "id": "d09b81f4-b835-11f1-b8e2-0a58a9feac02", "requiredMinutesWatched": 0, "requiredSubs": 1, "requiredTurboSubs": 0 }
+          ]
+        },
+        {
+          "__typename": "DropCampaign",
+          "accountLinkURL": "https://tankionline.com/play/",
+          "detailsURL": "https://tankionline.com/",
+          "endAt": "2026-11-05T19:29:59.999Z",
+          "game": { "__typename": "Game", "boxArtURL": "https://static-cdn.jtvnw.net/ttv-boxart/417810_IGDB-120x160.jpg", "displayName": "Tanki Online", "id": "417810" },
+          "id": "764a4936-7b79-4d9e-9351-94c32015b2e2",
+          "name": "WMR3 2026 R7",
+          "owner": { "__typename": "Organization", "id": "81aa7ca2-3eca-435b-849b-f23fe1b45a9d", "name": "APL Publishing Ltd" },
+          "self": { "__typename": "DropCampaignSelfEdge", "isAccountConnected": false },
+          "startAt": "2026-11-05T17:00:00Z",
+          "status": "EXPIRED",
+          "timeBasedDrops": [
+            { "__typename": "TimeBasedDrop", "id": "09e33e8d-d925-11f1-a3cf-0a58a9feac02", "requiredMinutesWatched": 30, "requiredSubs": 0, "requiredTurboSubs": 0 }
+          ]
+        }
+      ]
+    },
+    "rewardCampaignsAvailableToUser": [
+      {
+        "__typename": "RewardCampaign",
+        "aboutURL": "https://help.twitch.tv/s/article/pokemon-chat-badges",
+        "brand": "Pokemon",
+        "endsAt": "2026-11-23T22:59:59.999Z",
+        "externalURL": "https://help.twitch.tv/s/article/pokemon-chat-badges",
+        "game": null,
+        "id": "26547ffd-3b53-474c-b9ba-766fe4dfca83",
+        "image": { "__typename": "RewardCampaignImageSet", "image1xURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/674f4f9f-83e8-4357-a1ff-c16a599577aa.png" },
+        "instructions": "",
+        "isSitewide": true,
+        "name": "Pokémon Night Out Campaign",
+        "rewards": [
+          { "earnableUntil": "2026-11-23T22:59:59.999Z", "id": "59fcee3b-b7b0-11f1-9c20-0a58a9feac02", "name": "Pokémon Night Out Themed Poke Ball" }
+        ],
+        "startsAt": "2026-10-16T17:00:00Z",
+        "status": "UNKNOWN",
+        "summary": "Summary: Disclaimer: Pokémon Night Out Themed Poke Balls mus",
+        "unlockRequirements": { "__typename": "QuestRewardUnlockRequirements", "minuteWatchedGoal": 20, "subsGoal": 0 }
+      }
+    ]
+  }
+}

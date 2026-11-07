@@ -1,0 +1,238 @@
+/* Measured from Twitch's "Drops & More" panel on 2026-11-06. On twitch.tv the variables resolve
+   to Twitch's own tokens, so the panel follows its theme; the fallbacks are its dark values for
+   the toolbar popup, which runs outside the page. */
+:root, :host {
+  --dt-bg: var(--color-background-base, #18181b);
+  --dt-section: var(--color-background-alt, #26262c);
+  --dt-card: var(--color-background-float, #323239);
+  --dt-border: var(--color-border-base, rgba(83, 83, 95, 0.48));
+  --dt-text: var(--color-text-base, #efeff1);
+  --dt-sub: var(--color-text-alt-2, #d3d3d9);
+  --dt-link: var(--color-text-link, #bf94ff);
+  --dt-brand: var(--color-background-progress-status, #a970ff);
+  --dt-track: var(--color-background-progress, rgba(83, 83, 95, 0.55));
+  --dt-hover: var(--color-background-button-text-hover, rgba(83, 83, 95, 0.48));
+  --dt-btn: var(--color-background-button-secondary-default, rgba(83, 83, 95, 0.38));
+  --dt-btn-hover: var(--color-background-button-secondary-hover, rgba(83, 83, 95, 0.48));
+  --dt-ok: var(--color-fill-success, #00f593);
+  --dt-ok-text: var(--color-text-success, #00c274);
+  --dt-bad: var(--color-fill-error, #ff4f4d);
+  --dt-bad-text: var(--color-text-error, #ff8280);
+  --dt-warn: var(--color-fill-warn, #ffb31a);
+  --dt-idle: var(--color-opac-gl-2, rgba(173, 173, 184, 0.35));
+  --dt-font: var(--font-base, Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+p, h1 { margin: 0; }
+[hidden] { display: none !important; }
+
+.panel {
+  width: 326px;
+  padding: 8px;
+  background: var(--dt-bg);
+  color: var(--dt-text);
+  font: 400 14px/1.4 var(--dt-font);
+}
+
+.head { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 0 0 0 2px; margin-bottom: 8px; }
+.head h1 { font-size: 18px; font-weight: 500; line-height: 1.1; }
+
+.section {
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--dt-section);
+  border: 1px solid var(--dt-border);
+  border-radius: 4px;
+}
+
+.strong { font-weight: 600; }
+.sub { font-size: 12px; color: var(--dt-sub); }
+.sub.ok { color: var(--dt-ok-text); }
+.sub.bad { color: var(--dt-bad-text); }
+.sub.warn { color: var(--dt-warn); }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.label { margin-bottom: 8px; }
+
+/* Tabs, following Inventory / All Campaigns on Twitch's Drops page: 14px, link colour when active. */
+.tabs { display: flex; gap: 16px; padding: 0 2px; margin-bottom: 8px; border-bottom: 1px solid var(--dt-border); }
+.tab { display: inline-flex; align-items: center; gap: 6px; height: 31px; padding: 0; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--dt-text); font-size: 14px; }
+.tab:hover { color: var(--dt-link); }
+.tab[aria-selected="true"] { color: var(--dt-link); border-bottom-color: var(--dt-link); }
+/* The warning must still show while the list is open. */
+.tab-dot { display: none; width: 8px; height: 8px; border-radius: 50%; }
+.tab[data-tone="bad"] .tab-dot { display: block; background: var(--dt-bad); }
+.tab[data-tone="warn"] .tab-dot { display: block; background: var(--dt-warn); }
+
+/* Debug */
+.debug-actions { margin-top: 0; }
+#debug-rows { margin-top: 8px; }
+.debug-row { display: flex; justify-content: space-between; gap: 12px; }
+.debug-row + .debug-row { margin-top: 2px; }
+.debug-value { min-width: 0; color: var(--dt-text); text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.debug-streams-label { margin: 8px 0 4px; }
+
+/* Minute log */
+#log-rows { margin-top: 8px; }
+.log-row + .log-row { margin-top: 8px; }
+.log-note { margin-top: 8px; }
+button.link { padding: 0; }
+
+/* Badges */
+#view-badges .card { padding-bottom: 8px; }
+#view-badges .card:has(.bar) { padding-bottom: 12px; }
+
+/* All Drops */
+.dir-head { display: flex; align-items: center; gap: 4px; }
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--color-border-input, rgba(222, 222, 227, 0.95));
+  background: var(--color-background-input, #18181b);
+  color: var(--dt-text);
+  font: 400 13px var(--dt-font);
+  outline: none;
+}
+.search:focus { box-shadow: inset 0 0 0 2px var(--dt-brand); }
+.search::placeholder { color: var(--dt-sub); }
+#dir-status, #dir-error { margin-top: 8px; }
+/* 100+ campaigns cannot fit, so this one list scrolls. The panel around it never does:
+   --dt-avail is the room above the chip, and 206px is everything else in this view (203px measured). */
+.dir-list {
+  max-height: max(120px, min(440px, calc(var(--dt-avail, 600px) - 206px)));
+  margin: 8px -4px 0 0;
+  padding-right: 4px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dt-track) transparent;
+}
+.dir-row summary { justify-content: flex-start; gap: 8px; padding: 4px 0; border-radius: 4px; }
+.dir-row summary:hover { background: var(--dt-hover); }
+.dir-row[open] summary { background: var(--dt-card); }
+.dir-row summary .row-text { padding: 0 2px; }
+.boxart { flex: none; width: 39px; height: 52px; margin-left: 2px; border-radius: 2px; overflow: hidden; background: var(--dt-track); }
+.boxart img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tag { flex: none; margin-right: 4px; color: var(--dt-sub); font-size: 12px; font-weight: 600; }
+.tag.ok { color: var(--dt-ok-text); }
+.dir-more { padding: 4px 2px 8px 49px; }
+.dir-links { display: flex; gap: 12px; margin-top: 4px; }
+.dir-empty { padding: 8px 2px; }
+.round:disabled { opacity: 0.5; cursor: default; background: none; }
+
+/* Status */
+.status { --tone: var(--dt-idle); }
+.status[data-tone="ok"] { --tone: var(--dt-ok); }
+.status[data-tone="bad"] { --tone: var(--dt-bad); }
+.status[data-tone="warn"] { --tone: var(--dt-warn); }
+.status[data-tone="info"] { --tone: var(--dt-brand); }
+.status-line { display: flex; align-items: center; gap: 8px; }
+.status-line .strong { flex: 1; min-width: 0; }
+.status-line .sub { flex: none; font-variant-numeric: tabular-nums; }
+.dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--tone); }
+.detail { margin-top: 4px; }
+
+.timeline { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; height: 8px; margin-top: 8px; }
+.timeline i { display: block; border-radius: 1px; background: var(--dt-track); }
+.timeline i.gain { background: var(--dt-brand); }
+.timeline i.miss { background: var(--dt-bad); }
+#rate { margin-top: 4px; }
+
+/* Drop cards */
+.card { padding: 8px 8px 12px; background: var(--dt-card); border-radius: 4px; }
+.card + .card { margin-top: 8px; }
+.card-top { display: flex; gap: 8px; }
+.card-text { flex: 1; min-width: 0; }
+.art { flex: none; width: 40px; height: 40px; }
+.bar { height: 8px; margin-top: 12px; border-radius: 6px; background: var(--dt-track); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--dt-brand); }
+
+/* Rows */
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
+.row + .row { margin-top: 4px; }
+.row-text { flex: 1; min-width: 0; }
+
+/* Controls, matching Twitch's icon and secondary buttons */
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+.round {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 9000px;
+  color: var(--dt-text);
+}
+.round:hover { background: var(--dt-hover); }
+.btn {
+  display: inline-block;
+  height: 30px;
+  padding: 0 10px;
+  margin-top: 8px;
+  border-radius: 4px;
+  background: var(--dt-btn);
+  color: var(--dt-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn:hover { background: var(--dt-btn-hover); }
+.link { color: var(--dt-link); font-size: 12px; font-weight: 600; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--dt-brand); outline-offset: 2px; }
+
+summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+.chevron { flex: none; transition: transform 0.1s ease; }
+details[open] .chevron { transform: rotate(90deg); }
+#unclaimed { margin-top: 8px; }
+
+/* Settings. The toggle is Twitch's: 36x20, 2px outline, knob and outline purple when on. */
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+.setting label[for="auto-refresh"]:not([aria-hidden]), .setting label[for="auto-reload"]:not([aria-hidden]) { cursor: pointer; }
+.every { margin-top: 8px; }
+.toggle { position: relative; flex: none; width: 36px; height: 20px; }
+.toggle input { position: absolute; inset: 0; width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
+.toggle label {
+  display: block;
+  width: 36px;
+  height: 20px;
+  border: 2px solid var(--color-border-input, rgba(222, 222, 227, 0.95));
+  border-radius: 12px;
+  background: var(--color-background-toggle, transparent);
+  pointer-events: none;
+  transition: background-color 0.1s;
+}
+.toggle label::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 9000px;
+  background: var(--color-border-input, rgba(222, 222, 227, 0.95));
+  transition: transform 0.1s;
+}
+.toggle input:checked + label { border-color: var(--dt-brand); background: var(--color-background-toggle-checked, #000); }
+.toggle input:checked + label::after { background: var(--dt-brand); transform: translateX(16px); }
+.toggle input:focus-visible + label { outline: 2px solid var(--dt-brand); outline-offset: 2px; }
+.select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--dt-border);
+  border-radius: 4px;
+  background: var(--color-background-input, #18181b);
+  color: var(--dt-text);
+  font: 400 13px var(--dt-font);
+  cursor: pointer;
+}
+.select:focus-visible { outline: 2px solid var(--dt-brand); outline-offset: 1px; }
+
+.foot { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
