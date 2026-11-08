@@ -25,5 +25,8 @@ New behaviour comes with a test. A test for a bug should fail on the old code fi
 ## Adding a module the panel imports
 Content scripts load panel modules by URL, so every file under `extension/lib/` the panel reaches must be listed in `web_accessible_resources` in `manifest.json`. `tests/manifest.test.mjs` checks this. After a manifest change, reload the extension: open tabs keep the old manifest until then and fail with "Failed to fetch dynamically imported module".
 
+## Adding a captured fixture, or e2e failing days later with a campaign "finished"
+`scripts/e2e.mjs` and `scripts/screenshots.mjs` run against the real clock, so they load fixtures through `loadFixture` in `scripts/fixtures.mjs`, which moves every timestamp forward by the time since capture. Never read a fixture there with plain `JSON.parse`: it passes on capture day and fails once a real campaign ends. All current fixtures share one capture time (`CAPTURED_AT`). A fixture captured on another day needs its own capture time there, or its campaigns will be shifted by the wrong amount.
+
 ## Writing down what you learn
 If you measure something about Twitch (a field shape, a failure, a timing), add it to `docs/twitch-drops-facts.md` under the symptom someone would have in hand when they go looking, not under the mechanism. Say when it was measured and how sure it is.

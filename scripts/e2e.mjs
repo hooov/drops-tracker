@@ -9,12 +9,13 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { loadFixture } from './fixtures.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ext = join(root, 'extension');
 const out = join(root, 'scripts', 'e2e-out');
 mkdirSync(out, { recursive: true });
-const fx = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'gql-2026-11-06.json')));
+const fx = loadFixture(root, 'gql-2026-11-06.json');
 const BROWSER = process.env.E2E_BROWSER || 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe';
 const profile = mkdtempSync(join(tmpdir(), 'drops-e2e-'));
 const step = (msg) => console.log(`ok - ${msg}`);
@@ -51,7 +52,7 @@ const FAKE_CAMPAIGNS = `<!doctype html><title>campaigns</title><script>
     .then((r) => r.json())
     .then((j) => { document.title = 'read:' + j.length; });
 </script>`;
-const dashboard = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'dashboard-2026-11-06.json')));
+const dashboard = loadFixture(root, 'dashboard-2026-11-06.json');
 let dashboardMode = 'ok';
 let campaignPageLoads = 0;
 
@@ -568,7 +569,7 @@ try {
 
   // A channel's own badge campaign, from real answers: never in Inventory, so only the session
   // reports it. A timer badge is tracked like any drop: flat warns, and rising reads as earning.
-  const badgeFx = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'badge-2026-11-06.json')));
+  const badgeFx = loadFixture(root, 'badge-2026-11-06.json');
   await sw.evaluate((b) => {
     self.__badgeMinutes = 3;
     self.__transform = (answer, ops) => answer.map((a, i) => {
