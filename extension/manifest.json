@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Shows whether Twitch is really adding Drops minutes right now, and why not when it stalls.",
   "minimum_chrome_version": "120",
-  "permissions": ["alarms", "cookies", "notifications", "scripting", "storage", "tabs", "webRequest"],
+  "permissions": ["alarms", "cookies", "notifications", "scripting", "storage", "webRequest"],
   "host_permissions": ["https://*.twitch.tv/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [

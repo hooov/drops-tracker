@@ -140,7 +140,7 @@ npm run e2e     # real-browser test, see below
 
 `npm run e2e` launches a throwaway browser profile with the extension loaded and drives it with Playwright: real service worker, cookies, tabs and script injection, with Twitch's API answered by fixtures and channel pages faked. It also mounts the chip on a real `twitch.tv/popout/twitch/chat` page, which has no video. Screenshots go to `scripts/e2e-out/`. It looks for Brave at the default Windows path; set `E2E_BROWSER` to another Chromium executable to use that instead.
 
-`npm run icons` regenerates the toolbar icons. `npm run screenshots` regenerates the images in `docs/screenshots/` the same way as the e2e test: the real extension on staged channel pages, with real campaign art from Twitch's CDN.
+`npm run icons` regenerates the toolbar icons. `npm run package` builds the Chrome Web Store upload in `dist/`, and `npm run store-images` makes the store's screenshots and promo tile in `docs/store/`; what to paste into each dashboard field is in [docs/chrome-web-store.md](docs/chrome-web-store.md). `npm run screenshots` regenerates the images in `docs/screenshots/` the same way as the e2e test: the real extension on staged channel pages, with real campaign art from Twitch's CDN.
 
 Before changing behaviour, read [CONTRIBUTING.md](CONTRIBUTING.md). It lists the rules that are easy to break and expensive when broken.
 
