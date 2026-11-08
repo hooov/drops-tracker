@@ -8,8 +8,10 @@ https://hovjsyy.dev/drops-tracker/privacy/ (source: the `hooov/hovjsyy.dev` repo
 | Field | File | Made by |
 |---|---|---|
 | Package | `dist/drops-tracker-<version>.zip` | `npm run package` |
-| Screenshots, 1280x800, upload in this order | `docs/store/hero.png`, `hung.png`, `all-drops.png`, `badges.png` | `npm run store-images` |
-| Small promo tile, 440x280 | `docs/store/promo-440x280.png` | `npm run store-images` |
+| Screenshots, 1280x800, upload in their numbered order | `docs/store/1-earning-1280x800.png` to `4-badges-1280x800.png` | `npm run store-images` |
+| Small promo tile, 440x280 | `docs/store/promo-tile-440x280.png` | `npm run store-images` |
+
+Take store images only from `docs/store/`. The README images in `docs/screenshots/` are other sizes, and the dashboard rejects them with "The image size is incorrect".
 | Store icon, 128x128 | taken from the package | `npm run icons` |
 
 Bump `version` in `extension/manifest.json` before every upload after the first: the store rejects a version it has already seen.
