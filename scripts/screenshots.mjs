@@ -4,6 +4,9 @@
 // "stream", so nothing plays from Twitch and no slot is used on your IP) and the GQL answers.
 // Campaigns, rewards and art are real ones seen on Twitch on 2026-11-07, loaded from Twitch's CDN.
 // Channels are the placeholders used everywhere else in this repo. Output: docs/screenshots/.
+// With --store (npm run store-images): Chrome Web Store images instead, in docs/store/. The store
+// takes only exactly 1280x800 screenshots, so the same scenes are shot full-frame at 1280x800, 1x,
+// plus the 440x280 promo tile.
 import { chromium } from 'playwright-core';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,11 +16,13 @@ import { loadFixture } from './fixtures.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ext = join(root, 'extension');
-const out = join(root, 'docs', 'screenshots');
+const STORE = process.argv.includes('--store');
+const out = join(root, 'docs', STORE ? 'store' : 'screenshots');
 mkdirSync(out, { recursive: true });
 const BROWSER = process.env.E2E_BROWSER || 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe';
 const W = 1280;
-const H = 900;
+const H = STORE ? 800 : 900;
+const SCALE = STORE ? 1 : 2;
 const CHAT_W = 340;
 const log = (msg) => console.log(`ok - ${msg}`);
 const fx = loadFixture(root, 'gql-2026-11-06.json');
@@ -237,7 +242,7 @@ async function scene(name, { minutes, setup }) {
     headless: true,
     args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, '--autoplay-policy=no-user-gesture-required'],
     viewport: { width: W, height: H },
-    deviceScaleFactor: 2,
+    deviceScaleFactor: SCALE,
     locale: 'en-US',
     timezoneId: 'America/New_York',
   });
@@ -391,6 +396,7 @@ const closePanel = async (page) => {
 
 /** The right part of the page: the edge of the stream, the chat and the panel over it. */
 async function shotChat(page, file, { left = W - CHAT_W } = {}) {
+  if (STORE) return page.screenshot({ path: join(out, file) }); // The store wants the whole frame.
   // From a few lines of chat above the panel down to the chip, so short tabs carry no empty chat.
   const panelTop = await page.evaluate(() => document.getElementById('drops-tracker-panel').getBoundingClientRect().top);
   const top = Math.max(50, Math.floor(panelTop) - 96);
@@ -526,8 +532,8 @@ await scene('badges tab', {
   },
 });
 
-// 4. The chip's states side by side, as captured above.
-{
+// 4. The chip's states side by side, as captured above. The store has no use for it.
+if (!STORE) {
   const profile = mkdtempSync(join(tmpdir(), 'drops-shots-'));
   const ctx = await chromium.launchPersistentContext(profile, { executablePath: BROWSER, headless: true, viewport: { width: 900, height: 200 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
@@ -544,5 +550,25 @@ await scene('badges tab', {
   await ctx.close();
   rmSync(profile, { recursive: true, force: true });
   log('chip states');
+}
+
+// 5. Store only: the 440x280 small promo tile, which places the listing higher in store results.
+if (STORE) {
+  const profile = mkdtempSync(join(tmpdir(), 'drops-shots-'));
+  const ctx = await chromium.launchPersistentContext(profile, { executablePath: BROWSER, headless: true, viewport: { width: 440, height: 280 }, deviceScaleFactor: 1 });
+  const page = await ctx.newPage();
+  const icon = readFileSync(join(ext, 'icons', '128.png')).toString('base64');
+  await page.setContent(`<!doctype html><link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=block" rel="stylesheet">
+  <style>html,body{margin:0;width:440px;height:280px;overflow:hidden}
+  body{background:#18181b;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;gap:6px;padding:0 30px 0 18px;box-sizing:border-box}
+  img{width:136px;height:136px;flex:none}
+  h1{margin:0 0 10px;font-size:32px;font-weight:700;color:#efeff1;letter-spacing:-.01em;line-height:1.1}
+  p{margin:0;font-size:16px;font-weight:500;color:#adadb8;line-height:1.4}</style>
+  <img src="data:image/png;base64,${icon}"><div><h1>Drops Tracker</h1><p>Know the moment Twitch stops counting your Drops minutes.</p></div>`);
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: join(out, 'promo-440x280.png') });
+  await ctx.close();
+  rmSync(profile, { recursive: true, force: true });
+  log('promo tile');
 }
 console.log(`screenshots in ${out}`);
