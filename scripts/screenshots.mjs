@@ -23,6 +23,16 @@ const BROWSER = process.env.E2E_BROWSER || 'C:\\Program Files\\BraveSoftware\\Br
 const W = 1280;
 const H = STORE ? 800 : 900;
 const SCALE = STORE ? 1 : 2;
+// Store files get their upload order and size in the name: the README images share the plain
+// names, and dropping one of those in the dashboard fails with "The image size is incorrect".
+// Shots not listed here are not taken for the store (it allows five).
+const STORE_NAMES = {
+  'hero.png': '1-earning-1280x800.png',
+  'hung.png': '2-not-counting-1280x800.png',
+  'all-drops.png': '3-all-drops-1280x800.png',
+  'badges.png': '4-badges-1280x800.png',
+};
+const target = (file) => (STORE ? STORE_NAMES[file] : file);
 const CHAT_W = 340;
 const log = (msg) => console.log(`ok - ${msg}`);
 const fx = loadFixture(root, 'gql-2026-11-06.json');
@@ -396,7 +406,7 @@ const closePanel = async (page) => {
 
 /** The right part of the page: the edge of the stream, the chat and the panel over it. */
 async function shotChat(page, file, { left = W - CHAT_W } = {}) {
-  if (STORE) return page.screenshot({ path: join(out, file) }); // The store wants the whole frame.
+  if (STORE) return target(file) && page.screenshot({ path: join(out, target(file)) }); // The whole frame.
   // From a few lines of chat above the panel down to the chip, so short tabs carry no empty chat.
   const panelTop = await page.evaluate(() => document.getElementById('drops-tracker-panel').getBoundingClientRect().top);
   const top = Math.max(50, Math.floor(panelTop) - 96);
@@ -430,7 +440,7 @@ await scene('earning: hero, My Drops, All Drops, Debug, chip', {
     chipShots.push(['Earning', await alpha.screenshot({ clip: await chipClip(alpha) })]);
 
     await openPanel(alpha);
-    await alpha.screenshot({ path: join(out, 'hero.png') });
+    await alpha.screenshot({ path: join(out, target('hero.png')) });
     await shotChat(alpha, 'my-drops.png');
 
     await openPanel(alpha, 'all');
@@ -493,7 +503,7 @@ await scene('hung: pill, chip and panel', {
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-pill')?.style.display !== 'none');
     chipShots.push(['Not counting', await alpha.screenshot({ clip: await chipClip(alpha) })]);
     await openPanel(alpha);
-    await alpha.screenshot({ path: join(out, 'hung.png') });
+    await alpha.screenshot({ path: join(out, target('hung.png')) });
 
     // Then the channel switches to a game with no drops: earning stops without any error.
     await tick(1);
@@ -566,7 +576,7 @@ if (STORE) {
   p{margin:0;font-size:16px;font-weight:500;color:#adadb8;line-height:1.4}</style>
   <img src="data:image/png;base64,${icon}"><div><h1>Drops Tracker</h1><p>Know the moment Twitch stops counting your Drops minutes.</p></div>`);
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: join(out, 'promo-440x280.png') });
+  await page.screenshot({ path: join(out, 'promo-tile-440x280.png') });
   await ctx.close();
   rmSync(profile, { recursive: true, force: true });
   log('promo tile');
