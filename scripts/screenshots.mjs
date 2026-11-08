@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadFixture } from './fixtures.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ext = join(root, 'extension');
@@ -19,9 +20,9 @@ const W = 1280;
 const H = 900;
 const CHAT_W = 340;
 const log = (msg) => console.log(`ok - ${msg}`);
-const fx = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'gql-2026-11-06.json')));
-const badgeFx = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'badge-2026-11-06.json')));
-const dashboardFx = JSON.parse(readFileSync(join(root, 'tests', 'fixtures', 'dashboard-2026-11-06.json')));
+const fx = loadFixture(root, 'gql-2026-11-06.json');
+const badgeFx = loadFixture(root, 'badge-2026-11-06.json');
+const dashboardFx = loadFixture(root, 'dashboard-2026-11-06.json');
 
 const CDN = 'https://static-cdn.jtvnw.net';
 const reward = (id) => `${CDN}/twitch-quests-assets/REWARD/${id}.png`;
