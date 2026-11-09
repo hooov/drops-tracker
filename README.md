@@ -55,20 +55,20 @@ It uses the Twitch login already in that browser. There is no build step. After 
 - **My Drops**: the verdict, a 30-minute credit strip, the drops you can earn where you are, each open stream's state with a reload button, and earned rewards you have not claimed. On a channel with no drops it shows what another open tab can earn, headed `Watch Drops on <channel>`, or nothing.
 - **All Drops**: every campaign running on Twitch, yours first, with search. Twitch only gives this list to its own campaigns page, so the extension opens that page in a background tab for a moment (no video, so it uses no stream slot) and reads the answer the page receives. Cached for 30 minutes.
 - **Badges**: the current channel's sub and watch badge drops. Watch badges are also tracked like any other drop.
-- **Debug**: settings, the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
+- **Settings**: the two helpers below, and **Developer mode**, which shows the debug tools under them: the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
 
 | My Drops | All Drops | Badges |
 |---|---|---|
 | ![My Drops tab](docs/screenshots/my-drops.png) | ![All Drops tab listing campaigns with box art, yours first](docs/screenshots/all-drops.png) | ![Badges tab with a sub badge and a watch badge](docs/screenshots/badges.png) |
 
-**Settings** (Debug tab, all off by default):
+**Settings** (Settings tab; both helpers on by default, Developer mode off):
 
 - **Auto-refresh Drops page**: reloads open `twitch.tv/drops/*` tabs every 1, 5, 10 or 30 minutes, since that page never updates itself. Never touches stream tabs.
-- **Auto-reload hung streams**: reloads a stream tab after 6 minutes with no new minutes, counted from when that tab could last earn. At most 3 tries per hang, 10 minutes apart, never on a paused tab, with too many streams open, or when an unclaimed drop may be the cause. Whether a reload actually clears a hang is not yet measured.
+- **Auto-reload hung streams**: reloads a stream tab after 6 minutes with no new minutes, counted from when that tab could last earn. At most 3 tries per hang, 10 minutes apart. Never on a paused tab, when another playing stream is the likely cause, or when an unclaimed drop may be the cause. Whether a reload actually clears a hang is not yet measured.
 
-**Lost minutes** (Debug tab) records each watched minute: whether it was credited, how many streams were playing, tab in background, muted, picture height, playback speed, ad showing. Once both sides of a condition have 10 minutes it compares credit rates. Paused minutes are left out. A gap is a lead, not a cause, since the conditions overlap.
+**Lost minutes** (Settings tab, with Developer mode on) records each watched minute: whether it was credited, how many streams were playing, tab in background, muted, picture height, playback speed, ad showing. Once both sides of a condition have 10 minutes it compares credit rates. Paused minutes are left out. A gap is a lead, not a cause, since the conditions overlap.
 
-<img src="docs/screenshots/debug.png" width="340" alt="Debug tab with settings and the Lost minutes comparison open">
+<img src="docs/screenshots/debug.png" width="340" alt="Settings tab with Developer mode on and the Lost minutes comparison open">
 
 ## How it works
 

@@ -423,8 +423,8 @@ async function chipClip(page) {
 
 const chipShots = [];
 
-// 1. Earning: the main view, the All Drops and Debug tabs, and the chip itself.
-await scene('earning: hero, My Drops, All Drops, Debug, chip', {
+// 1. Earning: the main view, the All Drops and Settings tabs, and the chip itself.
+await scene('earning: hero, My Drops, All Drops, Settings, chip', {
   minutes: 31,
   setup: async ({ ctx, sw, helper, poll, tick }) => {
     await installTwitch(sw, SOT_DATA);
@@ -462,9 +462,10 @@ await scene('earning: hero, My Drops, All Drops, Debug, chip', {
         minuteLog.push({ m: now - 186 + i, d: missed ? 0 : 1, e: 1, p: two ? 2 : 1, c: 'alphatv', cr: 1, st: 'playing', h: hidden ? 1 : 0, a: hidden ? 0 : 1, pm: i % 5 === 0 ? 1 : 0, v0: 0, tm: 0, q: 1080, s: 100, ad: i % 31 === 0 ? 1 : 0 });
       }
       for (let i = 0; i < 4; i++) minuteLog.push({ m: now + i - 190, st: 'paused', d: 0, e: 1, p: 1, c: 'alphatv', cr: 1, h: 1, a: 0, pm: 0, v0: 0, tm: 0, q: 1080, s: 0, ad: 0 });
-      return chrome.storage.local.set({ minuteLog });
+      // The debug tools only show with Developer mode on.
+      return chrome.storage.local.set({ minuteLog, settings: { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true } });
     });
-    await openPanel(alpha, 'debug');
+    await openPanel(alpha, 'settings');
     await alpha.click('#drops-tracker-panel #log-section summary');
     await alpha.waitForTimeout(500);
     await shotChat(alpha, 'debug.png');
@@ -491,8 +492,9 @@ await scene('hung: pill, chip and panel', {
   setup: async ({ ctx, sw, helper, poll, tick }) => {
     await installTwitch(sw, SOT_DATA);
     await sw.evaluate(() => { self.__minutes = 72; });
+    // One stream only: with a second one playing the verdict names it instead (measured
+    // 2026-11-09), and this image shows the general case with its Reload button.
     const alpha = await openChannel(ctx, 'alphatv');
-    await openChannel(ctx, 'bravo');
     await poll();
     for (let i = 0; i < 24; i++) await tick(1);
     for (let i = 0; i < 6; i++) await tick();

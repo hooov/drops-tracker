@@ -3,17 +3,22 @@ import assert from 'node:assert/strict';
 import { normalize, refreshDue, autoReloadStep, autoReloadNote, DEFAULTS, DROPS_PAGES, RELOAD_MAX } from '../extension/lib/settings.js';
 
 const MIN = 60000;
-const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: false });
+const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: true, devMode: false });
 
-test('off by default, and bad stored values fall back safely', () => {
+test('helpers on and developer mode off by default; bad stored values fall back to the defaults', () => {
   assert.deepEqual(normalize(undefined), DEFAULTS);
-  assert.equal(DEFAULTS.autoRefresh, false);
-  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7 }), DEFAULTS);
+  assert.deepEqual(DEFAULTS, { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false });
+  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7, autoReload: 1, devMode: 'on' }), DEFAULTS);
   assert.deepEqual(normalize({ autoRefresh: true, autoRefreshMinutes: 10 }), on(10));
 });
 
+test('a saved off wins over a default-on setting, so turning one off sticks', () => {
+  const off = normalize({ autoRefresh: false, autoReload: false, devMode: true });
+  assert.deepEqual([off.autoRefresh, off.autoReload, off.devMode], [false, false, true]);
+});
+
 test('off never refreshes and clears the timer', () => {
-  assert.deepEqual(refreshDue(normalize({}), 1000, 999999999), { due: false, nextLastAt: null });
+  assert.deepEqual(refreshDue(normalize({ autoRefresh: false }), 1000, 999999999), { due: false, nextLastAt: null });
 });
 
 test('switching on starts the timer instead of reloading at once', () => {
@@ -37,10 +42,10 @@ test('only ever targets the Drops pages, never stream tabs', () => {
 const reload = { autoReload: true };
 const hung = (cause = 'uncounted', since = 0, tabId = 7) => ({ verdict: { code: 'stalled', since, cause, tabId }, lastGainAt: null });
 
-test('auto-reload is off by default and a bad stored value stays off', () => {
-  assert.equal(normalize(undefined).autoReload, false);
-  assert.equal(normalize({ autoReload: 'yes' }).autoReload, false);
-  assert.equal(autoReloadStep(null, hung(), normalize({}), 60 * MIN).tabId, null);
+test('auto-reload is on by default, and switched off it never fires', () => {
+  assert.equal(normalize(undefined).autoReload, true);
+  assert.equal(autoReloadStep(null, hung(), normalize({}), 60 * MIN).tabId, 7);
+  assert.equal(autoReloadStep(null, hung(), normalize({ autoReload: false }), 60 * MIN).tabId, null);
 });
 
 test('auto-reload waits past the 5 minute hangs that were measured', () => {
@@ -63,7 +68,7 @@ test('auto-reload waits 10 minutes between tries and stops at the limit', () => 
 });
 
 test('auto-reload never fires for what a reload cannot fix', () => {
-  for (const cause of ['paused', 'too_many', 'claim_first', 'no_video']) {
+  for (const cause of ['paused', 'too_many', 'second_stream', 'claim_first', 'no_video']) {
     assert.equal(autoReloadStep(null, hung(cause), reload, 60 * MIN).tabId, null, cause);
   }
   for (const cause of ['uncounted', 'frozen', 'ended', 'asleep']) {

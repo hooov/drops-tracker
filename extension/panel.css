@@ -195,7 +195,8 @@ details[open] .chevron { transform: rotate(90deg); }
 
 /* Settings. The toggle is Twitch's: 36x20, 2px outline, knob and outline purple when on. */
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
-.setting label[for="auto-refresh"]:not([aria-hidden]), .setting label[for="auto-reload"]:not([aria-hidden]) { cursor: pointer; }
+.setting > label:not([aria-hidden]) { cursor: pointer; }
+.setting-hint { margin-top: 2px; padding-right: 44px; }
 .every { margin-top: 8px; }
 .toggle { position: relative; flex: none; width: 36px; height: 20px; }
 .toggle input { position: absolute; inset: 0; width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
