@@ -46,20 +46,32 @@ test('a stall outranks a claim', () => {
   assert.match(v.text, /^Hung/);
 });
 
-test('a waiting claim keeps the next drop\'s percentage showing, and still asks to be claimed', () => {
+test('a waiting claim keeps the ring green and the percentage showing, and counts the claim', () => {
   const unclaimed = [{ name: 'Badge', campaignActive: true }];
   const v = chipView(state({ code: 'earning', channel: 'Delta' }, { unclaimed }), NOW);
-  assert.equal(v.text, '82% Claim');
+  assert.equal(v.text, '82%');
   assert.equal(v.pct, 82, 'the number in the ring when chat is narrow');
-  assert.equal(v.tone, 'warn', 'amber, so a narrow chat still shows something needs attention');
+  assert.equal(v.tone, 'ok', 'green: a reward waiting is not something wrong');
+  assert.equal(v.claims, 1);
   assert.match(v.title, /Badge is ready to claim/);
   assert.match(v.title, /Earning on Delta/);
 });
 
-test('a claim with nothing left to earn just says Claim', () => {
+test('several claims waiting are counted, and the title says how many', () => {
+  const unclaimed = [{ name: 'A', campaignActive: true }, { name: 'B', campaignActive: true }, { name: 'Old', campaignActive: false }];
+  const v = chipView(state({ code: 'earning', channel: 'Delta' }, { unclaimed }), NOW);
+  assert.equal(v.claims, 2, 'only campaigns still running');
+  assert.match(v.title, /^2 drops are ready to claim/);
+});
+
+test('no claim waiting: no count', () => {
+  assert.equal(chipView(state({ code: 'earning' }), NOW).claims, 0);
+});
+
+test('a claim with nothing left to earn just says Claim, in purple', () => {
   const unclaimed = [{ name: 'Badge', campaignActive: true }];
   const v = chipView(state({ code: 'idle' }, { unclaimed, active: [] }), NOW);
-  assert.deepEqual([v.text, v.pct, v.tone], ['Claim', 100, 'warn']);
+  assert.deepEqual([v.text, v.pct, v.tone, v.claims], ['Claim', 100, 'info', 1]);
 });
 
 test('a waiting claim does not hide tracking having stopped or being unknown', () => {
@@ -72,21 +84,24 @@ test('a waiting claim does not hide tracking having stopped or being unknown', (
   assert.match(limited.title, /Badge is ready to claim/);
 });
 
-test('a waiting claim shows while not earning too, with the percentage', () => {
+test('a waiting claim is counted while not earning too, with the percentage', () => {
   const unclaimed = [{ name: 'Badge', campaignActive: true }];
-  assert.equal(chipView(state({ code: 'idle' }, { unclaimed }), NOW).text, '82% Claim');
-  assert.equal(chipView(state({ code: 'waiting' }, { unclaimed }), NOW).text, '82% Claim');
+  for (const code of ['idle', 'waiting']) {
+    const v = chipView(state({ code }, { unclaimed }), NOW);
+    assert.deepEqual([v.text, v.claims], ['82%', 1]);
+  }
 });
 
-test('the longer label still falls back to the ring when the row has no room', () => {
+test('the label still falls back to the ring when the row has no room', () => {
   // The default 340px chat: a 324px row with 307px used, as measured.
-  assert.equal(shouldCompact(324, 307, 32, '82% Claim'), true);
-  assert.equal(shouldCompact(500, 307, 32, '82% Claim'), false);
+  assert.equal(shouldCompact(324, 307, 32, '82%'), true);
+  assert.equal(shouldCompact(500, 307, 32, '82%'), false);
 });
 
-test('a reward from an ended campaign does not take over the chip', () => {
+test('a reward from an ended campaign is not counted', () => {
   const unclaimed = [{ name: 'Old', campaignActive: false }];
-  assert.equal(chipView(state({ code: 'earning' }, { unclaimed }), NOW).text, '82%');
+  const v = chipView(state({ code: 'earning' }, { unclaimed }), NOW);
+  assert.deepEqual([v.text, v.claims, v.tone], ['82%', 0, 'ok']);
 });
 
 test('plain idle stays quiet, with or without drops in progress', () => {

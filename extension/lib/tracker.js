@@ -641,11 +641,12 @@ export function badge(state) {
   // Tracking having stopped outranks a reward waiting, which can wait.
   if (state.verdict.lost) return { text: 'STOP', color: '#b54708' };
   if (state.verdict.limited) return { text: '?', color: '#b54708' };
-  // Amber flags the claim while the number keeps showing the next drop's progress.
+  // A claim waiting does not colour the badge: amber read as something wrong (2026-11-09). The
+  // number keeps showing the next drop; the chip and panel carry the claim.
   if (state.verdict.code === 'earning' && (state.active[0] || !claim)) {
-    return { text: state.active[0] ? `${state.active[0].pct}%` : 'ON', color: state.verdict.slow || state.verdict.wasted || claim ? '#b54708' : '#067647' };
+    return { text: state.active[0] ? `${state.active[0].pct}%` : 'ON', color: state.verdict.slow || state.verdict.wasted ? '#b54708' : '#067647' };
   }
-  if (claim) return { text: 'CLM', color: '#b54708' };
+  if (claim) return { text: 'CLM', color: '#6941c6' };
   if (state.verdict.code === 'waiting') return { text: '...', color: '#175cd3' };
   return { text: '', color: '#667085' };
 }

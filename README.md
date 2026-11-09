@@ -34,9 +34,9 @@ There is no build step. After changing the code, press **Reload** on the extensi
 
 ## What you see
 
-**Chip in the chat row**, beside your channel points: a progress ring with `82%`, `Hung 5m`, `Stopped`, `Claim` or `Drops ?`. Green is earning, amber needs attention or is slow, red is not counting, purple has just started. In a narrow chat column the label hides and the percentage moves inside the ring.
+**Chip in the chat row**, beside your channel points: a progress ring with `82%`, `Hung 5m`, `Stopped`, `Claim` or `Drops ?`. Green is earning, amber needs attention or is slow, red is not counting, purple has just started. In a narrow chat column the label hides and the percentage moves inside the ring. A purple count shows how many earned drops from running campaigns wait to be claimed: inside the ring beside the label, or on the ring's corner in a narrow chat. It never changes the ring's colour.
 
-![The chip in four states: earning at 85%, the ring with 85 inside in a narrow chat, Hung 6m in red, and Stopped in amber](docs/screenshots/chip-states.png)
+![The chip in six states: earning at 85%, the ring with 85 inside in a narrow chat, a claim waiting shown as a purple 1 inside the ring, the same as a purple badge on the ring's corner in a narrow chat, Hung 6m in red, and Stopped in amber](docs/screenshots/chip-states.png)
 
 **Toolbar badge:**
 
@@ -46,8 +46,8 @@ There is no build step. After changing the code, press **Reload** on the extensi
 | `...` blue | Stream just opened, waiting for the first minute |
 | `HUNG` red | A stream that can earn is open, but no minutes are being added |
 | `STOP` amber | You were earning and now no open stream can (game change, offline, raid) |
-| `51%` amber | Earning, with a drop ready to claim, or earning slowly |
-| `CLM` amber | A drop is ready to claim, and nothing is being earned |
+| `51%` amber | Earning slowly, or the minutes are going to a drop already earned or one that cannot finish in time |
+| `CLM` purple | A drop is ready to claim, and nothing is being earned. While earning, a waiting claim does not change the badge |
 | `?` amber | Open streams cannot be checked, so tracking is unknown |
 | `ERR` / `OFF` grey | Cannot read Twitch / signed out. Progress is unknown, not stalled |
 

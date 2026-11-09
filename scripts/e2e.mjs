@@ -289,7 +289,7 @@ try {
   assert.equal(c.labelShown, false);
   const inRing = await alpha.evaluate(() => {
     const host = document.getElementById('drops-tracker-chip');
-    const t = host.shadowRoot.querySelector('text');
+    const t = host.shadowRoot.querySelector('.pct');
     const r = t.getBoundingClientRect();
     const ring = host.shadowRoot.querySelector('svg').getBoundingClientRect();
     return { text: t.textContent, shown: getComputedStyle(t).display !== 'none', fits: r.width < ring.width - 6, width: host.offsetWidth, ring: ring.width };
@@ -303,6 +303,45 @@ try {
   await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'false');
   assert.equal(await rowHeight(alpha), 32);
   step(`320px chat column: ${inRing.text} shown inside the ring on one line; label returns when wider`);
+
+  // A drop waiting to be claimed: a purple count, never the ring's colour. Inside the ring beside
+  // the label; on the ring's corner when chat is narrow and the ring holds the percentage.
+  await popup.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    await chrome.storage.local.set({ state: { ...state, unclaimed: [{ id: 'e2e-claim', name: 'Pouch', campaign: 'C', campaignActive: true }] } });
+  });
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.claims === '1');
+  const claimLook = () => alpha.evaluate(() => {
+    const host = document.getElementById('drops-tracker-chip');
+    const root = host.shadowRoot;
+    const g = root.querySelector('.claim');
+    const b = root.querySelector('b');
+    const ring = root.querySelector('svg').getBoundingClientRect();
+    const dot = g.getBoundingClientRect();
+    return {
+      tone: host.dataset.tone, label: root.querySelector('span').textContent,
+      inRing: getComputedStyle(g).display !== 'none' ? root.querySelector('.claim text').textContent : null,
+      inside: dot.left >= ring.left && dot.right <= ring.right && dot.top >= ring.top && dot.bottom <= ring.bottom,
+      badge: getComputedStyle(b).display !== 'none' ? b.textContent : null,
+      fill: getComputedStyle(root.querySelector('.claim circle')).fill,
+    };
+  });
+  let look = await claimLook();
+  assert.deepEqual([look.tone, look.label, look.inRing, look.badge], ['ok', '83%', '1', null], JSON.stringify(look));
+  assert.equal(look.inside, true, 'the count sits inside the ring');
+  assert.equal(look.fill, 'rgb(145, 71, 255)', 'Twitch purple');
+  await alpha.screenshot({ path: join(out, '12b-claim-wide.png'), clip: { x: 0, y: 672, width: 400, height: 48 } });
+  await alpha.evaluate(() => { document.getElementById('wrap').style.width = '320px'; });
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'true');
+  look = await claimLook();
+  assert.deepEqual([look.tone, look.inRing, look.badge], ['ok', null, '1'], JSON.stringify(look));
+  assert.equal(await rowHeight(alpha), 32, 'the badge must not wrap the row');
+  await alpha.screenshot({ path: join(out, '12c-claim-narrow.png'), clip: { x: 0, y: 672, width: 340, height: 48 } });
+  await alpha.evaluate(() => { document.getElementById('wrap').style.width = '400px'; });
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'false');
+  s = await poll();
+  await alpha.waitForFunction(() => !('claims' in document.getElementById('drops-tracker-chip').dataset));
+  step('claim waiting: ring stays green, purple count inside the ring when wide and on its corner when narrow');
 
   // Clicking opens the panel in the page itself. Playwright's selectors pierce open shadow roots.
   await alpha.evaluate(() => document.getElementById('drops-tracker-chip').shadowRoot.querySelector('button').click());
@@ -398,7 +437,7 @@ try {
   await real.setViewportSize({ width: 300, height: 720 });
   await real.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'true');
   const ringText = await real.evaluate(() => {
-    const t = document.getElementById('drops-tracker-chip').shadowRoot.querySelector('text');
+    const t = document.getElementById('drops-tracker-chip').shadowRoot.querySelector('.pct');
     return { text: t.textContent, fill: getComputedStyle(t).fill };
   });
   assert.ok(ringText.text, 'the percentage must show in the ring');
