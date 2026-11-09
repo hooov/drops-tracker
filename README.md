@@ -6,7 +6,7 @@ Twitch's own progress bars only update when the page loads, and watch-time somet
 
 It is read-only. It never claims a drop, never simulates watching, and never opens a stream itself.
 
-![Drops Tracker on a Twitch channel: the chip in the chat row and the panel open above it, earning on AlphaTV with 30 of the last 30 minutes counted](docs/screenshots/hero.png)
+![Drops Tracker on a Twitch channel: the chip in the chat row and the panel open above it, earning on TideRunner with 30 of the last 30 minutes counted](docs/screenshots/hero.png)
 
 > Unofficial. It uses the same private GraphQL operations as twitch.tv, which can change without notice. Not affiliated with Twitch.
 

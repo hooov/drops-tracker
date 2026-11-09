@@ -5,6 +5,29 @@
 export const LOG_MAX = 1440; // A full day of watching.
 export const MIN_TO_COMPARE = 10; // Fewer minutes than this on either side says nothing yet.
 
+/**
+ * The panel's minute strip, from the tracker's state.timeline (not this log): the last `span`
+ * wall-clock minutes, oldest first, each 'gain', 'miss' (watched, nothing credited) or '' (not
+ * watching). Twitch credits on its own clock, so a check can find nothing and the next one two
+ * (measured 2026-11-09). That surplus fills the nearest earlier misses, so a late minute is not
+ * drawn as lost while the count under it (creditRate in tracker.js) says it was counted.
+ */
+export function timelineCells(timeline, span = 30) {
+  if (!timeline?.length) return [];
+  const latest = timeline[timeline.length - 1].m;
+  const byMinute = new Map(timeline.map((t) => [t.m, t]));
+  const cells = [];
+  for (let m = latest - span + 1; m <= latest; m++) {
+    const t = byMinute.get(m);
+    cells.push(t?.g ? 'gain' : t?.w ? 'miss' : '');
+    let surplus = (t?.d ?? 0) - 1;
+    for (let i = cells.length - 2; i >= 0 && surplus > 0; i--) {
+      if (cells[i] === 'miss') { cells[i] = 'gain'; surplus--; }
+    }
+  }
+  return cells;
+}
+
 /** What the tracker knew this minute, or null if nothing was being watched. */
 export function logEntry(prev, obs, next, now) {
   const m = Math.floor(now / 60000);

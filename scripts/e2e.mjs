@@ -195,12 +195,18 @@ try {
   const byLogin = Object.fromEntries(s.streams.map((t) => [t.login, t]));
   assert.equal(byLogin.alphatv.credited, true);
   assert.equal(byLogin.bravo.channelState, 'no_drops');
-  for (let i = 0; i < 5; i++) { await advance(1, 1); await alpha.waitForTimeout(150); await poll(); }
+  // Five more minutes, the last two credited late as Twitch does: nothing, then two at once.
+  for (const added of [1, 1, 1, 0, 2]) { await advance(1, added); await alpha.waitForTimeout(150); await poll(); }
+  const lastCells = await popup.waitForFunction(() => {
+    const cells = [...document.querySelectorAll('#timeline i')].slice(-2).map((i) => i.className);
+    return cells.length === 2 && cells.every(Boolean) && cells;
+  }).then((h) => h.jsonValue());
+  assert.deepEqual(lastCells, ['gain', 'gain'], 'a minute credited late must not be drawn as lost');
   await shot('2-earning');
   const size = await popup.evaluate(() => { const p = document.querySelector('.panel'); return { w: p.offsetWidth, h: p.offsetHeight }; });
   assert.equal(size.w, 326, 'same width as Twitch\'s own panel');
   console.log(`   toolbar panel is ${size.w}x${size.h}px`);
-  step('minutes rising: Earning, badge 81%, AlphaTV credited, Bravo labelled as no drops');
+  step('minutes rising: Earning, badge 81%, AlphaTV credited, Bravo labelled as no drops, late minute drawn as counted');
 
   // Chat chip: read the real shadow DOM on the real tab.
   const chip = (page) => page.evaluate(() => {

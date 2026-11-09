@@ -3,7 +3,7 @@
 // product's own rendering. What is staged: the twitch.tv channel pages (local HTML with a canvas
 // "stream", so nothing plays from Twitch and no slot is used on your IP) and the GQL answers.
 // Campaigns, rewards and art are real ones seen on Twitch on 2026-11-07, loaded from Twitch's CDN.
-// Channels are the placeholders used everywhere else in this repo. Output: docs/screenshots/.
+// Channels are made-up names used only for these images (the tests use AlphaTV, Bravo and so on). Output: docs/screenshots/.
 // With --store (npm run store-images): Chrome Web Store images instead, in docs/store/. The store
 // takes only exactly 1280x800 screenshots, so the same scenes are shot full-frame at 1280x800, 1x,
 // plus the 440x280 promo tile.
@@ -98,15 +98,15 @@ function dashboardAnswer(now) {
 }
 
 const CHANNELS = {
-  alphatv: { id: '10000001', displayName: 'AlphaTV', game: 'Sea of Thieves', title: 'Chill sailing with chat | Season 21 Drops ON', viewers: 1037, hue: 200 },
-  bravo: { id: '10000002', displayName: 'Bravo', game: 'Just Chatting', title: 'Coffee and questions', viewers: 1405, hue: 330 },
-  charlie: { id: '10000003', displayName: 'Charlie', game: 'Grand Theft Auto V', title: '30th birthday stream, badges all week', viewers: 2210, hue: 40 },
+  tiderunner: { id: '10000001', displayName: 'TideRunner', game: 'Sea of Thieves', title: 'Chill sailing with chat | Season 21 Drops ON', viewers: 1037, hue: 200 },
+  kettletalk: { id: '10000002', displayName: 'KettleTalk', game: 'Just Chatting', title: 'Coffee and questions', viewers: 1405, hue: 330 },
+  nightshiftrp: { id: '10000003', displayName: 'NightShiftRP', game: 'Grand Theft Auto V', title: '30th birthday stream, badges all week', viewers: 2210, hue: 40 },
 };
 
 // ---------------------------------------------------------------- staged twitch.tv page
 
 const CHAT = [
-  ['seaworthy_sam', '#ff7f50', 'that sunset is unreal'],
+  ['seaworthy_sam', '#ff7f50', 'that cannon shot was unreal'],
   ['mintleaf', '#00c8af', 'drops working for anyone else?'],
   ['k4rma', '#9acd32', 'yep, ticking for me'],
   ['lowtide', '#1e90ff', 'GG on that fort'],
@@ -139,7 +139,15 @@ function channelPage(login) {
   .rail { width: 50px; background: #1f1f23; display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 12px; }
   .rail i { width: 30px; height: 30px; border-radius: 50%; display: block; }
   .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .player { position: relative; }
   video { width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; object-fit: cover; }
+  .controls { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; padding: 0 12px 6px; display: flex; align-items: flex-end; gap: 4px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.55)); }
+  .controls .btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: #fff; }
+  .controls .vol { width: 72px; height: 30px; display: flex; align-items: center; margin: 0 8px 0 2px; }
+  .controls .vol i { position: relative; display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.3); }
+  .controls .vol i::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 70%; border-radius: 2px; background: #fff; }
+  .controls .vol i::after { content: ''; position: absolute; left: 70%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; }
+  .controls .gap { flex: 1; }
   .info { display: flex; gap: 12px; padding: 14px 20px; align-items: flex-start; }
   .avatar { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 3px solid #eb0400; padding: 3px; }
   .avatar span { display: flex; width: 100%; height: 100%; border-radius: 50%; align-items: center; justify-content: center; font-weight: 700; font-size: 22px; color: #fff; background: hsl(${ch.hue} 60% 42%); }
@@ -169,7 +177,18 @@ function channelPage(login) {
 <div class="main">
   <div class="rail"><i style="background:hsl(200 55% 45%)"></i><i style="background:hsl(330 55% 45%)"></i><i style="background:hsl(40 70% 45%)"></i><i style="background:hsl(140 45% 38%)"></i><i style="background:hsl(270 45% 50%)"></i></div>
   <div class="stage">
-    <video id="v" muted autoplay playsinline></video>
+    <div class="player">
+      <video id="v" muted autoplay playsinline></video>
+      <div class="controls">
+        <div class="btn"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="4" width="3.5" height="12" rx="1"/></svg></div>
+        <div class="btn"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path d="M13 6.5a5 5 0 0 1 0 7M15.5 4a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <div class="vol"><i></i></div>
+        <div class="gap"></div>
+        <div class="btn"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 2.2-1.6-.3a6 6 0 0 0-.6-1.4l.9-1.4-1.3-1.3-1.4.9a6 6 0 0 0-1.4-.6L11.8 2h-1.6l-.3 1.6a6 6 0 0 0-1.4.6l-1.4-.9-1.3 1.3.9 1.4a6 6 0 0 0-.6 1.4L2.6 8.9v1.8l1.6.3c.1.5.3 1 .6 1.4l-.9 1.4 1.3 1.3 1.4-.9c.4.3.9.5 1.4.6l.3 1.6h1.8l.3-1.6c.5-.1 1-.3 1.4-.6l1.4.9 1.3-1.3-.9-1.4c.3-.4.5-.9.6-1.4l1.6-.3V9.2Z"/></svg></div>
+        <div class="btn"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="M12.5 4.5v11"/></svg></div>
+        <div class="btn"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5"/></svg></div>
+      </div>
+    </div>
     <div class="info">
       <div class="avatar"><span>${ch.displayName[0]}</span></div>
       <div><h2>${ch.displayName}</h2><div class="title">${ch.title}</div><div class="game">${ch.game}</div><span class="tag">English</span><span class="tag">DropsEnabled</span></div>
@@ -191,41 +210,20 @@ function channelPage(login) {
       <div style="display:flex;align-items:center;flex:none;margin-right:auto">
         <div><div><div data-test-selector="community-points-summary" class="points"><i></i>12.4K</div></div></div>
       </div>
-      <div class="icon" style="flex:none"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 2.2-1.6-.3a6 6 0 0 0-.6-1.4l.9-1.4-1.3-1.3-1.4.9a6 6 0 0 0-1.4-.6L11.8 2h-1.6l-.3 1.6a6 6 0 0 0-1.4.6l-1.4-.9-1.3 1.3.9 1.4a6 6 0 0 0-.6 1.4L2.6 8.9v1.8l1.6.3c.1.5.3 1 .6 1.4l-.9 1.4 1.3 1.3 1.4-.9c.4.3.9.5 1.4.6l.3 1.6h1.8l.3-1.6c.5-.1 1-.3 1.4-.6l1.4.9 1.3-1.3-.9-1.4c.3-.4.5-.9.6-1.4l1.6-.3V9.2Z"/></svg></div>
+      <div class="icon" style="flex:none"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 2.2-1.6-.3a6 6 0 0 0-.6-1.4l.9-1.4-1.3-1.3-1.4.9a6 6 0 0 0-1.4-.6L11.8 2h-1.6l-.3 1.6a6 6 0 0 0-1.4.6l-1.4-.9-1.3 1.3.9 1.4a6 6 0 0 0-.6 1.4L2.6 8.9v1.8l1.6.3c.1.5.3 1 .6 1.4l-.9 1.4 1.3 1.3 1.4-.9c.4.3.9.5 1.4.6l.3 1.6h1.8l.3-1.6c.5-.1 1-.3 1.4-.6l1.4.9 1.3-1.3-.9-1.4c.3-.4.5-.9.6-1.4l1.6-.3V9.2Z"/></svg></div>
       <div class="send" style="flex:none">Chat</div>
     </div>
   </div>
 </aside>
 <script>
-  // A "stream" that really plays, so the extension reads a live player: a calm sea at dusk.
+  // A "stream" that really plays, so the extension reads a live player: a plain grey gradient,
+  // redrawn every frame so the captured stream keeps advancing. The controls are HTML on top.
   const c = document.createElement('canvas'); c.width = 960; c.height = 540;
   const g = c.getContext('2d');
-  const hue = ${ch.hue};
-  function frame(t) {
-    const s = t / 1000;
-    const sky = g.createLinearGradient(0, 0, 0, 300);
-    sky.addColorStop(0, 'hsl(' + (hue + 40) + ' 45% 14%)'); sky.addColorStop(0.65, 'hsl(' + (hue + 330) % 360 + ' 55% 38%)'); sky.addColorStop(1, 'hsl(28 85% 62%)');
-    g.fillStyle = sky; g.fillRect(0, 0, 960, 300);
-    const sun = g.createRadialGradient(620, 290, 4, 620, 290, 160);
-    sun.addColorStop(0, 'rgba(255,236,190,1)'); sun.addColorStop(0.18, 'rgba(255,190,120,.9)'); sun.addColorStop(1, 'rgba(255,150,90,0)');
-    g.fillStyle = sun; g.fillRect(380, 100, 480, 200);
-    const sea = g.createLinearGradient(0, 300, 0, 540);
-    sea.addColorStop(0, 'hsl(' + hue + ' 40% 30%)'); sea.addColorStop(1, 'hsl(' + hue + ' 55% 9%)');
-    g.fillStyle = sea; g.fillRect(0, 300, 960, 240);
-    for (let i = 0; i < 26; i++) {
-      const y = 304 + i * i * 0.36;
-      g.strokeStyle = 'rgba(255,' + (200 - i * 3) + ',150,' + (0.34 - i * 0.011) + ')';
-      g.lineWidth = 1 + i * 0.08;
-      g.beginPath();
-      for (let x = 0; x <= 960; x += 12) g.lineTo(x, y + Math.sin(x / (40 + i * 6) + s * (0.8 + i * 0.05) + i) * (1 + i * 0.25));
-      g.stroke();
-    }
-    const by = 292 + Math.sin(s * 1.3) * 3;
-    g.fillStyle = 'rgba(10,8,20,.92)';
-    g.beginPath(); g.moveTo(300, by); g.lineTo(390, by); g.lineTo(378, by + 14); g.lineTo(312, by + 14); g.closePath(); g.fill();
-    g.fillRect(343, by - 64, 3, 64);
-    g.beginPath(); g.moveTo(347, by - 60); g.quadraticCurveTo(378, by - 36, 349, by - 8); g.closePath(); g.fill();
-    g.beginPath(); g.moveTo(341, by - 52); g.quadraticCurveTo(318, by - 30, 339, by - 10); g.closePath(); g.fill();
+  function frame() {
+    const bg = g.createRadialGradient(480, 230, 40, 480, 270, 620);
+    bg.addColorStop(0, '#4a4a50'); bg.addColorStop(0.55, '#2c2c31'); bg.addColorStop(1, '#141417');
+    g.fillStyle = bg; g.fillRect(0, 0, 960, 540);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -261,7 +259,7 @@ async function scene(name, { minutes, setup }) {
       const url = new URL(r.request().url());
       if (url.pathname.startsWith('/drops/campaigns')) return r.fulfill({ contentType: 'text/html', body: CAMPAIGNS_PAGE });
       const login = url.pathname.split('/')[1];
-      return r.fulfill({ contentType: 'text/html', body: channelPage(CHANNELS[login] ? login : 'alphatv') });
+      return r.fulfill({ contentType: 'text/html', body: channelPage(CHANNELS[login] ? login : 'tiderunner') });
     });
     await ctx.route('https://gql.twitch.tv/**', (r) => {
       if (!r.request().postData()?.includes('ViewerDropsDashboard')) return r.fallback();
@@ -369,8 +367,8 @@ const SOT_AVAILABLE = [{
 
 const SOT_DATA = {
   channels: CHANNELS,
-  available: { alphatv: SOT_AVAILABLE },
-  session: { alphatv: { channel: { displayName: 'AlphaTV', id: '10000001', name: 'alphatv' }, dropID: 'sot-120', game: { displayName: 'Sea of Thieves', id: '490377' }, requiredMinutesWatched: 120 } },
+  available: { tiderunner: SOT_AVAILABLE },
+  session: { tiderunner: { channel: { displayName: 'TideRunner', id: '10000001', name: 'tiderunner' }, dropID: 'sot-120', game: { displayName: 'Sea of Thieves', id: '490377' }, requiredMinutesWatched: 120 } },
   inventory: SOT_INVENTORY,
 };
 
@@ -429,8 +427,8 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
   setup: async ({ ctx, sw, helper, poll, tick }) => {
     await installTwitch(sw, SOT_DATA);
     await sw.evaluate(() => { self.__minutes = 72; });
-    const alpha = await openChannel(ctx, 'alphatv');
-    await openChannel(ctx, 'bravo');
+    const alpha = await openChannel(ctx, 'tiderunner');
+    await openChannel(ctx, 'kettletalk');
     await poll();
     for (let i = 0; i < 31; i++) await tick(1);
     const s = await helper.evaluate(async () => (await chrome.storage.local.get('state')).state);
@@ -459,9 +457,9 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
         const two = i >= 70 && i < 118;
         const hidden = i % 9 < 4;
         const missed = two ? i % 6 === 0 : i % 47 === 0;
-        minuteLog.push({ m: now - 186 + i, d: missed ? 0 : 1, e: 1, p: two ? 2 : 1, c: 'alphatv', cr: 1, st: 'playing', h: hidden ? 1 : 0, a: hidden ? 0 : 1, pm: i % 5 === 0 ? 1 : 0, v0: 0, tm: 0, q: 1080, s: 100, ad: i % 31 === 0 ? 1 : 0 });
+        minuteLog.push({ m: now - 186 + i, d: missed ? 0 : 1, e: 1, p: two ? 2 : 1, c: 'tiderunner', cr: 1, st: 'playing', h: hidden ? 1 : 0, a: hidden ? 0 : 1, pm: i % 5 === 0 ? 1 : 0, v0: 0, tm: 0, q: 1080, s: 100, ad: i % 31 === 0 ? 1 : 0 });
       }
-      for (let i = 0; i < 4; i++) minuteLog.push({ m: now + i - 190, st: 'paused', d: 0, e: 1, p: 1, c: 'alphatv', cr: 1, h: 1, a: 0, pm: 0, v0: 0, tm: 0, q: 1080, s: 0, ad: 0 });
+      for (let i = 0; i < 4; i++) minuteLog.push({ m: now + i - 190, st: 'paused', d: 0, e: 1, p: 1, c: 'tiderunner', cr: 1, h: 1, a: 0, pm: 0, v0: 0, tm: 0, q: 1080, s: 0, ad: 0 });
       // The debug tools only show with Developer mode on.
       return chrome.storage.local.set({ minuteLog, settings: { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true } });
     });
@@ -494,7 +492,7 @@ await scene('hung: pill, chip and panel', {
     await sw.evaluate(() => { self.__minutes = 72; });
     // One stream only: with a second one playing the verdict names it instead (measured
     // 2026-11-09), and this image shows the general case with its Reload button.
-    const alpha = await openChannel(ctx, 'alphatv');
+    const alpha = await openChannel(ctx, 'tiderunner');
     await poll();
     for (let i = 0; i < 24; i++) await tick(1);
     for (let i = 0; i < 6; i++) await tick();
@@ -509,7 +507,7 @@ await scene('hung: pill, chip and panel', {
 
     // Then the channel switches to a game with no drops: earning stops without any error.
     await tick(1);
-    await sw.evaluate(() => { self.__gone = ['alphatv']; });
+    await sw.evaluate(() => { self.__gone = ['tiderunner']; });
     for (let i = 0; i < 3; i++) await tick();
     await closePanel(alpha);
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip')?.shadowRoot.querySelector('span').textContent === 'Stopped');
@@ -526,15 +524,15 @@ await scene('badges tab', {
     const mixed = structuredClone(badgeFx.mixed.viewerDropCampaigns);
     await installTwitch(sw, {
       channels: CHANNELS,
-      available: { alphatv: SOT_AVAILABLE, charlie: mixed },
+      available: { tiderunner: SOT_AVAILABLE, nightshiftrp: mixed },
       session: {
-        alphatv: SOT_DATA.session.alphatv,
-        charlie: { ...badgeFx.mixedSession, channel: { displayName: 'Charlie', id: '10000003', name: 'charlie' } },
+        tiderunner: SOT_DATA.session.tiderunner,
+        nightshiftrp: { ...badgeFx.mixedSession, channel: { displayName: 'NightShiftRP', id: '10000003', name: 'nightshiftrp' } },
       },
       inventory: SOT_INVENTORY,
     });
     await sw.evaluate(() => { self.__minutes = 101; });
-    const charlie = await openChannel(ctx, 'charlie');
+    const charlie = await openChannel(ctx, 'nightshiftrp');
     await poll();
     for (let i = 0; i < 12; i++) await tick(1);
     await charlie.bringToFront();

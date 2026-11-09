@@ -4,7 +4,7 @@ import { INTERVALS, normalize, autoReloadNote } from './settings.js';
 import { STALE_MS, channelDrops } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day } from './directory.js';
 import { badgeSections } from './badges.js';
-import { compareMinutes } from './minutelog.js';
+import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
 
 const CLOSE_ICON = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
@@ -489,13 +489,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const rate = $('rate');
     rate.hidden = true;
     if (box.hidden) return;
-    const latest = state.timeline[state.timeline.length - 1].m;
-    const byMinute = new Map(state.timeline.map((t) => [t.m, t]));
-    const cells = [];
-    for (let m = latest - 29; m <= latest; m++) {
-      const t = byMinute.get(m);
-      cells.push(t?.g ? 'gain' : t?.w ? 'miss' : '');
-    }
+    const cells = timelineCells(state.timeline);
     setList(box, cells.join(), () => cells.map((c) => el('i', c)));
     const r = state.rate;
     if (r?.watched) {
