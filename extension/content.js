@@ -48,16 +48,16 @@
     .track{stroke:var(--color-background-progress,rgba(83,83,95,.55))}
     .arc{stroke:var(--tone);stroke-linecap:round}
     text{fill:currentColor;stroke:none;font-weight:700;text-anchor:middle;dominant-baseline:central}
-    .pct{display:none;font-size:12.5px}
-    .pct.wide{font-size:10.5px}
+    .pct{display:none;font-size:11px}
+    .pct.wide{font-size:9.5px}
     /* Earned drops waiting to be claimed: a purple count, inside the ring beside the label, or on
        the ring's corner when chat is narrow and the ring holds the percentage. Never the ring's colour. */
     .claim{display:none}
     .claim circle{fill:var(--color-background-button-primary-default,#9147ff);stroke:none}
-    .claim text{fill:#fff;font-size:15px}
+    .claim text{fill:#fff;font-size:13px}
     :host([data-claims]:not([data-compact="true"])) .claim{display:inline}
-    b{display:none;position:absolute;top:-2px;right:-4px;min-width:15px;height:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;
-      background:var(--color-background-button-primary-default,#9147ff);color:#fff;font:700 10px/15px var(--font-base,Inter,Arial,sans-serif);text-align:center;
+    b{display:none;position:absolute;top:-1px;right:-3px;min-width:13px;height:13px;padding:0 2px;box-sizing:border-box;border-radius:7px;
+      background:var(--color-background-button-primary-default,#9147ff);color:#fff;font:700 9px/13px var(--font-base,Inter,Arial,sans-serif);text-align:center;
       box-shadow:0 0 0 2px var(--color-background-base,#18181b)}
     :host([data-claims][data-compact="true"]) b{display:block}
     /* No room for the label: a bigger ring with the number inside, so the percentage always shows. */
@@ -72,7 +72,7 @@
       <circle class="track" cx="16" cy="16" r="13.5"/>
       <circle class="arc" cx="16" cy="16" r="13.5" transform="rotate(-90 16 16)"/>
       <text class="pct" x="16" y="16.5"></text>
-      <g class="claim"><circle cx="16" cy="16" r="9"/><text x="16" y="16.5"></text></g>
+      <g class="claim"><circle cx="16" cy="16" r="8"/><text x="16" y="16.5"></text></g>
     </svg><span></span><b></b></button>`;
   const button = shadow.querySelector('button');
   const arc = shadow.querySelector('.arc');

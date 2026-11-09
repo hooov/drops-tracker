@@ -410,6 +410,21 @@ async function shotChat(page, file, { left = W - CHAT_W } = {}) {
   const top = Math.max(50, Math.floor(panelTop) - 96);
   await page.screenshot({ path: join(out, file), clip: { x: left, y: top, width: W - left, height: H - top } });
 }
+/**
+ * A chip state on its own: the sample inventory has an earned drop from an ended campaign, which
+ * the purple claim count shows on every state. Claim reminders go off for the shot and back on.
+ */
+async function plainChip(helper, page) {
+  const reminders = (on) => helper.evaluate(async (v) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, claimReminders: v } });
+  }, on);
+  await reminders(false);
+  await page.waitForFunction(() => !('claims' in document.getElementById('drops-tracker-chip').dataset));
+  const png = await page.screenshot({ clip: await chipClip(page) });
+  await reminders(true);
+  return png;
+}
 async function chipClip(page) {
   return page.evaluate(() => {
     const row = document.querySelector('[data-test-selector="chat-input-buttons-container"]').getBoundingClientRect();
@@ -435,7 +450,7 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
     if (s.verdict.code !== 'earning') throw new Error(`expected earning, got ${JSON.stringify(s.verdict)}`);
     await alpha.bringToFront();
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip')?.dataset.tone === 'ok');
-    chipShots.push(['Earning', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+    chipShots.push(['Earning', await plainChip(helper, alpha)]);
 
     await openPanel(alpha);
     await alpha.screenshot({ path: join(out, target('hero.png')) });
@@ -480,7 +495,7 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
     console.log('   narrow chat:', JSON.stringify(seen));
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'true', null, { timeout: 5000 });
     await alpha.waitForTimeout(300);
-    chipShots.push(['Narrow chat', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+    chipShots.push(['Narrow chat', await plainChip(helper, alpha)]);
 
     // A drop waiting to be claimed: a purple count, on the ring's corner here, inside it when wide.
     await helper.evaluate(async () => {
@@ -515,7 +530,7 @@ await scene('hung: pill, chip and panel', {
     await alpha.bringToFront();
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip')?.dataset.tone === 'bad');
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-pill')?.style.display !== 'none');
-    chipShots.push(['Not counting', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+    chipShots.push(['Not counting', await plainChip(helper, alpha)]);
     await openPanel(alpha);
     await alpha.screenshot({ path: join(out, target('hung.png')) });
 
@@ -527,7 +542,7 @@ await scene('hung: pill, chip and panel', {
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip')?.shadowRoot.querySelector('span').textContent === 'Stopped');
     await alpha.mouse.move(5, 300);
     await alpha.waitForTimeout(300);
-    chipShots.push(['Stopped', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+    chipShots.push(['Stopped', await plainChip(helper, alpha)]);
   },
 });
 
