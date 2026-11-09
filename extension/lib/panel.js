@@ -153,7 +153,8 @@ function verdictText(state, now) {
       const where = v.channel ? ` on ${v.channel}` : '';
       // With an eligible tab open the session may just have failed, so do not claim it is elsewhere.
       const elsewhere = !v.channel && !state.streams?.some((s) => s.channelState === 'eligible');
-      return [`${v.slow ? 'Earning slowly' : 'Earning'}${where}`, elsewhere ? 'Minutes are rising from a stream outside this browser.' : ''];
+      const detail = v.wasted?.message || (elsewhere ? 'Minutes are rising from a stream outside this browser.' : '');
+      return [`${v.slow ? 'Earning slowly' : 'Earning'}${where}`, detail];
     }
     case 'waiting':
       return ['Checking', 'Waiting for the first minute to land.'];
@@ -177,7 +178,7 @@ function verdictText(state, now) {
 
 const toneOf = (v) => {
   if (v.code === 'stalled') return 'bad';
-  if (v.code === 'earning') return v.slow ? 'warn' : 'ok';
+  if (v.code === 'earning') return v.slow || v.wasted ? 'warn' : 'ok';
   if (v.code === 'waiting') return 'info';
   if (v.lost || v.limited || ['error', 'api_changed', 'signed_out'].includes(v.code)) return 'warn';
   return 'idle';
@@ -483,6 +484,41 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     action.onclick = reloadable ? () => reloadTab?.(v.tabId) : null;
   }
 
+  /**
+   * The minute strip, drawn in screen pixels. As 30 grid columns it sat on fractional pixels, and
+   * at 125% display scaling squares came out 9 or 10 screen pixels wide with gaps of 2 or 3
+   * (measured in the e2e). Layout rounds to 1/64 px, so no CSS sizing fixes that; a canvas does.
+   * Redrawn only when the cells, size, scaling or colours change.
+   */
+  function drawTimeline(box, cells) {
+    const dpr = globalThis.devicePixelRatio || 1;
+    const w = Math.floor(box.clientWidth * dpr);
+    const h = Math.max(1, Math.round(box.clientHeight * dpr));
+    if (!w || !cells.length) return;
+    const cs = getComputedStyle(box);
+    const colors = { gain: cs.getPropertyValue('--dt-brand').trim(), miss: cs.getPropertyValue('--dt-bad').trim(), '': cs.getPropertyValue('--dt-track').trim() };
+    const key = JSON.stringify([cells, w, h, dpr, colors]);
+    let canvas = box.querySelector('canvas');
+    if (canvas && canvas.dataset.key === key) return;
+    if (!canvas) box.replaceChildren(canvas = document.createElement('canvas'));
+    canvas.dataset.key = key;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = `${w / dpr}px`;
+    canvas.style.height = `${h / dpr}px`;
+    // Every gap identical, which is what showed. The squares fill the width, so the spare pixels
+    // are spread one per square: some are one screen pixel wider, spaced evenly.
+    const gap = Math.max(1, Math.round(2 * dpr));
+    const room = w - gap * (cells.length - 1);
+    const g = canvas.getContext('2d');
+    cells.forEach((c, i) => {
+      const left = Math.round((room * i) / cells.length) + gap * i;
+      const right = Math.round((room * (i + 1)) / cells.length) + gap * i;
+      g.fillStyle = colors[c] || colors[''];
+      g.fillRect(left, 0, right - left, h);
+    });
+  }
+
   function renderTimeline(state) {
     const box = $('timeline');
     box.hidden = !state.timeline?.length;
@@ -490,7 +526,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     rate.hidden = true;
     if (box.hidden) return;
     const cells = timelineCells(state.timeline);
-    setList(box, cells.join(), () => cells.map((c) => el('i', c)));
+    box.dataset.cells = cells.join(',');
+    drawTimeline(box, cells);
     const r = state.rate;
     if (r?.watched) {
       rate.hidden = false;
