@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import { normalize, refreshDue, autoReloadStep, autoReloadNote, DEFAULTS, DROPS_PAGES, RELOAD_MAX } from '../extension/lib/settings.js';
 
 const MIN = 60000;
-const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: true, devMode: false });
+const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: true, devMode: false, claimReminders: true });
 
 test('helpers on and developer mode off by default; bad stored values fall back to the defaults', () => {
   assert.deepEqual(normalize(undefined), DEFAULTS);
-  assert.deepEqual(DEFAULTS, { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false });
-  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7, autoReload: 1, devMode: 'on' }), DEFAULTS);
+  assert.deepEqual(DEFAULTS, { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false, claimReminders: true });
+  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7, autoReload: 1, devMode: 'on', claimReminders: 0 }), DEFAULTS);
   assert.deepEqual(normalize({ autoRefresh: true, autoRefreshMinutes: 10 }), on(10));
 });
 
 test('a saved off wins over a default-on setting, so turning one off sticks', () => {
-  const off = normalize({ autoRefresh: false, autoReload: false, devMode: true });
-  assert.deepEqual([off.autoRefresh, off.autoReload, off.devMode], [false, false, true]);
+  const off = normalize({ autoRefresh: false, autoReload: false, devMode: true, claimReminders: false });
+  assert.deepEqual([off.autoRefresh, off.autoReload, off.devMode, off.claimReminders], [false, false, true, false]);
 });
 
 test('off never refreshes and clears the timer', () => {
@@ -106,6 +106,32 @@ test('the note tracks tries and says when it gave up', () => {
   const state = hung();
   assert.equal(autoReloadNote({ since: 0, tries: 1, lastAt: 6 * MIN }, state, 8 * MIN), 'Auto-reloaded 1 of 3, 2m ago.');
   assert.match(autoReloadNote({ since: 0, tries: RELOAD_MAX, lastAt: 26 * MIN }, state, 30 * MIN), /did not help/);
-  assert.equal(autoReloadNote({ since: 99, tries: 1, lastAt: 6 * MIN }, state, 8 * MIN), '', 'about another hang');
+  assert.equal(autoReloadNote({ since: 99, tries: 1, lastAt: 6 * MIN }, hung('uncounted', 3 * 60 * MIN), 3 * 60 * MIN + 8 * MIN), '', 'about another hang, hours later');
+  // Same rule as the step: a pause poll restarting since mid-hang must not drop the note.
+  assert.equal(autoReloadNote({ since: 99, tries: 1, lastAt: 6 * MIN }, state, 8 * MIN), 'Auto-reloaded 1 of 3, 2m ago.', 'same hang, new since');
   assert.equal(autoReloadNote(null, state, 8 * MIN), '');
+});
+
+test('a reload that leaves the player paused for a poll does not reset the 3-try cap', () => {
+  // Each reload can briefly pause the player, which restarts the verdict's since. Without minutes
+  // coming back in between, it is still the same hang.
+  let memo = null;
+  let reloads = 0;
+  for (let i = 0; i < 6; i++) { // just under an hour after the last reload
+    const since = i * 11 * MIN; // a fresh since every round, as a pause-then-play would give
+    const step = autoReloadStep(memo, hung('uncounted', since), reload, since + 7 * MIN);
+    if (step.tabId != null) reloads++;
+    memo = step.memo;
+  }
+  assert.equal(reloads, RELOAD_MAX);
+});
+
+test('minutes coming back give the next hang a fresh budget', () => {
+  let memo = { since: 0, tries: RELOAD_MAX, lastAt: 30 * MIN, recoveredAt: null };
+  const state = { ...hung('uncounted', 40 * MIN), lastGainAt: 35 * MIN };
+  const step = autoReloadStep(memo, state, reload, 47 * MIN);
+  assert.equal(step.tabId, 7);
+  assert.equal(step.memo.tries, 1);
+  memo = { since: 0, tries: RELOAD_MAX, lastAt: 0, recoveredAt: null };
+  assert.equal(autoReloadStep(memo, hung('uncounted', 2 * 60 * MIN), reload, 2 * 60 * MIN + 7 * MIN).tabId, 7, 'an hour later is a new hang');
 });

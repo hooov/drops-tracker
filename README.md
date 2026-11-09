@@ -4,7 +4,7 @@ A Chromium (MV3) extension that tells you whether Twitch is really adding Drops 
 
 Twitch's own progress bars only update when the page loads, and watch-time sometimes stops being credited while the stream keeps playing fine. This extension asks Twitch's server once a minute instead of trusting the page, and treats rising minutes as the only proof of earning.
 
-It is read-only. It never claims a drop, never simulates watching, and never opens a stream itself.
+It never claims a drop, never simulates watching, and never opens a stream itself. Two helpers do touch your tabs, both on by default and both can be switched off in Settings: it reloads open Drops pages, which never update by themselves, and reloads a stream tab whose minutes have stopped.
 
 ![Drops Tracker on a Twitch channel: the chip in the chat row and the panel open above it, earning on TideRunner with 30 of the last 30 minutes counted](docs/screenshots/hero.png)
 
@@ -60,7 +60,7 @@ There is no build step. After changing the code, press **Reload** on the extensi
 - **My Drops**: the verdict, a 30-minute credit strip, the drops you can earn where you are, each open stream's state with a reload button, and earned rewards you have not claimed. On a channel with no drops it shows what another open tab can earn, headed `Watch Drops on <channel>`, or nothing.
 - **All Drops**: every campaign running on Twitch, yours first, with search. Twitch only gives this list to its own campaigns page, so the extension opens that page in a background tab for a moment (no video, so it uses no stream slot) and reads the answer the page receives. Cached for 30 minutes.
 - **Badges**: the current channel's sub and watch badge drops. Watch badges are also tracked like any other drop.
-- **Settings**: the two helpers below, and **Developer mode**, which shows the debug tools under them: the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
+- **Settings**: the two helpers below, **Claim reminders** (the chip's purple count, the Ready to claim list and its notification; on by default), and under Advanced, **Developer mode**, which shows the debug tools: the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
 
 | My Drops | All Drops | Badges |
 |---|---|---|
@@ -152,7 +152,7 @@ Before changing behaviour, read [CONTRIBUTING.md](CONTRIBUTING.md). It lists the
 ## Privacy
 - Talks only to `twitch.tv` and `gql.twitch.tv`. No analytics, no other servers.
 - The Twitch `auth-token` cookie is read for each request and never stored, logged or returned.
-- Everything it keeps (state, settings, the minute log) stays in `chrome.storage.local` in your browser. **Copy debug info** builds its output from a fixed list of fields, so it holds channels and progress but never your login.
+- Everything it keeps (state, settings, the minute log) stays in `chrome.storage.local` in your browser. **Copy debug info** and **Copy log** build their output from a fixed list of fields, so they never hold your login, but they do hold which channels you watched, minute by minute, for up to a day.
 
 ## License
 [GPL-3.0](LICENSE). You can use, change and share it; versions you distribute must stay under the GPL.

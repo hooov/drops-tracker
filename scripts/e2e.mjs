@@ -101,16 +101,24 @@ try {
   await popup.click('#tab-settings');
   assert.equal(await popup.isChecked('#auto-refresh'), true, 'Auto-refresh is on by default');
   assert.equal(await popup.isChecked('#auto-reload'), true, 'Auto-reload is on by default');
+  assert.equal(await popup.isChecked('#claim-reminders'), true, 'Claim reminders are on by default');
   assert.equal(await popup.isChecked('#dev-mode'), false, 'Developer mode is off by default');
   assert.equal(await popup.isVisible('#log-section'), false, 'debug tools stay hidden until Developer mode');
+  // Keyboard: arrows move between tabs, and only the selected tab is a Tab stop.
+  await popup.focus('#tab-settings');
+  await popup.keyboard.press('ArrowLeft');
+  assert.equal(await popup.evaluate(() => document.activeElement.id), 'tab-badges');
+  assert.equal(await popup.isVisible('#view-badges'), true);
+  await popup.keyboard.press('ArrowRight');
+  assert.deepEqual(await popup.evaluate(() => [...document.querySelectorAll('[role=tab]')].map((t) => t.tabIndex)), [-1, -1, -1, 0]);
   await shot('0-settings-default');
-  await popup.locator('.toggle').nth(2).click();
+  await popup.click('.toggle:has(#dev-mode)');
   assert.equal(await popup.isVisible('#log-section'), true);
   assert.equal(await popup.isVisible('#debug-status'), true);
   assert.deepEqual(await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings),
-    { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true });
+    { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true, claimReminders: true });
   // From here both helpers are switched off, as a user can, so the steps below control when they act.
-  await popup.evaluate(() => chrome.storage.local.set({ settings: { autoRefresh: false, autoRefreshMinutes: 5, autoReload: false, devMode: true } }));
+  await popup.evaluate(() => chrome.storage.local.set({ settings: { autoRefresh: false, autoRefreshMinutes: 5, autoReload: false, devMode: true, claimReminders: true } }));
   await popup.waitForFunction(() => !document.getElementById('auto-reload').checked);
   await popup.click('#tab-mine');
   step('Settings tab: Auto-refresh and Auto-reload on by default; Developer mode shows the debug tools');
@@ -337,11 +345,22 @@ try {
   assert.deepEqual([look.tone, look.inRing, look.badge], ['ok', null, '1'], JSON.stringify(look));
   assert.equal(await rowHeight(alpha), 32, 'the badge must not wrap the row');
   await alpha.screenshot({ path: join(out, '12c-claim-narrow.png'), clip: { x: 0, y: 672, width: 340, height: 48 } });
+  // Claim reminders switched off in Settings: the count goes, and comes back when switched on.
+  const setReminders = (on) => popup.evaluate(async (v) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, claimReminders: v } });
+  }, on);
+  await setReminders(false);
+  await alpha.waitForFunction(() => !('claims' in document.getElementById('drops-tracker-chip').dataset));
+  assert.equal(await popup.isVisible('#unclaimed-section'), false, 'the Ready to claim row hides too');
+  await setReminders(true);
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.claims === '1');
   await alpha.evaluate(() => { document.getElementById('wrap').style.width = '400px'; });
   await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'false');
   s = await poll();
-  await alpha.waitForFunction(() => !('claims' in document.getElementById('drops-tracker-chip').dataset));
-  step('claim waiting: ring stays green, purple count inside the ring when wide and on its corner when narrow');
+  // Back to the fake inventory's own claims (an earned drop from an ended campaign counts too).
+  await alpha.waitForFunction((n) => (document.getElementById('drops-tracker-chip').dataset.claims ?? '0') === String(n), s.unclaimed.length);
+  step('claim waiting: ring stays green, purple count inside the ring when wide and on its corner when narrow; Settings can hide it');
 
   // Clicking opens the panel in the page itself. Playwright's selectors pierce open shadow roots.
   await alpha.evaluate(() => document.getElementById('drops-tracker-chip').shadowRoot.querySelector('button').click());
@@ -564,7 +583,7 @@ try {
   assert.equal(streamLoads, 0, 'stream tabs must never be reloaded by this');
   await popup.screenshot({ path: join(out, '13-auto-refresh-on.png'), fullPage: true });
   const savedSettings = await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings);
-  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false, devMode: true });
+  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false, devMode: true, claimReminders: true });
   await popup.click('.toggle');
   await advance(2);
   await poll();
@@ -672,9 +691,9 @@ try {
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'warn');
   assert.equal(await popup.textContent('#verdict-detail'), wastedMsg);
   assert.match(await popup.textContent('#verdict-title'), /^Earning/);
-  s = await poll();
+  s = await earningNow(); // A quiet poll keeps the last judgement; a rising minute judges again.
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
-  step('minutes credited to an earned drop: amber, says which tab could earn instead; clears on the next poll');
+  step('minutes credited to an earned drop: amber, says which tab could earn instead; clears on the next minute that rises');
 
   // A tracker that stopped polling must not keep showing good news.
   await popup.evaluate(async () => {
@@ -1176,11 +1195,11 @@ try {
     await page.waitForFunction(() => document.getElementById('drops-tracker-chip')?.dataset.tone, null, { timeout: 8000 });
     await page.evaluate(() => document.getElementById('drops-tracker-chip').shadowRoot.querySelector('button').click());
     await page.waitForSelector('#drops-tracker-panel #panel-failed', { timeout: 5000 });
-    assert.match(await page.textContent('#drops-tracker-panel #panel-failed'), /Press Reload/);
+    assert.match(await page.textContent('#drops-tracker-panel #panel-failed'), /Reload it on your browser's extensions page/);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.getElementById('drops-tracker-panel'));
     assert.deepEqual(uncaught, []);
-    step('panel blocked by a stale manifest: chip stays, click says to press Reload, Escape closes it');
+    step('panel blocked by a stale manifest: chip stays, click says to reload it on the extensions page, Escape closes it');
   } finally {
     await staleCtx.close();
     rmSync(staleDir, { recursive: true, force: true });

@@ -77,11 +77,14 @@ test('a lookup that failed is unknown, so it hides nothing', () => {
   assert.deepEqual(names(channelDrops(s, 'delta')), ['exile']);
 });
 
-test('minutes rising from outside this browser still show what is rising', () => {
+test('minutes rising from outside this browser: listed off a channel, never on one that cannot earn', () => {
+  // Reported 2026-11-09: on a channel playing another game, every drop in progress was listed.
   let s = poll(undefined, [camp('exile', 175)], [chan('foxtrot')], 0);
   s = poll(s, [camp('exile', 176)], [chan('foxtrot')], 1);
   assert.equal(s.verdict.code, 'earning');
-  assert.deepEqual(names(channelDrops(s, 'foxtrot')), ['exile']);
+  assert.deepEqual(channelDrops(s, 'foxtrot'), { drops: [], from: null });
+  assert.deepEqual(names(channelDrops(s, null)), ['exile'], 'the toolbar popup, not on a channel');
+  assert.equal(chipView(s, T0 + MIN, 'foxtrot').pct, null, 'the chip shows no borrowed percentage');
 });
 
 test('state saved before streams recorded campaigns shows everything until the next poll', () => {

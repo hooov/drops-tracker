@@ -162,6 +162,17 @@ test('the same channel open in two playing tabs says so', () => {
   assert.match(s.verdict.message, /AlphaTV is playing in two tabs/);
 });
 
+test('a second playing tab that is not a channel is described, never "null"', () => {
+  // The front page's autoplay: a playing video with no channel behind it.
+  const mins = [195, 196, 196, 196, 196, 196];
+  const front = { tabId: 2, login: null, channel: null, tab: {}, player: { hasVideo: true, paused: false, ended: false, readyState: 4 } };
+  const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), { ...front, player: { ...front.player, currentTime: 200 + i * 60 } }]);
+  assert.equal(s.verdict.cause, 'second_stream');
+  assert.doesNotMatch(s.verdict.message, /null|undefined/);
+  assert.match(s.verdict.message, /Another Twitch tab is also playing video/);
+  assert.match(s.verdict.message, /Close or pause that tab/);
+});
+
 test('a second tab that is paused is not a second stream', () => {
   const mins = [195, 196, 196, 196, 196, 196];
   const paused = { player: { hasVideo: true, paused: true, readyState: 4, currentTime: 200 } };
@@ -317,17 +328,30 @@ test('old or damaged saved state cannot crash a poll', () => {
   assert.deepEqual(migrated.drops[POUCH], { peak: 196, low: 0, at: T0 });
 });
 
-test('earned drop waiting on claim blocks a later drop and is named as the cause', () => {
+const claimCase = (laterMinutes) => {
   const c = campaigns();
   const first = c[1].timeBasedDrops[0];
   c[1].timeBasedDrops = [
     { ...structuredClone(first), id: 'a', requiredMinutesWatched: 60, self: { currentMinutesWatched: 60, dropInstanceID: 'i', hasPreconditionsMet: true, isClaimed: false }, benefitEdges: [{ benefit: { id: 'ba', name: 'First' } }] },
-    { ...structuredClone(first), id: 'b', requiredMinutesWatched: 240, self: { currentMinutesWatched: 60, dropInstanceID: null, hasPreconditionsMet: true, isClaimed: false } },
+    { ...structuredClone(first), id: 'b', requiredMinutesWatched: 240, self: { currentMinutesWatched: laterMinutes, dropInstanceID: null, hasPreconditionsMet: true, isClaimed: false } },
   ];
+  return c;
+};
+
+test('an earned drop waiting on claim is named as the cause when the next drop has not started', () => {
+  const c = claimCase(0);
   let s;
   for (let i = 0; i < 6; i++) s = update(s, { campaigns: c, rewardIds: [], session: null, streams: [stream(1, alpha, 100 + i * 60)] }, T0 + i * MIN);
   assert.equal(s.verdict.cause, 'claim_first');
   assert.match(s.verdict.message, /First/);
+});
+
+test('a claim waiting is not blamed when the next drop already has minutes (they tick together)', () => {
+  const c = claimCase(60);
+  let s;
+  for (let i = 0; i < 6; i++) s = update(s, { campaigns: c, rewardIds: [], session: null, streams: [stream(1, alpha, 100 + i * 60)] }, T0 + i * MIN);
+  assert.equal(s.verdict.code, 'stalled');
+  assert.equal(s.verdict.cause, 'uncounted', 'the claim must not hide the real cause or block auto-reload');
 });
 
 test('rate counts minutes added, not polls with a gain, and calls half speed slow', () => {
@@ -505,4 +529,10 @@ test('strip agrees with the count under it when credit lags', () => {
   assert.equal(rate.counted, 27);
   assert.equal(cells.filter((c) => c === 'gain').length, rate.counted);
   assert.equal(cells.filter((c) => c === 'miss').length, 0);
+});
+
+test('claim reminders switched off: the toolbar badge shows no CLM', () => {
+  const claimOnly = { verdict: { code: 'idle' }, active: [], unclaimed: [{ campaignActive: true }] };
+  assert.equal(badge(claimOnly).text, 'CLM');
+  assert.notEqual(badge(claimOnly, { claimReminders: false }).text, 'CLM');
 });

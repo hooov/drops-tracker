@@ -1,6 +1,11 @@
 // Pure state machine: (previous state, observation, time) -> next state. No chrome.* here.
 // Bounds: timeline <= TIMELINE_MAX entries; tabs, drops and notified ids are rebuilt from
 // the current observation each poll, so they cannot outgrow what Twitch currently reports.
+// The states it writes (verdict codes, causes, channel and player states) are declared in
+// states.js; the map of how they move is docs/state-machines.md.
+import { PLAYER_STATES, RATE_MIN_MINUTES } from './states.js';
+
+export { RATE_MIN_MINUTES };
 
 export const STALL_MS = 4 * 60000; // Credit lands about every 60s (measured); 4 misses is a real stall.
 export const DEAD_PLAYER_MS = 2 * 60000; // Every eligible player is visibly dead: no need to wait the full 4.
@@ -8,7 +13,6 @@ export const NO_STREAM_MS = 2.5 * 60000; // No eligible tab: stop saying "earnin
 export const GAP_MS = 3 * 60000; // Longer than this without good data (sleep, outage): restart the clock.
 export const TIMELINE_MAX = 60;
 export const RATE_WINDOW = 30;
-export const RATE_MIN_MINUTES = 10; // Fewer watched minutes than this is too little to judge a rate.
 export const SLOW_BELOW = 0.75;
 export const CLAIM_WINDOW_MS = 7 * 24 * 3600000; // Twitch help: claimable up to 7 days after campaign end.
 export const STREAM_SOFT_LIMIT = 2; // Reported per-IP limit; only this browser's tabs are visible to us.
@@ -126,8 +130,10 @@ export function creditRate(timeline) {
  * 95 left in its campaign. Twitch credits one channel at a time and nothing documented lets a
  * viewer choose, so the only remedy is stopping the stream it picked, which must be open here.
  */
-export function wastedCredit(session, active, streams) {
-  if (!session?.dropId || !streams.some((st) => st.login === session.login)) return null;
+export function wastedCredit(session, active, streams, risen) {
+  // Only a drop seen rising this poll. The session can keep naming a drop after it was earned
+  // while the campaign's next drop does the rising, and that is ordinary earning.
+  if (!session?.dropId || !risen?.has(session.dropId) || !streams.some((st) => st.login === session.login)) return null;
   const drop = active.find((d) => d.id === session.dropId);
   const earned = !drop && session.required > 0 && session.minutes >= session.required;
   if (!earned && !drop?.atRisk) return null;
@@ -348,17 +354,16 @@ function diagnose(candidates, streams, active, unclaimed) {
   const notPlaying = candidates.filter((s) => s.playerState !== 'playing');
   if (notPlaying.length === candidates.length) {
     const s = candidates[0];
-    const reasons = {
-      asleep: `The browser put the ${named(s)} tab to sleep.`,
-      paused: `${named(s)} is paused.`,
-      ended: `The ${named(s)} player has ended.`,
-      frozen: `The ${named(s)} player is frozen.`,
-      no_video: `Cannot see a player in the ${named(s)} tab, and Twitch is not adding minutes.`,
-    };
-    return { cause: s.playerState, message: reasons[s.playerState], tabId: s.tabId };
+    return { cause: s.playerState, message: PLAYER_STATES[s.playerState].stall(named(s)), tabId: s.tabId };
   }
   const playing = candidates.find((s) => s.playerState === 'playing');
-  const blocked = unclaimed.find((u) => active.some((d) => d.campaignId === u.campaignId));
+  // Only when nothing else in that campaign has started. Drops in a campaign tick together, so a
+  // later drop with minutes is earning regardless of the claim (seen 2026-11-09: a claim waiting
+  // while the next drops rose), and blaming the claim hid a second stream and blocked auto-reload.
+  const blocked = unclaimed.find((u) => {
+    const rest = active.filter((d) => d.campaignId === u.campaignId);
+    return rest.length > 0 && rest.every((d) => !d.minutes);
+  });
   if (blocked) {
     return {
       cause: 'claim_first',
@@ -380,9 +385,13 @@ function diagnose(candidates, streams, active, unclaimed) {
   // streams still earned, so the message says what was seen rather than that two always fail.
   const other = streams.find((s) => s.playerState === 'playing' && s.tabId !== playing.tabId);
   if (other) {
+    const tested = 'A second stream stopped Drops in testing until it was closed.';
+    // A playing tab that is not a channel, such as the front page's autoplay, has no name.
     const message = other.login && other.login === playing.login
-      ? `${named(playing)} is playing in two tabs, and Twitch is not adding minutes. A second stream stopped Drops in testing until it was closed. Close one of them.`
-      : `${named(other)} is also playing, and Twitch is not adding minutes on ${named(playing)}. A second stream stopped Drops in testing until it was closed. Close or pause ${named(other)}.`;
+      ? `${named(playing)} is playing in two tabs, and Twitch is not adding minutes. ${tested} Close one of them.`
+      : named(other)
+        ? `${named(other)} is also playing, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause ${named(other)}.`
+        : `Another Twitch tab is also playing video, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause that tab.`;
     return { cause: 'second_stream', message, tabId: playing.tabId, otherTabId: other.tabId };
   }
   return {
@@ -532,7 +541,12 @@ export function update(prev, obs, now) {
   s.lostAt = null;
   if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null) {
     const slow = s.rate.watched >= RATE_MIN_MINUTES && s.rate.counted / s.rate.watched < SLOW_BELOW;
-    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted: wastedCredit(session, s.active, streams) };
+    // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
+    // rather than flickering the warning off and on.
+    const wasted = risen.size
+      ? wastedCredit(session, s.active, streams, risen)
+      : prev?.verdict?.code === 'earning' ? prev.verdict.wasted ?? null : null;
+    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.
     s.verdict = { code: 'idle', hasStreams: true, limited: true, message: 'Cannot check whether your open streams can earn Drops right now.' };
@@ -629,8 +643,8 @@ export function events(prev, next, now) {
   return out;
 }
 
-export function badge(state) {
-  const claim = state.unclaimed?.some((u) => u.campaignActive);
+export function badge(state, prefs = {}) {
+  const claim = prefs.claimReminders !== false && state.unclaimed?.some((u) => u.campaignActive);
   switch (state.verdict.code) {
     case 'stalled': return { text: 'HUNG', color: '#d92d20' };
     case 'signed_out': return { text: 'OFF', color: '#667085' };
