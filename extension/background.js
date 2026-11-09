@@ -183,8 +183,8 @@ async function recordMinute(prev, obs, next, now) {
   await chrome.storage.local.set({ minuteLog: addMinute(minuteLog, entry) });
 }
 
-async function paintBadge(state) {
-  const b = badge(state);
+async function paintBadge(state, prefs) {
+  const b = badge(state, prefs);
   await chrome.action.setBadgeText({ text: b.text });
   await chrome.action.setBadgeBackgroundColor({ color: b.color });
   if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#ffffff' });
@@ -210,7 +210,7 @@ async function refreshDropsPages(now) {
   await Promise.all(tabs.filter((t) => !t.discarded).map((t) => chrome.tabs.reload(t.id).catch(() => {})));
 }
 
-// Optional, off by default, and capped: see autoReloadStep. Only ever the tab the verdict names,
+// On by default, can be switched off, and capped: see autoReloadStep. Only ever the tab the verdict names,
 // and only if it is still on a channel, since the tab may have moved on since the poll.
 async function autoReloadHung(state, now) {
   const { settings, autoReload } = await chrome.storage.local.get(['settings', 'autoReload']);
@@ -309,9 +309,12 @@ async function pollOnce() {
   const evs = events(prev, next, now);
   await chrome.storage.local.set({ state: next });
   await recordMinute(prev, obs, next, now).catch(() => {});
-  await paintBadge(next);
+  // Claim reminders off: no claim notification, no CLM. Claims are still marked as notified, so
+  // switching it back on later does not bring a burst of old ones.
+  const prefs = normalize((await chrome.storage.local.get('settings')).settings);
+  await paintBadge(next, prefs);
   // Before anything that can be slow: saving above has already marked these as sent.
-  evs.forEach(notify);
+  evs.filter((e) => prefs.claimReminders || e.type !== 'claim').forEach(notify);
   await paintWarnings(prev?.notifiedWarning, warning(next, now));
   await refreshDropsPages(now).catch(() => {}); // Must never stop tracking.
   await autoReloadHung(next, now).catch(() => {}); // Nor must this.

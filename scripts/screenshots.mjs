@@ -461,7 +461,7 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
       }
       for (let i = 0; i < 4; i++) minuteLog.push({ m: now + i - 190, st: 'paused', d: 0, e: 1, p: 1, c: 'tiderunner', cr: 1, h: 1, a: 0, pm: 0, v0: 0, tm: 0, q: 1080, s: 0, ad: 0 });
       // The debug tools only show with Developer mode on.
-      return chrome.storage.local.set({ minuteLog, settings: { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true } });
+      return chrome.storage.local.set({ minuteLog, settings: { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true, claimReminders: true } });
     });
     await openPanel(alpha, 'settings');
     await alpha.click('#drops-tracker-panel #log-section summary');

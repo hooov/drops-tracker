@@ -4,7 +4,9 @@ Live at https://chromewebstore.google.com/detail/drops-tracker/ijgmbcfeemlooekei
 
 Everything the developer dashboard asks for, ready to paste. Keep it in step with the extension: a
 change to what it reads, stores or sends must update the privacy tab answers here and the policy at
-https://hovjsyy.dev/drops-tracker/privacy/ (source: the `hooov/hovjsyy.dev` repo).
+https://hovjsyy.dev/drops-tracker/privacy/ (source: the `hooov/hovjsyy.dev` repo). A change to what
+it does to tabs must update "What it does to your tabs" below: leaving behaviour out of the
+description counts as misleading (store-policy audit, 2026-11-09).
 
 ## Files
 | Field | File | Made by |
@@ -12,9 +14,9 @@ https://hovjsyy.dev/drops-tracker/privacy/ (source: the `hooov/hovjsyy.dev` repo
 | Package | `dist/drops-tracker-<version>.zip` | `npm run package` |
 | Screenshots, 1280x800, upload in their numbered order | `docs/store/1-earning-1280x800.png` to `4-badges-1280x800.png` | `npm run store-images` |
 | Small promo tile, 440x280 | `docs/store/promo-tile-440x280.png` | `npm run store-images` |
+| Store icon, 128x128 | taken from the package | `npm run icons` |
 
 Take store images only from `docs/store/`. The README images in `docs/screenshots/` are other sizes, and the dashboard rejects them with "The image size is incorrect".
-| Store icon, 128x128 | taken from the package | `npm run icons` |
 
 Bump `version` in `extension/manifest.json` before every upload after the first: the store rejects a version it has already seen.
 
@@ -34,15 +36,23 @@ Twitch's Drops progress only updates when you reload the page, and sometimes Twi
 Drops Tracker asks Twitch once a minute how many minutes you actually have, and treats rising minutes as the only proof that you are earning.
 
 WHAT YOU SEE
-- A small chip in the chat row, beside your channel points, with your progress
-- "Hung" when minutes stop rising while a stream that can earn is open, with the likely cause: paused, frozen player, too many streams open, or a drop waiting to be claimed
+- A small chip in the chat row, beside your channel points, with your progress and a count of drops ready to claim
+- "Hung" when minutes stop rising while a stream that can earn is open, with the likely cause: paused, frozen player, a second stream playing, too many streams open, or a drop waiting to be claimed
+- A warning when Twitch is crediting a drop you already earned, or one that cannot finish before its campaign ends, naming an open stream that could earn instead
 - A toolbar badge, a desktop notification, and an on-page warning that stays visible in fullscreen
 - My Drops: what the channel you are on can earn, with progress and time left
 - All Drops: every Drops campaign running on Twitch right now
 - Badges: a channel's own sub and watch-time badges
+- Settings: the two helpers below, claim reminders, and an optional Developer mode with a per-minute log for bug reports
+
+WHAT IT DOES TO YOUR TABS
+Two helpers, both on by default and both can be switched off in the Settings tab:
+- It reloads open twitch.tv/drops pages every 5 minutes (adjustable), because they never update by themselves.
+- It reloads a stream tab whose minutes have stopped for 6 minutes: at most 3 tries, never on a paused stream or when another stream is the likely cause.
+The All Drops tab briefly opens twitch.tv/drops/campaigns in a background tab to read the list, then closes it.
 
 WHAT IT NEVER DOES
-It is read-only. It never claims a drop, never simulates watching, and never opens a stream for you. It talks only to Twitch, has no analytics, and sends nothing to the developer.
+It never claims a drop, never simulates watching, and never opens a stream for you. It talks only to Twitch, has no analytics, and sends nothing to the developer.
 
 PRIVACY
 Your Twitch login is read from your browser for each check and sent only to Twitch. Everything the extension keeps stays on your device. Full policy: https://hovjsyy.dev/drops-tracker/privacy/
@@ -61,9 +71,9 @@ Unofficial and not affiliated with Twitch.
 **Mature content:** No
 
 ## Privacy practices tab
-**Single purpose:**
+**Single purpose:** the same sentence as the privacy policy's Limited Use paragraph.
 ```
-Shows whether Twitch is actually crediting Drops watch-minutes for the streams you have open, and warns you when it stops.
+Tracks your Twitch Drops: shows whether Twitch is actually crediting your Drops watch-minutes, warns you and helps when it stops, and lists the Drops you can earn.
 ```
 
 **Permission justifications:**
@@ -72,11 +82,11 @@ Shows whether Twitch is actually crediting Drops watch-minutes for the streams y
 |---|---|
 | alarms | Checks Drops progress with Twitch once a minute. An alarm keeps that check running while the service worker is asleep. |
 | cookies | Reads the user's own Twitch sign-in cookie (auth-token) on twitch.tv to request their Drops progress from Twitch, the same way twitch.tv does. It is read for each request, sent only to gql.twitch.tv, and never stored or sent anywhere else. |
-| notifications | Shows a desktop notification when Drops minutes stop rising, because the toolbar badge cannot be seen while a stream is fullscreen. |
-| scripting | Reads the video player's state (playing, paused, frozen, muted) in open Twitch tabs to explain why minutes stopped, and shows a small warning on the Twitch page. Only on twitch.tv. |
-| storage | Keeps the latest tracking state, the user's settings, and a log of watched minutes capped at one day, all locally. |
+| notifications | Shows a desktop notification when Drops minutes stop rising, because the toolbar badge cannot be seen while a stream is fullscreen, and when a drop is ready to claim (can be switched off). |
+| scripting | Reads the video player's state (playing, paused, frozen, muted) in open Twitch tabs to explain why minutes stopped, shows a small warning on the Twitch page, and adds the progress chip to Twitch tabs that were already open when the extension was installed or updated. Only on twitch.tv. |
+| storage | Keeps, locally: the latest tracking state, the user's settings, a one-day log of watched minutes, the cached All Drops list, the Twitch query identifiers learned from its page, and small timers for the auto-refresh and auto-reload helpers. |
 | webRequest | Observes the request bodies twitch.tv sends to gql.twitch.tv, only to learn the current query identifiers when Twitch rotates them, so the extension keeps working. Non-blocking; nothing else from those requests is kept, and headers are not read. |
-| Host permission `https://*.twitch.tv/*` | The extension only works on Twitch. Content scripts on www.twitch.tv add the progress chip and panel, and progress is requested from gql.twitch.tv. It does not run on any other site. |
+| Host permissions `https://www.twitch.tv/*`, `https://m.twitch.tv/*`, `https://gql.twitch.tv/*` | The extension only works on Twitch. Content scripts on www.twitch.tv and m.twitch.tv add the progress chip and panel, and progress is requested from gql.twitch.tv. It does not run on any other site. |
 
 **Are you using remote code?** No.
 ```
@@ -85,7 +95,7 @@ All JavaScript ships in the package. The only dynamic import() calls load the ex
 
 **Data usage, what user data is collected:** tick these four, nothing else. Over-disclosing costs nothing; under-disclosing is a policy violation.
 - **Authentication information:** the Twitch auth-token cookie, sent to Twitch.
-- **Web history:** the addresses of open twitch.tv tabs, from which channel names are sent to Twitch to look up their Drops.
+- **Web history:** the addresses of open twitch.tv tabs, from which channel names are sent to Twitch to look up their Drops, and a one-day log of which channel was watched each minute, kept on the device.
 - **User activity:** the request bodies Twitch's own page sends to gql.twitch.tv (network monitoring), kept only for query identifiers.
 - **Website content:** video player state and Twitch's Drops data shown in the panel.
 
@@ -98,7 +108,11 @@ All JavaScript ships in the package. The only dynamic import() calls load the ex
 
 ## Test instructions for the reviewer
 ```
-Sign in to Twitch in the browser, then open any live channel that has Drops enabled (twitch.tv/directory, "Drops Enabled" tag). Within a minute the chip beside the channel points reads the drop's progress, and the toolbar badge shows the percentage. Click the chip or the toolbar icon for the panel; the All Drops tab lists every campaign on Twitch.
+Sign in to Twitch in the browser, then open any live channel that has Drops enabled (twitch.tv/directory, "Drops Enabled" tag). Within a minute the chip beside the channel points reads the drop's progress, and the toolbar badge shows the percentage. Click the chip or the toolbar icon for the panel.
+
+The All Drops tab lists every campaign on Twitch; to read it, it briefly opens twitch.tv/drops/campaigns in a background tab and closes it.
+
+The Settings tab has two helpers, both on by default and both can be switched off: reloading open twitch.tv/drops pages every 5 minutes, and reloading a stream tab whose minutes stopped for 6 minutes (at most 3 tries).
 
 Signed out, the chip and panel say "Signed out" and no request is sent to Twitch with a login.
 ```

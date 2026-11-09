@@ -5,7 +5,7 @@
   "description": "Shows whether Twitch is really adding Drops minutes right now, and why not when it stalls.",
   "minimum_chrome_version": "120",
   "permissions": ["alarms", "cookies", "notifications", "scripting", "storage", "webRequest"],
-  "host_permissions": ["https://*.twitch.tv/*"],
+  "host_permissions": ["https://www.twitch.tv/*", "https://m.twitch.tv/*", "https://gql.twitch.tv/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     { "matches": ["https://www.twitch.tv/*", "https://m.twitch.tv/*"], "js": ["content.js"], "run_at": "document_idle" },
@@ -14,7 +14,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["panel.css", "lib/chip.js", "lib/panel.js", "lib/settings.js", "lib/directory.js", "lib/badges.js", "lib/minutelog.js", "lib/debug.js"],
+      "resources": ["panel.css", "lib/chip.js", "lib/panel.js", "lib/settings.js", "lib/states.js", "lib/directory.js", "lib/badges.js", "lib/minutelog.js", "lib/debug.js"],
       "matches": ["https://www.twitch.tv/*", "https://m.twitch.tv/*"]
     }
   ],

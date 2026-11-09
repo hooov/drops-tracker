@@ -6,6 +6,7 @@ import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day } from './dire
 import { badgeSections } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
+import { STALL_CAUSES, PLAYER_STATES, CHANNEL_STATES, verdictTone, canEarn, RATE_MIN_MINUTES } from './states.js';
 
 const CLOSE_ICON = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
 const RELOAD_ICON = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M16 3v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
@@ -19,9 +20,9 @@ const TEMPLATE = `
     </header>
     <div class="tabs" role="tablist">
       <button id="tab-mine" class="tab" type="button" role="tab" aria-selected="true" aria-controls="view-mine">My Drops<i class="tab-dot"></i></button>
-      <button id="tab-all" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-all">All Drops</button>
-      <button id="tab-badges" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-badges">Badges</button>
-      <button id="tab-settings" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-settings">Settings</button>
+      <button id="tab-all" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-all" tabindex="-1">All Drops</button>
+      <button id="tab-badges" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-badges" tabindex="-1">Badges</button>
+      <button id="tab-settings" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-settings" tabindex="-1">Settings</button>
     </div>
     <div id="view-mine" role="tabpanel" aria-labelledby="tab-mine">
     <div id="verdict" class="section status">
@@ -45,7 +46,7 @@ const TEMPLATE = `
       <div id="streams"></div>
     </div>
     <details id="unclaimed-section" class="section" hidden>
-      <summary><span id="unclaimed-summary" class="strong"></span>${CHEVRON_ICON}</summary>
+      <summary><span class="claim-head"><b id="unclaimed-count" class="count"></b><span id="unclaimed-summary" class="strong"></span></span>${CHEVRON_ICON}</summary>
       <div id="unclaimed"></div>
     </details>
     </div>
@@ -88,13 +89,24 @@ const TEMPLATE = `
     </div>
     <div class="section">
       <div class="setting">
+        <label for="claim-reminders">Claim reminders</label>
+        <span class="toggle">
+          <input id="claim-reminders" type="checkbox" aria-describedby="claim-reminders-hint">
+          <label for="claim-reminders" aria-hidden="true"></label>
+        </span>
+      </div>
+      <p id="claim-reminders-hint" class="sub setting-hint">The chip count, Ready to claim and its notification.</p>
+    </div>
+    <p class="sub group-label">Advanced</p>
+    <div class="section plain">
+      <div class="setting">
         <label for="dev-mode">Developer mode</label>
         <span class="toggle">
           <input id="dev-mode" type="checkbox" aria-describedby="dev-mode-hint">
           <label for="dev-mode" aria-hidden="true"></label>
         </span>
       </div>
-      <p id="dev-mode-hint" class="sub setting-hint">Shows debug tools below: the lost minutes log, tracker status and debug info for bug reports.</p>
+      <p id="dev-mode-hint" class="sub setting-hint">Debug tools for bug reports, shown below.</p>
     </div>
     <div id="debug-sections" hidden>
     <details id="log-section" class="section">
@@ -176,33 +188,10 @@ function verdictText(state, now) {
   }
 }
 
-const toneOf = (v) => {
-  if (v.code === 'stalled') return 'bad';
-  if (v.code === 'earning') return v.slow || v.wasted ? 'warn' : 'ok';
-  if (v.code === 'waiting') return 'info';
-  if (v.lost || v.limited || ['error', 'api_changed', 'signed_out'].includes(v.code)) return 'warn';
-  return 'idle';
-};
-
-const CHANNEL_LABEL = {
-  eligible: 'Can earn, not credited',
-  no_drops: 'No Drops on this channel',
-  sub_only: 'Drops here only come from subs',
-  badge_unseen: 'Badge timer, no minutes reported',
-  blocked: 'Next drop cannot count yet',
-  finished: 'Campaign finished',
-  offline: 'Offline',
-  unknown: 'Cannot check this channel',
-  unstarted: 'Campaign not started yet',
-  not_channel: 'Uses a stream slot',
-};
-const PLAYER_LABEL = {
-  asleep: 'Tab asleep',
-  paused: 'Paused',
-  frozen: 'Player frozen',
-  ended: 'Player ended',
-  no_video: 'No player',
-};
+// The verdict's colour and the channel and player labels are declared with the states, in states.js.
+const toneOf = verdictTone;
+// The panel's tabs, in order: the tab bar, showTab and the arrow keys all read this.
+const TABS = ['mine', 'all', 'badges', 'settings'];
 
 /** Rebuild a list only when its content changed, so a button under the cursor survives the 1s tick. */
 function setList(box, signature, build) {
@@ -238,6 +227,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('auto-refresh-every').hidden = !settings.autoRefresh;
     $('auto-reload').checked = settings.autoReload;
     $('dev-mode').checked = settings.devMode;
+    $('claim-reminders').checked = settings.claimReminders;
+    if (lastState) renderUnclaimed(lastState);
     const wasHidden = $('debug-sections').hidden;
     $('debug-sections').hidden = !settings.devMode;
     if (wasHidden && settings.devMode && !$('view-settings').hidden) renderDebug(lastState, Date.now());
@@ -249,6 +240,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   toggle.addEventListener('change', () => save({ autoRefresh: toggle.checked }));
   $('auto-reload').addEventListener('change', () => save({ autoReload: $('auto-reload').checked }));
   $('dev-mode').addEventListener('change', () => save({ devMode: $('dev-mode').checked }));
+  $('claim-reminders').addEventListener('change', () => save({ claimReminders: $('claim-reminders').checked }));
   minutes.addEventListener('change', () => save({ autoRefreshMinutes: Number(minutes.value) }));
   let reloadMemo = null;
   let minuteLog = [];
@@ -403,7 +395,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
         };
         if (r.browseUrl) add(r.browseUrl, 'Browse streams');
         if (r.kind === 'reward' && r.linkUrl) add(r.linkUrl, 'Details');
-        if (r.kind !== 'reward' && !r.linked && r.linkUrl) add(r.linkUrl, 'Link account');
+        // Twitch's inventory has the connect button; publishers' own link pages vary.
+        if (r.kind !== 'reward' && !r.linked) add('https://www.twitch.tv/drops/inventory', 'Link account');
         if (links.childElementCount) more.append(links);
         row.append(summary, more);
         return row;
@@ -427,9 +420,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function showTab(name) {
-    for (const tab of ['mine', 'all', 'badges', 'settings']) {
+    for (const tab of TABS) {
       $(`view-${tab}`).hidden = tab !== name;
       $(`tab-${tab}`).setAttribute('aria-selected', String(tab === name));
+      $(`tab-${tab}`).tabIndex = tab === name ? 0 : -1;
     }
     const all = name === 'all';
     $('foot-link').textContent = all ? 'All Campaigns' : 'Inventory';
@@ -447,6 +441,16 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   $('tab-all').addEventListener('click', () => showTab('all'));
   $('tab-badges').addEventListener('click', () => showTab('badges'));
   $('tab-settings').addEventListener('click', () => showTab('settings'));
+  // A tablist: one Tab stop, arrows (and Home/End) move between tabs.
+  root.querySelector('.tabs').addEventListener('keydown', (e) => {
+    const at = TABS.findIndex((t) => $(`tab-${t}`).getAttribute('aria-selected') === 'true');
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: TABS.length - 1 }[e.key];
+    if (to == null) return;
+    e.preventDefault();
+    const name = TABS[(to + TABS.length) % TABS.length];
+    showTab(name);
+    $(`tab-${name}`).focus();
+  });
   $('dir-refresh').addEventListener('click', () => loadDirectory(true));
   $('dir-search').addEventListener('input', () => renderDirectory(Date.now()));
   // Twitch's page shortcuts would otherwise take typed letters: f for fullscreen, m for mute.
@@ -478,8 +482,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     else if (state.lastGainAt && v.code === 'earning') age = `+1m ${ago(now - state.lastGainAt)}`;
     $('verdict-age').textContent = age;
     const action = $('verdict-action');
-    // A reload cannot fix these: the cause is another stream, or the user's own pause.
-    const reloadable = v.code === 'stalled' && v.tabId != null && !['too_many', 'second_stream', 'paused'].includes(v.cause);
+    // Which causes a reload can help is declared with the causes (STALL_CAUSES in states.js).
+    const reloadable = v.code === 'stalled' && v.tabId != null && !!STALL_CAUSES[v.cause]?.reloadButton;
     action.hidden = !reloadable;
     action.onclick = reloadable ? () => reloadTab?.(v.tabId) : null;
   }
@@ -582,11 +586,14 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const { drops: list, from } = channelDrops(state, channelLogin?.() ?? null);
     $('drops-section').hidden = !list.length;
     $('drops-label').textContent = from ? `Watch Drops on ${from}` : 'Watch Drops';
-    const ratio = state.rate?.watched >= 10 && state.rate.counted > 0 ? Math.min(1, state.rate.counted / state.rate.watched) : 1;
-    const earning = state.verdict.code === 'earning';
+    const ratio = state.rate?.watched >= RATE_MIN_MINUTES && state.rate.counted > 0 ? Math.min(1, state.rate.counted / state.rate.watched) : 1;
+    // A finish time only for drops the minutes are going to: not while they are being wasted
+    // elsewhere, and not for another campaign than the one Twitch names as credited.
+    const credited = state.active?.find((x) => x.id === state.session?.dropId)?.campaignId;
+    const timed = (d) => state.verdict.code === 'earning' && !state.verdict.wasted && (!credited || d.campaignId === credited);
     const rows = list.map((d) => {
       const left = span(d.remaining);
-      const eta = earning ? `, about ${clock(now + (d.remaining / ratio) * 60000)}` : '';
+      const eta = timed(d) ? `, about ${clock(now + (d.remaining / ratio) * 60000)}` : '';
       return { ...d, line: d.atRisk && d.endsAt ? `Watch ${left} to earn, ends ${day(d.endsAt)}` : `Watch ${left} to earn${eta}` };
     });
     setList($('drops'), JSON.stringify(rows.map((r) => [r.id, r.minutes, r.line, r.image])), () => rows.map((d) => {
@@ -612,7 +619,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       const fill = el('i');
       fill.style.width = `${d.pct}%`;
       bar.append(fill);
-      card.append(top, bar);
+      // The exact minutes at a glance; they used to show only on hover.
+      const barRow = el('div', 'bar-row');
+      barRow.append(bar, el('span', 'sub bar-min', `${Math.min(d.minutes, d.required)}/${d.required}`));
+      card.append(top, barRow);
       return card;
     }));
   }
@@ -625,20 +635,21 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const earning = state.verdict.code === 'earning';
     const anyCredited = list.some((s) => s.credited);
     const rows = list.map((s) => {
-      const problem = s.channelState === 'eligible' ? PLAYER_LABEL[s.playerState] : null;
+      const problem = canEarn(s) ? PLAYER_STATES[s.playerState]?.label : null;
       if (problem) return { ...s, label: problem, tone: 'bad' };
       if (s.credited && earning) return { ...s, label: 'Earning', tone: state.verdict.slow ? 'warn' : 'ok' };
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
       // "Not credited" says another channel is getting it, which needs one to be.
       if (s.channelState === 'eligible' && !anyCredited) return { ...s, label: 'Can earn', tone: '' };
-      return { ...s, label: CHANNEL_LABEL[s.channelState], tone: '' };
+      return { ...s, label: CHANNEL_STATES[s.channelState]?.label, tone: '' };
     });
     setList($('streams'), JSON.stringify(rows.map((r) => [r.tabId, r.displayName, r.label, r.tone])), () => rows.map((s) => {
       const row = el('div', 'row');
       const text = el('div', 'row-text');
       text.append(el('p', 'strong ellipsis', s.displayName || 'Twitch page'), el('p', `sub ellipsis ${s.tone}`, s.label));
       row.append(text);
-      if (s.login) {
+      // No reload on the stream that is earning: it only invites breaking what works.
+      if (s.login && s.label !== 'Earning') {
         const btn = el('button', 'round');
         btn.type = 'button';
         btn.innerHTML = RELOAD_ICON;
@@ -652,18 +663,21 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function renderUnclaimed(state) {
-    const list = state.unclaimed || [];
+    const list = settings.claimReminders ? state.unclaimed || [] : [];
     $('unclaimed-section').hidden = !list.length;
     if (!list.length) return;
-    $('unclaimed-summary').textContent = `${list.length} earned, not claimed`;
+    // The same purple count as the chip, so the two read as one thing.
+    $('unclaimed-count').textContent = String(list.length);
+    $('unclaimed-summary').textContent = 'Ready to claim';
     setList($('unclaimed'), JSON.stringify(list.map((u) => [u.id, u.claimBy, u.needsConnect])), () => list.map((u) => {
       const row = el('div', 'row');
       const text = el('div', 'row-text');
       const by = u.claimBy ? `, by ${day(u.claimBy)}` : '';
       text.append(el('p', 'strong ellipsis', u.name), el('p', 'sub ellipsis', `${u.game || u.campaign}${by}`));
-      const connect = u.needsConnect && u.connectUrl;
-      const link = el('a', 'link', connect ? 'Connect' : 'Claim');
-      link.href = connect ? u.connectUrl : 'https://www.twitch.tv/drops/inventory';
+      // Both go to Twitch's inventory, which has the claim and connect buttons itself. The
+      // campaign's own link page varies by publisher and sometimes is not one (Tyler, 2026-11-09).
+      const link = el('a', 'link', u.needsConnect ? 'Connect' : 'Claim');
+      link.href = 'https://www.twitch.tv/drops/inventory';
       link.target = '_blank';
       link.rel = 'noreferrer';
       row.append(text, link);

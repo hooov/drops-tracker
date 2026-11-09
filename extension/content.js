@@ -6,6 +6,7 @@
   window.__dropsTrackerStop?.(); // Re-injected on install or update: replace the old instance.
 
   const { chipView, shouldCompact, channelFromPath } = await import(chrome.runtime.getURL('lib/chip.js'));
+  const { normalize } = await import(chrome.runtime.getURL('lib/settings.js'));
   // The panel must not be able to take the chip down with it. Brave reads an unpacked extension's
   // files from disk at once but its manifest only on Reload, so a tab opened in between gets new
   // code whose new modules are still blocked (seen 2026-11-06). The chip is the warning: it stays.
@@ -24,6 +25,7 @@
   document.getElementById(PANEL_ID)?.remove();
 
   let state = null;
+  let prefs = normalize();
   let panelHost = null;
   let panel = null;
 
@@ -80,7 +82,7 @@
   const claimBadge = shadow.querySelector('b');
 
   function paint() {
-    const view = chipView(state, Date.now(), channelFromPath(location.pathname));
+    const view = chipView(state, Date.now(), channelFromPath(location.pathname), prefs);
     chip.dataset.tone = view.tone;
     // No percentage to show: a full ring, so the colour still reads.
     const fraction = view.pct == null ? 1 : view.pct / 100;
@@ -148,13 +150,16 @@
       const note = document.createElement('p');
       note.id = 'panel-failed';
       note.style.cssText = 'width:280px;margin:0;padding:12px;background:var(--color-background-base,#18181b);color:var(--color-text-base,#efeff1);font:400 13px/1.4 var(--font-base,Inter,"Helvetica Neue",Helvetica,Arial,sans-serif);';
-      note.textContent = 'The panel could not load, usually because Drops Tracker was just updated. Press Reload on it at brave://extensions.';
+      note.textContent = 'The panel could not load, usually because Drops Tracker was just updated. Reload it on your browser\'s extensions page.';
       root.append(note);
       panelHost.style.visibility = '';
     }
     (document.fullscreenElement || document.body).append(panelHost);
     placePanel();
     button.setAttribute('aria-expanded', 'true');
+    // The panel is appended at the end of the page, so without this a keyboard user would tab
+    // through all of Twitch to reach it. Escape returns focus to the chip.
+    root.querySelector('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
     chrome.runtime.sendMessage({ type: 'poll' }).catch(() => {});
   }
 
@@ -221,7 +226,11 @@
   }
 
   const timer = setInterval(tick, 1000);
-  const onStorage = (changes) => { if (changes.state) { state = changes.state.newValue; tick(); } };
+  const onStorage = (changes) => {
+    if (changes.settings) prefs = normalize(changes.settings.newValue);
+    if (changes.state) state = changes.state.newValue;
+    if (changes.state || changes.settings) tick();
+  };
   chrome.storage.onChanged.addListener(onStorage);
 
   function stop() {
@@ -236,7 +245,9 @@
   }
   window.__dropsTrackerStop = stop;
 
-  ({ state } = await chrome.storage.local.get('state'));
+  const saved = await chrome.storage.local.get(['state', 'settings']);
+  state = saved.state;
+  prefs = normalize(saved.settings);
   tick();
   if (!state?.lastPollAt || Date.now() - state.lastPollAt > STALE_POLL_MS) {
     chrome.runtime.sendMessage({ type: 'poll' }).catch(() => {});

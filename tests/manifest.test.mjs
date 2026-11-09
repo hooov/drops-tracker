@@ -57,7 +57,9 @@ test('the page hook runs in the page and early enough to see the first request',
 // install warning that disables the extension for existing users until they accept it.
 test('permissions are exactly the reviewed set', () => {
   assert.deepEqual([...manifest.permissions].sort(), ['alarms', 'cookies', 'notifications', 'scripting', 'storage', 'webRequest']);
-  assert.deepEqual(manifest.host_permissions, ['https://*.twitch.tv/*']);
+  // Only the hosts the code uses (store-policy audit, 2026-11-09): the wildcard also covered
+  // passport, dashboard and every other Twitch subdomain.
+  assert.deepEqual(manifest.host_permissions, ['https://www.twitch.tv/*', 'https://m.twitch.tv/*', 'https://gql.twitch.tv/*']);
 });
 
 // "tabs" adds the "Read your browsing history" warning. Host permissions already expose url for

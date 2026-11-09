@@ -60,8 +60,19 @@ test('a waiting claim keeps the ring green and the percentage showing, and count
 test('several claims waiting are counted, and the title says how many', () => {
   const unclaimed = [{ name: 'A', campaignActive: true }, { name: 'B', campaignActive: true }, { name: 'Old', campaignActive: false }];
   const v = chipView(state({ code: 'earning', channel: 'Delta' }, { unclaimed }), NOW);
-  assert.equal(v.claims, 2, 'only campaigns still running');
-  assert.match(v.title, /^2 drops are ready to claim/);
+  assert.equal(v.claims, 3, 'every drop still claimable, matching the panel\'s Ready to claim');
+  assert.match(v.title, /^2 drops are ready to claim/, 'the title names those from campaigns still running');
+});
+
+test('claim reminders switched off: no count, no Claim, no claim line, ring unchanged', () => {
+  const unclaimed = [{ name: 'Badge', campaignActive: true }];
+  const off = { claimReminders: false };
+  const earning = chipView(state({ code: 'earning', channel: 'Delta' }, { unclaimed }), NOW, null, off);
+  assert.deepEqual([earning.claims, earning.text, earning.tone], [0, '82%', 'ok']);
+  assert.doesNotMatch(earning.title, /claim/i);
+  const onlyClaim = chipView(state({ code: 'idle' }, { unclaimed, active: [] }), NOW, null, off);
+  assert.notEqual(onlyClaim.text, 'Claim');
+  assert.equal(onlyClaim.claims, 0);
 });
 
 test('no claim waiting: no count', () => {
@@ -98,10 +109,11 @@ test('the label still falls back to the ring when the row has no room', () => {
   assert.equal(shouldCompact(500, 307, 32, '82%'), false);
 });
 
-test('a reward from an ended campaign is not counted', () => {
+test('a reward from an ended campaign is counted, but never takes over the label or the ring', () => {
   const unclaimed = [{ name: 'Old', campaignActive: false }];
   const v = chipView(state({ code: 'earning' }, { unclaimed }), NOW);
-  assert.deepEqual([v.text, v.claims, v.tone], ['82%', 0, 'ok']);
+  assert.deepEqual([v.text, v.claims, v.tone], ['82%', 1, 'ok']);
+  assert.notEqual(chipView(state({ code: 'idle' }, { unclaimed, active: [] }), NOW).text, 'Claim');
 });
 
 test('plain idle stays quiet, with or without drops in progress', () => {
@@ -136,4 +148,10 @@ test('earning slowly is amber and says the rate', () => {
   assert.equal(v.tone, 'warn');
   assert.equal(v.text, '82%');
   assert.match(v.title, /Earning slowly on AlphaTV: 14 of the last 30 watched minutes counted/);
+});
+
+test('before the first poll the chip says it is checking, not "Not earning right now"', () => {
+  const v = chipView(state({ code: 'starting' }), NOW);
+  assert.equal(v.tone, 'info');
+  assert.doesNotMatch(v.title, /Not earning/);
 });

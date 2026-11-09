@@ -44,18 +44,24 @@ export function channelDrops(state, login) {
   // those are what is rising; the verdict says what is.
   const sessionLogin = state.session?.login;
   if (sessionLogin && streams.some((s) => s.login === sessionLogin)) return { drops: [], from: null };
-  // Minutes rising with no tab here that can earn: a stream outside this browser.
-  return state.verdict?.code === 'earning' ? everything : { drops: [], from: null };
+  // Minutes rising with no tab here that can earn: a stream outside this browser. Listed only when
+  // not looking at a channel; on a channel that cannot earn, other games' drops read as this
+  // channel's (Tyler, 2026-11-09: Marvel Rivals and World of Tanks listed on a WoW channel).
+  return state.verdict?.code === 'earning' && !here ? everything : { drops: [], from: null };
 }
 
 /**
- * What the chip shows. `claims` is how many earned drops from campaigns still running wait to be
- * claimed, drawn as a purple count (beside the ring, or inside it when chat is narrow) and never
- * as the ring's colour: amber for a reward waiting read as something wrong (Tyler, 2026-11-09).
+ * What the chip shows. `claims` is how many earned drops wait to be claimed, the same list as the
+ * panel's "Ready to claim", drawn as a purple count (inside the ring beside the label, or on its
+ * corner when chat is narrow) and never as the ring's colour: amber for a reward waiting read as
+ * something wrong (Tyler, 2026-11-09). The word "Claim" stays for campaigns still running.
  */
-export function chipView(state, now, login = null) {
-  const view = chipViewOf(state, now, login);
-  const claims = (state?.unclaimed || []).filter((u) => u.campaignActive).length;
+export function chipView(state, now, login = null, prefs = {}) {
+  // Claim reminders switched off (Settings): no count, no "Claim", no claim line in the title.
+  const seen = prefs.claimReminders === false && state ? { ...state, unclaimed: [] } : state;
+  const view = chipViewOf(seen, now, login);
+  // Every earned drop still claimable, so it matches the panel's "Ready to claim" count.
+  const claims = (seen?.unclaimed || []).length;
   return { ...view, claims };
 }
 
@@ -105,6 +111,8 @@ function runningView(v, rate, label, pct, progress) {
     }
     return { tone: 'ok', text: label || 'Drops', pct, title: `${progress} Earning${where}.`.trim() };
   }
+  // Before the first poll lands. It used to fall through to "Not earning right now" in grey.
+  if (v.code === 'starting') return { tone: 'info', text: label || 'Drops', pct, title: 'Checking your Drops progress.' };
   if (v.code === 'waiting') {
     return { tone: 'info', text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
   }

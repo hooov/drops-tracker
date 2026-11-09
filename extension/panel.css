@@ -150,6 +150,10 @@ button.link { padding: 0; }
 .art { flex: none; width: 40px; height: 40px; }
 .bar { height: 8px; margin-top: 12px; border-radius: 6px; background: var(--dt-track); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--dt-brand); }
+/* My Drops: the bar with its minutes beside it. */
+.bar-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.bar-row .bar { flex: 1; margin-top: 0; }
+.bar-min { flex: none; font-variant-numeric: tabular-nums; }
 
 /* Rows */
 .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
@@ -191,11 +195,21 @@ summary::-webkit-details-marker { display: none; }
 .chevron { flex: none; transition: transform 0.1s ease; }
 details[open] .chevron { transform: rotate(90deg); }
 #unclaimed { margin-top: 8px; }
+/* "Ready to claim" with the same purple count as the chip. */
+.claim-head { display: inline-flex; align-items: center; gap: 8px; }
+.count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--color-background-button-primary-default, #9147ff); color: #fff;
+  font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+}
 
 /* Settings. The toggle is Twitch's: 36x20, 2px outline, knob and outline purple when on. */
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
 .setting > label:not([aria-hidden]) { cursor: pointer; }
 .setting-hint { margin-top: 2px; padding-right: 44px; }
+/* Advanced: Developer mode set apart from the settings everyone uses, without a box of its own. */
+.group-label { margin: 12px 2px 4px; }
+.section.plain { background: none; border-color: transparent; padding-top: 0; }
 .every { margin-top: 8px; }
 .toggle { position: relative; flex: none; width: 36px; height: 20px; }
 .toggle input { position: absolute; inset: 0; width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }

@@ -21,6 +21,7 @@ New behaviour comes with a test. A test for a bug should fail on the old code fi
 - **The auth token stays in memory for one request.** Never store, log or return it. The e2e test checks that it is not in extension storage.
 - **Every in-memory or stored collection needs a stated bound** (cap, prune or TTL), written next to it. The service worker and storage live for weeks.
 - **Pure logic stays pure.** `extension/lib/*.js` other than `panel.js` must not touch `chrome.*`, so it stays testable in Node.
+- **A new state goes in `extension/lib/states.js` first.** A verdict code, stall cause, channel state or player state, with what it means for the UI (label, colour, whether a reload helps), is declared there once and read everywhere. `tests/states.test.mjs` fails when `tracker.js` produces one that is not declared. How each state moves: [docs/state-machines.md](docs/state-machines.md).
 
 ## Adding a module the panel imports
 Content scripts load panel modules by URL, so every file under `extension/lib/` the panel reaches must be listed in `web_accessible_resources` in `manifest.json`. `tests/manifest.test.mjs` checks this. After a manifest change, reload the extension: open tabs keep the old manifest until then and fail with "Failed to fetch dynamically imported module".

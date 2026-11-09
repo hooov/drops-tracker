@@ -106,6 +106,38 @@ test('ordinary earning is not called wasted', () => {
   assert.equal(chipView(s, T0 + 2 * MIN, 'india').tone, 'ok');
 });
 
+test('a session still naming an earned drop while the next drop rises is not called wasted', () => {
+  // Drop a (60) earned; b (240) in the same campaign keeps rising, as drops in a campaign tick
+  // together. The session never names b, so the tracker falls back to the last one, which is a.
+  const india = chan('india', [{ id: 'rivals' }]);
+  const camp = (m) => ({
+    id: 'rivals', name: 'rivals', status: 'ACTIVE', endAt: LATER,
+    timeBasedDrops: [
+      { id: 'a', name: 'a', requiredMinutesWatched: 60, endAt: LATER, self: { currentMinutesWatched: Math.min(m, 60), dropInstanceID: m >= 60 ? 'got' : null, isClaimed: false, hasPreconditionsMet: true } },
+      { id: 'b', name: 'b', requiredMinutesWatched: 240, endAt: LATER, self: { currentMinutesWatched: m, isClaimed: false, hasPreconditionsMet: true } },
+    ],
+  });
+  let s;
+  for (let i = 0; i < 6; i++) {
+    const m = 57 + i; // a reaches 60 and stops (capped); b keeps going
+    s = poll(s, i, { campaigns: [camp(m)], channels: [india], sessions: [session('india', 'a', Math.min(m, 60), 60)] });
+  }
+  assert.equal(s.session?.dropId, 'a', 'the session still names the earned drop');
+  assert.equal(s.verdict.code, 'earning');
+  assert.equal(s.verdict.wasted, null, 'b is rising: ordinary earning');
+});
+
+test('a quiet poll between credits keeps the warning instead of flickering it off', () => {
+  const s = badgeRun(true);
+  assert.equal(s.verdict.wasted?.reason, 'earned');
+  const golf = chan('golf', [BADGE]);
+  const india = chan('india', [{ id: 'rivals' }]);
+  // Same reading as the last poll: nothing rose this minute.
+  const quiet = poll(s, 5, { campaigns: [watch('rivals', 69, 360)], channels: [golf, india], sessions: [session('golf', 'badge-drop', 362, 360)], rewards: OWNED });
+  assert.equal(quiet.verdict.code, 'earning');
+  assert.equal(quiet.verdict.wasted?.reason, 'earned');
+});
+
 test('credited outside this browser: nothing to close here, so no call to action', () => {
   // The session names a channel with no tab here. Its drop is earned, but there is nothing to close.
   const india = chan('india', [{ id: 'rivals' }]);
