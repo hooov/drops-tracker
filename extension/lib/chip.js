@@ -39,6 +39,11 @@ export function channelDrops(state, login) {
   const elsewhere = credited.length ? credited : earners;
   const drops = on(elsewhere);
   if (drops.length) return { drops, from: elsewhere.length === 1 && elsewhere[0].login !== login ? elsewhere[0].displayName : null };
+  // Credited on a tab here that has nothing left to list, such as a channel badge already earned
+  // that Twitch kept counting (seen 2026-11-09). Listing every drop in progress would suggest
+  // those are what is rising; the verdict says what is.
+  const sessionLogin = state.session?.login;
+  if (sessionLogin && streams.some((s) => s.login === sessionLogin)) return { drops: [], from: null };
   // Minutes rising with no tab here that can earn: a stream outside this browser.
   return state.verdict?.code === 'earning' ? everything : { drops: [], from: null };
 }
@@ -81,6 +86,7 @@ export function chipView(state, now, login = null) {
 function runningView(v, rate, label, pct, progress) {
   if (v.code === 'earning') {
     const where = v.channel ? ` on ${v.channel}` : '';
+    if (v.wasted) return { tone: 'warn', text: label || 'Drops', pct, title: `${progress} ${v.wasted.message}`.trim() };
     if (v.slow) {
       return { tone: 'warn', text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${rate.counted} of the last ${rate.watched} watched minutes counted.`.trim() };
     }

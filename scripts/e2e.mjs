@@ -198,15 +198,49 @@ try {
   // Five more minutes, the last two credited late as Twitch does: nothing, then two at once.
   for (const added of [1, 1, 1, 0, 2]) { await advance(1, added); await alpha.waitForTimeout(150); await poll(); }
   const lastCells = await popup.waitForFunction(() => {
-    const cells = [...document.querySelectorAll('#timeline i')].slice(-2).map((i) => i.className);
+    const cells = (document.getElementById('timeline').dataset.cells || '').split(',').slice(-2);
     return cells.length === 2 && cells.every(Boolean) && cells;
   }).then((h) => h.jsonValue());
   assert.deepEqual(lastCells, ['gain', 'gain'], 'a minute credited late must not be drawn as lost');
+  // Even squares and gaps at 125% display scaling. As grid columns on fractional pixels they were
+  // 9 or 10 screen pixels wide with 2 or 3 pixel gaps. Read from the pixels actually drawn, and
+  // check the canvas maps 1:1 onto the screen so nothing rescales them.
+  const cdp = await ctx.newCDPSession(popup);
+  const view = await popup.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: view.w, height: view.h, deviceScaleFactor: 1.25, mobile: false });
+  await popup.waitForTimeout(1500); // The panel re-renders every second.
+  const strip = await popup.evaluate(() => {
+    const canvas = document.querySelector('#timeline canvas');
+    const dpr = devicePixelRatio;
+    const row = canvas.getContext('2d').getImageData(0, canvas.height >> 1, canvas.width, 1).data;
+    const runs = [];
+    for (let x = 0; x < canvas.width; x++) {
+      const on = row[x * 4 + 3] > 0;
+      if (runs.length && runs[runs.length - 1].on === on) runs[runs.length - 1].n++;
+      else runs.push({ on, n: 1 });
+    }
+    const inner = runs.slice(runs[0].on ? 0 : 1, runs[runs.length - 1].on ? runs.length : -1);
+    return {
+      dpr,
+      oneToOne: canvas.width === Math.round(parseFloat(canvas.style.width) * dpr) && Math.abs(canvas.getBoundingClientRect().width * dpr - canvas.width) < 0.5,
+      squares: inner.filter((r) => r.on).length,
+      widths: [...new Set(inner.filter((r) => r.on).map((r) => r.n))],
+      gaps: [...new Set(inner.filter((r) => !r.on).map((r) => r.n))],
+    };
+  });
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  await cdp.detach();
+  assert.equal(strip.dpr, 1.25);
+  assert.equal(strip.oneToOne, true, `strip canvas is rescaled on screen: ${JSON.stringify(strip)}`);
+  assert.equal(strip.squares, 30, JSON.stringify(strip));
+  // Gaps identical; squares share the spare pixels, so they may differ by one screen pixel.
+  assert.ok(Math.max(...strip.widths) - Math.min(...strip.widths) <= 1, `squares differ in width on screen: ${JSON.stringify(strip)}`);
+  assert.equal(strip.gaps.length, 1, `gaps differ on screen: ${JSON.stringify(strip)}`);
   await shot('2-earning');
   const size = await popup.evaluate(() => { const p = document.querySelector('.panel'); return { w: p.offsetWidth, h: p.offsetHeight }; });
   assert.equal(size.w, 326, 'same width as Twitch\'s own panel');
   console.log(`   toolbar panel is ${size.w}x${size.h}px`);
-  step('minutes rising: Earning, badge 81%, AlphaTV credited, Bravo labelled as no drops, late minute drawn as counted');
+  step('minutes rising: Earning, badge 81%, AlphaTV credited, Bravo labelled as no drops, late minute drawn as counted, strip gaps even at 125%');
 
   // Chat chip: read the real shadow DOM on the real tab.
   const chip = (page) => page.evaluate(() => {
@@ -589,6 +623,19 @@ try {
   s = await earningNow();
   assert.equal(s.verdict.code, 'earning');
   step('damaged saved state: polling survives');
+
+  // Minutes going where they cannot help: the panel says so in amber, from the tracker's verdict.
+  const wastedMsg = "AlphaTV's loyalty badge is already earned, but Twitch is still crediting it, so these minutes do nothing. Bravo can earn Marvel Rivals: close or pause AlphaTV.";
+  await popup.evaluate(async (message) => {
+    const { state } = await chrome.storage.local.get('state');
+    await chrome.storage.local.set({ state: { ...state, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', message } } } });
+  }, wastedMsg);
+  await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'warn');
+  assert.equal(await popup.textContent('#verdict-detail'), wastedMsg);
+  assert.match(await popup.textContent('#verdict-title'), /^Earning/);
+  s = await poll();
+  await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
+  step('minutes credited to an earned drop: amber, says which tab could earn instead; clears on the next poll');
 
   // A tracker that stopped polling must not keep showing good news.
   await popup.evaluate(async () => {

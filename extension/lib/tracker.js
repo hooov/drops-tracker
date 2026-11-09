@@ -119,6 +119,34 @@ export function creditRate(timeline) {
   return { watched: watched.length, counted: Math.min(counted, watched.length) };
 }
 
+/**
+ * Minutes Twitch is crediting where they cannot help, or null. Measured 2026-11-09: Twitch kept
+ * counting a channel badge already earned (363 of 360) and kept that channel credited ahead of an
+ * open tab with 290 minutes left to earn; then it credited a drop needing 179 minutes with about
+ * 95 left in its campaign. Twitch credits one channel at a time and nothing documented lets a
+ * viewer choose, so the only remedy is stopping the stream it picked, which must be open here.
+ */
+export function wastedCredit(session, active, streams) {
+  if (!session?.dropId || !streams.some((st) => st.login === session.login)) return null;
+  const drop = active.find((d) => d.id === session.dropId);
+  const earned = !drop && session.required > 0 && session.minutes >= session.required;
+  if (!earned && !drop?.atRisk) return null;
+  const channel = session.displayName || session.login;
+  const badge = streams.flatMap((st) => st.badges || []).flatMap((b) => b.drops || []).find((d) => d.id === session.dropId);
+  const what = earned
+    ? `${channel}'s ${badge?.name || 'drop'} is already earned, but Twitch is still crediting it, so these minutes do nothing.`
+    : `Twitch is crediting ${channel}, but ${drop.name} cannot finish before its campaign ends.`;
+  // Another open tab with a drop it can still finish. Twitch decides which one gets the minutes.
+  let alt = null;
+  for (const st of streams) {
+    if (st.login === session.login || st.channelState !== 'eligible') continue;
+    const d = active.find((x) => st.campaignIds?.includes(x.campaignId) && x.remaining > 0 && !x.atRisk);
+    if (d) { alt = { name: st.displayName || st.login, game: d.game || d.campaign }; break; }
+  }
+  const fix = alt ? ` ${alt.name} can earn ${alt.game}: close or pause ${channel}.` : '';
+  return { reason: earned ? 'earned' : 'too_late', message: what + fix };
+}
+
 function classifyPlayer(stream, rec, now) {
   const { tab, player } = stream;
   if (tab?.discarded || tab?.frozen) return { state: 'asleep' };
@@ -504,7 +532,7 @@ export function update(prev, obs, now) {
   s.lostAt = null;
   if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null) {
     const slow = s.rate.watched >= RATE_MIN_MINUTES && s.rate.counted / s.rate.watched < SLOW_BELOW;
-    s.verdict = { code: 'earning', channel: session?.displayName || null, slow };
+    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted: wastedCredit(session, s.active, streams) };
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.
     s.verdict = { code: 'idle', hasStreams: true, limited: true, message: 'Cannot check whether your open streams can earn Drops right now.' };
@@ -615,7 +643,7 @@ export function badge(state) {
   if (state.verdict.limited) return { text: '?', color: '#b54708' };
   // Amber flags the claim while the number keeps showing the next drop's progress.
   if (state.verdict.code === 'earning' && (state.active[0] || !claim)) {
-    return { text: state.active[0] ? `${state.active[0].pct}%` : 'ON', color: state.verdict.slow || claim ? '#b54708' : '#067647' };
+    return { text: state.active[0] ? `${state.active[0].pct}%` : 'ON', color: state.verdict.slow || state.verdict.wasted || claim ? '#b54708' : '#067647' };
   }
   if (claim) return { text: 'CLM', color: '#b54708' };
   if (state.verdict.code === 'waiting') return { text: '...', color: '#175cd3' };

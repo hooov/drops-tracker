@@ -137,10 +137,9 @@ button.link { padding: 0; }
 .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--tone); }
 .detail { margin-top: 4px; }
 
-.timeline { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; height: 8px; margin-top: 8px; }
-.timeline i { display: block; border-radius: 1px; background: var(--dt-track); }
-.timeline i.gain { background: var(--dt-brand); }
-.timeline i.miss { background: var(--dt-bad); }
+/* Drawn on a canvas by panel.js in screen pixels; colours read from these tokens. */
+.timeline { height: 8px; margin-top: 8px; }
+.timeline canvas { display: block; }
 #rate { margin-top: 4px; }
 
 /* Drop cards */
