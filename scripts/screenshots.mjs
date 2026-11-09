@@ -481,6 +481,20 @@ await scene('earning: hero, My Drops, All Drops, Settings, chip', {
     await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'true', null, { timeout: 5000 });
     await alpha.waitForTimeout(300);
     chipShots.push(['Narrow chat', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+
+    // A drop waiting to be claimed: a purple count, on the ring's corner here, inside it when wide.
+    await helper.evaluate(async () => {
+      const { state } = await chrome.storage.local.get('state');
+      await chrome.storage.local.set({ state: { ...state, unclaimed: [{ id: 'claim', name: '+1 Renown Nov 26', campaign: 'Season 21 Drops 3', campaignActive: true }] } });
+    });
+    await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.claims === '1');
+    await alpha.waitForTimeout(300);
+    const narrowClaim = await alpha.screenshot({ clip: await chipClip(alpha) });
+    await alpha.evaluate(() => { document.getElementById('wrap').style.width = ''; });
+    await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip').dataset.compact === 'false', null, { timeout: 5000 });
+    await alpha.waitForTimeout(300);
+    chipShots.push(['Claim waiting', await alpha.screenshot({ clip: await chipClip(alpha) })]);
+    chipShots.push(['Claim, narrow chat', narrowClaim]);
   },
 });
 

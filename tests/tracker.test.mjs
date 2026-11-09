@@ -443,8 +443,8 @@ test('the toolbar badge keeps showing the next drop while earning with a claim w
   const earning = { verdict: { code: 'earning' }, active: [{ pct: 51 }], unclaimed: [{ campaignActive: true }] };
   const b = badge(earning);
   assert.equal(b.text, '51%');
-  assert.equal(b.color, '#b54708', 'amber, so the claim is still flagged');
-  assert.equal(badge({ ...earning, active: [] }).text, 'CLM', 'nothing left to earn');
+  assert.equal(b.color, '#067647', 'green: a claim waiting is not a warning');
+  assert.deepEqual(badge({ ...earning, active: [] }), { text: 'CLM', color: '#6941c6' }, 'nothing left to earn: purple, not amber');
   assert.equal(badge({ ...earning, verdict: { code: 'idle' } }).text, 'CLM', 'not earning');
   assert.equal(badge({ ...earning, verdict: { code: 'idle', lost: true } }).text, 'STOP', 'stopping outranks a claim');
   assert.equal(badge({ ...earning, verdict: { code: 'idle', limited: true } }).text, '?', 'not knowing outranks a claim');

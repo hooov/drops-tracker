@@ -48,7 +48,18 @@ export function channelDrops(state, login) {
   return state.verdict?.code === 'earning' ? everything : { drops: [], from: null };
 }
 
+/**
+ * What the chip shows. `claims` is how many earned drops from campaigns still running wait to be
+ * claimed, drawn as a purple count (beside the ring, or inside it when chat is narrow) and never
+ * as the ring's colour: amber for a reward waiting read as something wrong (Tyler, 2026-11-09).
+ */
 export function chipView(state, now, login = null) {
+  const view = chipViewOf(state, now, login);
+  const claims = (state?.unclaimed || []).filter((u) => u.campaignActive).length;
+  return { ...view, claims };
+}
+
+function chipViewOf(state, now, login) {
   if (!state) return { tone: 'idle', text: 'Drops', pct: null, title: 'Drops Tracker is starting' };
   const top = channelDrops(state, login).drops[0];
   const pct = top ? top.pct : null;
@@ -59,7 +70,8 @@ export function chipView(state, now, login = null) {
   const v = state.verdict;
   const label = pct != null ? `${pct}%` : null;
   const progress = top ? `${top.name}: ${top.minutes}/${top.required} min.` : '';
-  const claim = state.unclaimed?.find((u) => u.campaignActive);
+  const waiting = (state.unclaimed || []).filter((u) => u.campaignActive);
+  const claim = waiting[0];
   switch (v.code) {
     case 'stalled':
       return { tone: 'bad', text: `Hung ${Math.max(1, Math.round((now - v.since) / 60000))}m`, pct, title: `${progress} ${v.message}`.trim() };
@@ -72,15 +84,16 @@ export function chipView(state, now, login = null) {
     default:
       break;
   }
-  const claimNote = claim ? `${claim.name} is ready to claim. ` : '';
+  const claimNote = waiting.length > 1 ? `${waiting.length} drops are ready to claim. ` : claim ? `${claim.name} is ready to claim. ` : '';
   // Tracking having stopped outranks a reward waiting, which can wait.
   if (v.lost) return { tone: 'warn', text: 'Stopped', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
   if (v.limited) return { tone: 'warn', text: 'Drops ?', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
-  if (claim && !top) return { tone: 'warn', text: 'Claim', pct: 100, title: `${claim.name} is ready to claim` };
+  // Nothing left to earn here, only a reward: a full purple ring, not a warning.
+  if (claim && !top) return { tone: 'info', text: 'Claim', pct: 100, title: claimNote.trim() };
   const view = runningView(v, state.rate, label, pct, progress);
-  // A claim can wait a long time, so it must not hide the progress of the next drop. Amber, so it
-  // still shows when chat is too narrow for the word and only the ring is left.
-  return claim ? { ...view, tone: 'warn', text: `${label} Claim`, title: `${claimNote}${view.title}` } : view;
+  // A claim can wait a long time, so it must not hide the progress of the next drop or change what
+  // the ring's colour says about earning. The count says it instead.
+  return claim ? { ...view, title: `${claimNote}${view.title}` } : view;
 }
 
 function runningView(v, rate, label, pct, progress) {

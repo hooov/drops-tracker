@@ -38,19 +38,30 @@
     :host([data-tone="bad"]){--tone:var(--color-fill-error,#ff4f4d)}
     :host([data-tone="warn"]){--tone:var(--color-fill-warn,#ffb31a)}
     :host([data-tone="info"]){--tone:var(--color-background-progress-status,#a970ff)}
-    button{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;min-width:32px;
+    button{all:unset;position:relative;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;min-width:32px;
       padding:0 6px;border-radius:9000px;cursor:pointer;font:600 14px/1 var(--font-base,Inter,"Helvetica Neue",Helvetica,Arial,sans-serif);white-space:nowrap}
     button:hover,button[aria-expanded="true"]{background:var(--color-background-button-text-hover,rgba(83,83,95,.48))}
     button:focus-visible{outline:2px solid var(--color-background-progress-status,#a970ff);outline-offset:-2px}
     svg{flex:none;width:20px;height:20px;stroke-width:4.5}
     .track{stroke:var(--color-background-progress,rgba(83,83,95,.55))}
     .arc{stroke:var(--tone);stroke-linecap:round}
-    text{display:none;fill:currentColor;stroke:none;font-size:12.5px;font-weight:700;text-anchor:middle;dominant-baseline:central}
-    text.wide{font-size:10.5px}
+    text{fill:currentColor;stroke:none;font-weight:700;text-anchor:middle;dominant-baseline:central}
+    .pct{display:none;font-size:12.5px}
+    .pct.wide{font-size:10.5px}
+    /* Earned drops waiting to be claimed: a purple count, inside the ring beside the label, or on
+       the ring's corner when chat is narrow and the ring holds the percentage. Never the ring's colour. */
+    .claim{display:none}
+    .claim circle{fill:var(--color-background-button-primary-default,#9147ff);stroke:none}
+    .claim text{fill:#fff;font-size:15px}
+    :host([data-claims]:not([data-compact="true"])) .claim{display:inline}
+    b{display:none;position:absolute;top:-2px;right:-4px;min-width:15px;height:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;
+      background:var(--color-background-button-primary-default,#9147ff);color:#fff;font:700 10px/15px var(--font-base,Inter,Arial,sans-serif);text-align:center;
+      box-shadow:0 0 0 2px var(--color-background-base,#18181b)}
+    :host([data-claims][data-compact="true"]) b{display:block}
     /* No room for the label: a bigger ring with the number inside, so the percentage always shows. */
     :host([data-compact="true"]) button{padding:0 1px}
     :host([data-compact="true"]) svg{width:30px;height:30px;stroke-width:3}
-    :host([data-compact="true"]) text{display:block}
+    :host([data-compact="true"]) .pct{display:block}
     :host([data-compact="true"]) span{display:none}
     :host([data-tone="bad"]) span{color:var(--color-text-error,#ff8280)}
     :host([data-tone="warn"]) span{color:var(--color-fill-warn,#ffb31a)}
@@ -58,12 +69,15 @@
     <svg viewBox="0 0 32 32" aria-hidden="true" fill="none">
       <circle class="track" cx="16" cy="16" r="13.5"/>
       <circle class="arc" cx="16" cy="16" r="13.5" transform="rotate(-90 16 16)"/>
-      <text x="16" y="16.5"></text>
-    </svg><span></span></button>`;
+      <text class="pct" x="16" y="16.5"></text>
+      <g class="claim"><circle cx="16" cy="16" r="9"/><text x="16" y="16.5"></text></g>
+    </svg><span></span><b></b></button>`;
   const button = shadow.querySelector('button');
   const arc = shadow.querySelector('.arc');
-  const number = shadow.querySelector('text');
+  const number = shadow.querySelector('.pct');
   const label = shadow.querySelector('span');
+  const claimInRing = shadow.querySelector('.claim text');
+  const claimBadge = shadow.querySelector('b');
 
   function paint() {
     const view = chipView(state, Date.now(), channelFromPath(location.pathname));
@@ -74,6 +88,10 @@
     number.textContent = view.pct == null ? '' : String(view.pct);
     number.classList.toggle('wide', view.pct === 100);
     label.textContent = view.text;
+    const claims = view.claims || 0;
+    if (claims) chip.dataset.claims = String(claims);
+    else delete chip.dataset.claims;
+    claimInRing.textContent = claimBadge.textContent = claims > 9 ? '9+' : String(claims);
     button.title = view.title;
     button.setAttribute('aria-label', `Drops Tracker: ${view.title}`);
     return view;
