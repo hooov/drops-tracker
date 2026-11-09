@@ -139,6 +139,35 @@ test('more than two playing streams with no gain names the limit', () => {
   assert.match(s.verdict.message, /3 streams/);
 });
 
+// Measured 2026-11-09: a second playing stream on another channel stopped credit for 10.5 min and
+// closing it brought minutes back. Before this, two playing streams read "uncounted", whose advice
+// (and Auto-reload) is to reload the earning tab, which does not remove the cause.
+test('a second playing stream with no gain is named as the cause, not reload advice', () => {
+  const mins = [195, 196, 196, 196, 196, 196];
+  const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), stream(2, bravo, 200 + i * 60)]);
+  assert.equal(s.verdict.code, 'stalled');
+  assert.equal(s.verdict.cause, 'second_stream');
+  assert.equal(s.verdict.tabId, 1, 'the earning tab, not the other one');
+  assert.equal(s.verdict.otherTabId, 2);
+  assert.match(s.verdict.message, /Bravo is also playing/);
+  assert.match(s.verdict.message, /Close or pause Bravo/);
+  assert.doesNotMatch(s.verdict.message, /reload/i);
+});
+
+test('the same channel open in two playing tabs says so', () => {
+  const mins = [195, 196, 196, 196, 196, 196];
+  const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), stream(2, alpha, 200 + i * 60)]);
+  assert.equal(s.verdict.cause, 'second_stream');
+  assert.match(s.verdict.message, /AlphaTV is playing in two tabs/);
+});
+
+test('a second tab that is paused is not a second stream', () => {
+  const mins = [195, 196, 196, 196, 196, 196];
+  const paused = { player: { hasVideo: true, paused: true, readyState: 4, currentTime: 200 } };
+  const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), stream(2, bravo, 200, paused)]);
+  assert.equal(s.verdict.cause, 'uncounted');
+});
+
 test('network failure is not a stall, and the clock restarts after an outage', () => {
   let s = run([195, 196], (i) => [stream(1, alpha, 100 + i * 60)]);
   s = update(s, { error: { kind: 'network', message: 'Could not reach Twitch' } }, T0 + 6 * MIN);

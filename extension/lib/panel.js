@@ -21,7 +21,7 @@ const TEMPLATE = `
       <button id="tab-mine" class="tab" type="button" role="tab" aria-selected="true" aria-controls="view-mine">My Drops<i class="tab-dot"></i></button>
       <button id="tab-all" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-all">All Drops</button>
       <button id="tab-badges" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-badges">Badges</button>
-      <button id="tab-debug" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-debug">Debug</button>
+      <button id="tab-settings" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-settings">Settings</button>
     </div>
     <div id="view-mine" role="tabpanel" aria-labelledby="tab-mine">
     <div id="verdict" class="section status">
@@ -61,28 +61,42 @@ const TEMPLATE = `
       </div>
     </div>
     <div id="view-badges" role="tabpanel" aria-labelledby="tab-badges" hidden></div>
-    <div id="view-debug" role="tabpanel" aria-labelledby="tab-debug" hidden>
+    <div id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <div class="section">
-      <p class="strong label">Settings</p>
       <div class="setting">
         <label for="auto-refresh">Auto-refresh Drops page</label>
         <span class="toggle">
-          <input id="auto-refresh" type="checkbox">
+          <input id="auto-refresh" type="checkbox" aria-describedby="auto-refresh-hint">
           <label for="auto-refresh" aria-hidden="true"></label>
         </span>
       </div>
+      <p id="auto-refresh-hint" class="sub setting-hint">Twitch's Drops page never updates by itself. Stream tabs are never touched.</p>
       <div id="auto-refresh-every" class="setting every" hidden>
         <label for="auto-refresh-minutes" class="sub">Refresh every</label>
         <select id="auto-refresh-minutes" class="select"></select>
       </div>
-      <div class="setting every">
+    </div>
+    <div class="section">
+      <div class="setting">
         <label for="auto-reload">Auto-reload hung streams</label>
         <span class="toggle">
-          <input id="auto-reload" type="checkbox">
+          <input id="auto-reload" type="checkbox" aria-describedby="auto-reload-hint">
           <label for="auto-reload" aria-hidden="true"></label>
         </span>
       </div>
+      <p id="auto-reload-hint" class="sub setting-hint">After 6 minutes with no new minutes. At most 3 tries, never on a paused stream or when another stream is the likely cause.</p>
     </div>
+    <div class="section">
+      <div class="setting">
+        <label for="dev-mode">Developer mode</label>
+        <span class="toggle">
+          <input id="dev-mode" type="checkbox" aria-describedby="dev-mode-hint">
+          <label for="dev-mode" aria-hidden="true"></label>
+        </span>
+      </div>
+      <p id="dev-mode-hint" class="sub setting-hint">Shows debug tools below: the lost minutes log, tracker status and debug info for bug reports.</p>
+    </div>
+    <div id="debug-sections" hidden>
     <details id="log-section" class="section">
       <summary><span id="log-summary" class="strong">Lost minutes</span>${CHEVRON_ICON}</summary>
       <div id="log-rows"></div>
@@ -105,6 +119,7 @@ const TEMPLATE = `
         <button id="debug-copy" class="link" type="button">Copy debug info</button>
       </div>
       <p class="sub log-note">Copied text has your channels and progress, never your login.</p>
+    </div>
     </div>
     </div>
     <footer class="foot">
@@ -221,6 +236,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     minutes.value = String(settings.autoRefreshMinutes);
     $('auto-refresh-every').hidden = !settings.autoRefresh;
     $('auto-reload').checked = settings.autoReload;
+    $('dev-mode').checked = settings.devMode;
+    const wasHidden = $('debug-sections').hidden;
+    $('debug-sections').hidden = !settings.devMode;
+    if (wasHidden && settings.devMode && !$('view-settings').hidden) renderDebug(lastState, Date.now());
   };
   const save = (change) => {
     showSettings({ ...settings, ...change });
@@ -228,6 +247,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   };
   toggle.addEventListener('change', () => save({ autoRefresh: toggle.checked }));
   $('auto-reload').addEventListener('change', () => save({ autoReload: $('auto-reload').checked }));
+  $('dev-mode').addEventListener('change', () => save({ devMode: $('dev-mode').checked }));
   minutes.addEventListener('change', () => save({ autoRefreshMinutes: Number(minutes.value) }));
   let reloadMemo = null;
   let minuteLog = [];
@@ -406,7 +426,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function showTab(name) {
-    for (const tab of ['mine', 'all', 'badges', 'debug']) {
+    for (const tab of ['mine', 'all', 'badges', 'settings']) {
       $(`view-${tab}`).hidden = tab !== name;
       $(`tab-${tab}`).setAttribute('aria-selected', String(tab === name));
     }
@@ -414,7 +434,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('foot-link').textContent = all ? 'All Campaigns' : 'Inventory';
     $('foot-link').href = all ? CAMPAIGNS_PAGE : 'https://www.twitch.tv/drops/inventory';
     if (name === 'badges' && lastState) renderBadges(lastState, Date.now());
-    if (name === 'debug') renderDebug(lastState, Date.now());
+    if (name === 'settings' && settings.devMode) renderDebug(lastState, Date.now());
     if (!all) return;
     chrome.storage.local.get('directory').then((r) => {
       directory = r.directory ?? directory;
@@ -425,7 +445,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   $('tab-mine').addEventListener('click', () => showTab('mine'));
   $('tab-all').addEventListener('click', () => showTab('all'));
   $('tab-badges').addEventListener('click', () => showTab('badges'));
-  $('tab-debug').addEventListener('click', () => showTab('debug'));
+  $('tab-settings').addEventListener('click', () => showTab('settings'));
   $('dir-refresh').addEventListener('click', () => loadDirectory(true));
   $('dir-search').addEventListener('input', () => renderDirectory(Date.now()));
   // Twitch's page shortcuts would otherwise take typed letters: f for fullscreen, m for mute.
@@ -457,7 +477,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     else if (state.lastGainAt && v.code === 'earning') age = `+1m ${ago(now - state.lastGainAt)}`;
     $('verdict-age').textContent = age;
     const action = $('verdict-action');
-    const reloadable = v.code === 'stalled' && v.tabId != null && v.cause !== 'too_many' && v.cause !== 'paused';
+    // A reload cannot fix these: the cause is another stream, or the user's own pause.
+    const reloadable = v.code === 'stalled' && v.tabId != null && !['too_many', 'second_stream', 'paused'].includes(v.cause);
     action.hidden = !reloadable;
     action.onclick = reloadable ? () => reloadTab?.(v.tabId) : null;
   }
@@ -642,7 +663,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       lastState = state;
       if (allShown()) renderDirectory(now);
       if (!$('view-badges').hidden) renderBadges(state, now);
-      if (!$('view-debug').hidden) renderDebug(state, now);
+      if (!$('view-settings').hidden && settings.devMode) renderDebug(state, now);
       $('checked').textContent = state.lastPollAt ? `Checked ${ago(now - state.lastPollAt)}` : '';
     },
   };

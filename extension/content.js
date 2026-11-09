@@ -167,7 +167,6 @@
     const points = row.querySelector(POINTS);
     const group = points && [...row.children].find((c) => c.contains(points));
     if (group ? chip.parentElement === group : row.contains(chip)) return;
-    closePanel(false);
     if (group) {
       chip.style.marginRight = '';
       group.append(chip);
@@ -175,6 +174,9 @@
       chip.style.marginRight = 'auto';
       row.prepend(chip);
     }
+    // Follow the chip rather than close: the points mount about a second after the row (real
+    // popout chat, 2026-11-09), so closing here shut a panel opened in that first second.
+    placePanel();
   }
 
   function fit(view) {

@@ -314,7 +314,8 @@ function trackMinutes(previous, campaigns, sessions, firstGoodPoll, sessionOnly,
   return { peaks, added, risen };
 }
 
-function diagnose(candidates, playingCount, active, unclaimed) {
+function diagnose(candidates, streams, active, unclaimed) {
+  const playingCount = streams.filter((s) => s.playerState === 'playing').length;
   const named = (s) => s.displayName || s.login;
   const notPlaying = candidates.filter((s) => s.playerState !== 'playing');
   if (notPlaying.length === candidates.length) {
@@ -343,6 +344,18 @@ function diagnose(candidates, playingCount, active, unclaimed) {
       message: `${playingCount} streams are playing here. Twitch reportedly stops counting above ${STREAM_SOFT_LIMIT} per IP. Close the extras.`,
       tabId: playing.tabId,
     };
+  }
+  // Measured 2026-11-09: with a second stream playing, on the same channel or another one, Twitch
+  // stopped counting entirely, and closing it brought minutes back within about 2 min. Reloading
+  // the earning tab would not remove the cause, so this is not a reloadable cause.
+  // (docs/twitch-drops-facts.md, "Measured live"). It conflicts with one 2026-11-06 run where two
+  // streams still earned, so the message says what was seen rather than that two always fail.
+  const other = streams.find((s) => s.playerState === 'playing' && s.tabId !== playing.tabId);
+  if (other) {
+    const message = other.login && other.login === playing.login
+      ? `${named(playing)} is playing in two tabs, and Twitch is not adding minutes. A second stream stopped Drops in testing until it was closed. Close one of them.`
+      : `${named(other)} is also playing, and Twitch is not adding minutes on ${named(playing)}. A second stream stopped Drops in testing until it was closed. Close or pause ${named(other)}.`;
+    return { cause: 'second_stream', message, tabId: playing.tabId, otherTabId: other.tabId };
   }
   return {
     cause: 'uncounted',
@@ -482,7 +495,6 @@ export function update(prev, obs, now) {
   }
 
   // Verdict.
-  const playingCount = streams.filter((st) => st.playerState === 'playing').length;
   // A missing <video> is not evidence: Twitch could have moved the player out of reach.
   const allDead = candidates.length > 0 && candidates.every((c) => !['playing', 'no_video'].includes(c.playerState));
   const unchecked = streams.some((st) => st.channelState === 'unknown');
@@ -539,7 +551,7 @@ export function update(prev, obs, now) {
     if (now - since < limit) {
       s.verdict = { code: 'waiting', since };
     } else {
-      s.verdict = { code: 'stalled', since, ...diagnose(candidates, playingCount, s.active, s.unclaimed) };
+      s.verdict = { code: 'stalled', since, ...diagnose(candidates, streams, s.active, s.unclaimed) };
     }
   }
   const v = s.verdict;

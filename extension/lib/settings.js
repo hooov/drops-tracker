@@ -1,15 +1,22 @@
 // User settings and the auto-refresh timing. Pure, so it can be tested without a browser.
 
 export const INTERVALS = [1, 5, 10, 30];
-export const DEFAULTS = { autoRefresh: false, autoRefreshMinutes: 5, autoReload: false };
+// Both helpers are on by default (Tyler's call, 2026-11-09, for the store release). devMode only
+// shows the debug tools in the Settings tab.
+export const DEFAULTS = { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false };
 export const DROPS_PAGES = ['https://www.twitch.tv/drops/*'];
 const JITTER_MS = 5000; // The alarm can fire slightly early; do not slip a whole minute over that.
 
+// A saved choice wins, so turning a default-on setting off sticks. Anything that is not a real
+// boolean falls back to the default rather than to off.
+const bool = (v, d) => (typeof v === 'boolean' ? v : d);
+
 export function normalize(raw) {
   return {
-    autoRefresh: raw?.autoRefresh === true,
+    autoRefresh: bool(raw?.autoRefresh, DEFAULTS.autoRefresh),
     autoRefreshMinutes: INTERVALS.includes(raw?.autoRefreshMinutes) ? raw.autoRefreshMinutes : DEFAULTS.autoRefreshMinutes,
-    autoReload: raw?.autoReload === true,
+    autoReload: bool(raw?.autoReload, DEFAULTS.autoReload),
+    devMode: bool(raw?.devMode, DEFAULTS.devMode),
   };
 }
 
@@ -20,8 +27,8 @@ export const RELOAD_AFTER_MS = 6 * 60000;
 export const RELOAD_GAP_MS = 10 * 60000;
 export const RELOAD_MAX = 3;
 const RECOVERED_SHOWN_MS = 30 * 60000;
-// A reload cannot fix a tab you paused, too many streams, an unclaimed drop, or a player it cannot
-// see, which could be Twitch moving it and would just reload for nothing.
+// A reload cannot fix a tab you paused, too many streams or a second one playing, an unclaimed
+// drop, or a player it cannot see, which could be Twitch moving it and would just reload for nothing.
 const RELOADABLE = new Set(['uncounted', 'frozen', 'ended', 'asleep']);
 
 /**

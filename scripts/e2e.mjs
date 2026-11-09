@@ -97,6 +97,24 @@ try {
   await shot('1-signed-out');
   step('no cookie: signed out, without calling Twitch');
 
+  // Settings tab on a fresh install: both helpers on, the debug tools hidden behind Developer mode.
+  await popup.click('#tab-settings');
+  assert.equal(await popup.isChecked('#auto-refresh'), true, 'Auto-refresh is on by default');
+  assert.equal(await popup.isChecked('#auto-reload'), true, 'Auto-reload is on by default');
+  assert.equal(await popup.isChecked('#dev-mode'), false, 'Developer mode is off by default');
+  assert.equal(await popup.isVisible('#log-section'), false, 'debug tools stay hidden until Developer mode');
+  await shot('0-settings-default');
+  await popup.locator('.toggle').nth(2).click();
+  assert.equal(await popup.isVisible('#log-section'), true);
+  assert.equal(await popup.isVisible('#debug-status'), true);
+  assert.deepEqual(await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings),
+    { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true });
+  // From here both helpers are switched off, as a user can, so the steps below control when they act.
+  await popup.evaluate(() => chrome.storage.local.set({ settings: { autoRefresh: false, autoRefreshMinutes: 5, autoReload: false, devMode: true } }));
+  await popup.waitForFunction(() => !document.getElementById('auto-reload').checked);
+  await popup.click('#tab-mine');
+  step('Settings tab: Auto-refresh and Auto-reload on by default; Developer mode shows the debug tools');
+
   // 2. Real Twitch, from the extension's own origin: CORS must pass and auth failures must map.
   const anon = await sw.evaluate(async () => {
     const r = await fetch('https://gql.twitch.tv/gql', {
@@ -357,6 +375,16 @@ try {
   // 4. Player healthy, Twitch stops counting.
   // One minute per poll like the real alarm; one jump of 5 would read as PC sleep and restart the clock.
   for (let i = 0; i < 5; i++) { await advance(1); await alpha.waitForTimeout(150); s = await poll(); }
+  // Bravo is playing too, so a second stream is the named cause (measured 2026-11-09: one stopped
+  // credit until closed), and Reload is not offered because reloading AlphaTV would not fix it.
+  assert.equal(s.verdict.code, 'stalled');
+  assert.equal(s.verdict.cause, 'second_stream');
+  assert.match(await popup.textContent('#verdict-detail'), /Bravo is also playing/);
+  assert.equal(await popup.isHidden('#verdict-action'), true, 'no Reload button for a second-stream hang');
+  step('hang with a second stream playing: names Bravo as the likely cause, offers no reload');
+  // Pause Bravo: from here the hang has no visible cause, which is what Reload and Auto-reload are for.
+  await bravo.evaluate(() => document.querySelector('video').pause());
+  s = await poll();
   assert.equal(s.verdict.code, 'stalled');
   assert.equal(s.verdict.cause, 'uncounted');
   assert.equal(await badgeText(), 'HUNG');
@@ -432,8 +460,8 @@ try {
   dropsPage.on('load', () => { dropsLoads++; });
   alpha.on('load', () => { streamLoads++; });
   await popup.bringToFront();
-  await popup.click('#tab-debug');
-  assert.equal(await popup.isChecked('#auto-refresh'), false, 'must be off by default');
+  await popup.click('#tab-settings');
+  assert.equal(await popup.isChecked('#auto-refresh'), false, 'off, as switched off at the start');
   assert.equal(await popup.isVisible('#auto-refresh-every'), false);
   for (let i = 0; i < 6; i++) { await advance(1); await poll(); }
   await dropsPage.waitForTimeout(800);
@@ -457,7 +485,7 @@ try {
   assert.equal(streamLoads, 0, 'stream tabs must never be reloaded by this');
   await popup.screenshot({ path: join(out, '13-auto-refresh-on.png'), fullPage: true });
   const savedSettings = await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings);
-  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false });
+  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false, devMode: true });
   await popup.click('.toggle');
   await advance(2);
   await poll();
@@ -465,7 +493,7 @@ try {
   assert.equal(dropsLoads, 2, 'switching off stops it');
   await dropsPage.close();
   await popup.click('#tab-mine');
-  step('auto-refresh: off by default, reloads the Drops page on the chosen interval, never a stream tab');
+  step('auto-refresh: off when switched off, reloads the Drops page on the chosen interval, never a stream tab');
 
   // What Twitch breaking looks like. Bodies are the real ones captured on 2026-11-06.
   const STALE = { errors: [{ message: 'PersistedQueryNotFound', extensions: { code: 'PERSISTED_QUERY_NOT_FOUND' } }] };
@@ -661,13 +689,13 @@ try {
   await alpha.waitForFunction(() => document.querySelector('video')?.currentTime > 0.3);
   alphaLoads = 0;
   await popup.bringToFront();
-  assert.equal(await popup.isChecked('#auto-reload'), false, 'must be off by default');
+  assert.equal(await popup.isChecked('#auto-reload'), false, 'off, as switched off at the start');
   await advance(1, 1);
   await poll();
   for (let i = 0; i < 9; i++) await flatPoll();
   assert.equal(s.verdict.code, 'stalled', JSON.stringify(s.verdict));
   assert.equal(alphaLoads, 0, 'off means never, however long it is hung');
-  await popup.click('#tab-debug');
+  await popup.click('#tab-settings');
   await popup.locator('.toggle').nth(1).click();
   assert.equal(await popup.isChecked('#auto-reload'), true);
   await popup.click('#tab-mine');
@@ -693,16 +721,19 @@ try {
   s = await poll();
   assert.equal(s.verdict.code, 'earning', JSON.stringify(s.verdict));
   await popup.waitForFunction(() => /Minutes came back \d+m after an auto-reload/.test(document.getElementById('auto-reload-note').textContent));
-  await popup.click('#tab-debug');
+  await popup.click('#tab-settings');
   await popup.locator('.toggle').nth(1).click();
   assert.equal(await popup.isChecked('#auto-reload'), false);
   await popup.click('#tab-mine');
   alpha.off('load', onAlphaLoad);
   bravo.off('load', onBravoLoad);
   await alpha.waitForFunction(() => document.getElementById('drops-tracker-chip'));
-  step('auto-reload: off by default, reloads only the hung tab, 10 minutes apart, stops at 3, reports recovery');
+  step('auto-reload: off when switched off, reloads only the hung tab, 10 minutes apart, stops at 3, reports recovery');
 
   // The minute log, read from a real video in a real tab through the real poll.
+  // Bravo was paused at step 4; the log is checked with both playing.
+  await bravo.evaluate(() => document.querySelector('video').play());
+  await bravo.waitForFunction(() => !document.querySelector('video').paused);
   await alpha.bringToFront();
   await alpha.waitForFunction(() => document.querySelector('video')?.currentTime > 0.3);
   await popup.evaluate(() => chrome.storage.local.remove('minuteLog'));
@@ -732,7 +763,7 @@ try {
   });
   await popup.bringToFront();
   await popup.waitForFunction(() => /Lost minutes: 12 of 24 watched/.test(document.getElementById('log-summary').textContent));
-  await popup.click('#tab-debug');
+  await popup.click('#tab-settings');
   assert.equal(await popup.isVisible('#verdict'), false, 'the tabs show one view at a time');
   await popup.click('#log-section summary');
   const logText = await popup.textContent('#log-rows');
@@ -777,20 +808,20 @@ try {
   assert.ok(Object.keys(pasted.hashes.working).length > 0, 'the working query hashes are what a Twitch change needs');
   assert.equal(JSON.stringify(pasted).includes('e2einvalidtoken'), false, 'the login token must never be copied');
   await popup.click('#tab-mine');
-  assert.equal(await popup.isVisible('#auto-reload'), false, 'settings live in the Debug tab');
+  assert.equal(await popup.isVisible('#auto-reload'), false, 'settings live in the Settings tab');
   step('minute log: records real player state each minute, compares conditions, clears');
   // In the chat panel too, where the module has to load under Twitch's page.
   await alpha.bringToFront();
   await alpha.evaluate(() => document.getElementById('drops-tracker-chip').shadowRoot.querySelector('button').click());
   await alpha.waitForFunction(() => document.getElementById('drops-tracker-panel')?.style.visibility === '');
-  await alpha.click('#drops-tracker-panel #tab-debug');
+  await alpha.click('#drops-tracker-panel #tab-settings');
   await alpha.waitForSelector('#drops-tracker-panel #auto-reload-note', { state: 'attached' });
   const debugFit = await alpha.evaluate(() => { const h = document.getElementById('drops-tracker-panel'); return h.scrollHeight - h.clientHeight; });
-  assert.equal(debugFit, 0, 'the Debug tab must not scroll while its sections are closed');
+  assert.equal(debugFit, 0, 'the Settings tab must not scroll while its sections are closed');
   await alpha.screenshot({ path: join(out, '28-debug-in-chat.png') });
   await alpha.keyboard.press('Escape');
   await popup.bringToFront();
-  step('Debug tab: holds the settings and log, shows real state, runs a check, copies with no token');
+  step('Settings tab with Developer mode: holds the settings and log, shows real state, runs a check, copies with no token');
 
   // All Drops. The list only comes from Twitch's own page, so this drives the real path: a real
   // background tab, the real page-world hook on a real fetch, the real bridge to the worker.
