@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Drops Tracker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shows whether Twitch is really adding Drops minutes right now, and why not when it stalls.",
   "minimum_chrome_version": "120",
   "permissions": ["alarms", "cookies", "notifications", "scripting", "storage", "webRequest"],

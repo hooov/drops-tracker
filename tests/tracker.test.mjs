@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, events, badge, summarize, warning, TIMELINE_MAX } from '../extension/lib/tracker.js';
+import { update, events, badge, summarize, warning, TIMELINE_MAX, creditRate } from '../extension/lib/tracker.js';
+import { timelineCells } from '../extension/lib/minutelog.js';
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/gql-2026-11-06.json', import.meta.url)));
 const T0 = Date.parse('2026-11-06T15:00:00Z');
@@ -472,4 +473,36 @@ test('previous state is not mutated (it is what the next poll diffs against)', (
   const snapshot = JSON.stringify(s1);
   update(s1, obs(196, []), T0 + MIN);
   assert.equal(JSON.stringify(s1), snapshot);
+});
+
+// The minute strip. Twitch credits on its own clock: a check finds nothing, the next finds two.
+const tl = (...cells) => cells.map(([g, w, d], i) => ({ m: 100 + i, g, w, d }));
+
+test('strip: a minute credited late is drawn as counted, not lost', () => {
+  assert.deepEqual(timelineCells(tl([0, 1, 0], [1, 1, 2]), 2), ['gain', 'gain']);
+});
+
+test('strip: late credit fills the nearest earlier miss, skipping counted and idle minutes', () => {
+  const cells = timelineCells(tl([0, 1, 0], [0, 0, 0], [1, 1, 1], [0, 1, 0], [1, 1, 3]), 5);
+  assert.deepEqual(cells, ['gain', '', 'gain', 'gain', 'gain']);
+});
+
+test('strip: a minute never credited stays red, and an idle minute stays empty', () => {
+  assert.deepEqual(timelineCells(tl([0, 0, 0], [0, 1, 0], [1, 1, 1], [1, 1, 1]), 4), ['', 'miss', 'gain', 'gain']);
+});
+
+test('strip: entries saved before minute counts existed are drawn as before', () => {
+  assert.deepEqual(timelineCells(tl([0, 1], [1, 1]), 2), ['miss', 'gain']);
+});
+
+test('strip agrees with the count under it when credit lags', () => {
+  // 27 watched minutes, six of them found empty and made up by a double the minute after.
+  const rows = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 27; i++) rows.push(i % 4 === 1 && i < 24 ? [0, 1, 0] : i % 4 === 2 && i < 24 ? [1, 1, 2] : [1, 1, 1]);
+  const timeline = tl(...rows);
+  const cells = timelineCells(timeline);
+  const rate = creditRate(timeline);
+  assert.equal(rate.counted, 27);
+  assert.equal(cells.filter((c) => c === 'gain').length, rate.counted);
+  assert.equal(cells.filter((c) => c === 'miss').length, 0);
 });
