@@ -1,5 +1,7 @@
 # Chrome Web Store listing
 
+Live at https://chromewebstore.google.com/detail/drops-tracker/ijgmbcfeemlooekeibhgimikgmejohlh (item id `ijgmbcfeemlooekeibhgimikgmejohlh`). The README and hovjsyy.dev link there.
+
 Everything the developer dashboard asks for, ready to paste. Keep it in step with the extension: a
 change to what it reads, stores or sends must update the privacy tab answers here and the policy at
 https://hovjsyy.dev/drops-tracker/privacy/ (source: the `hooov/hovjsyy.dev` repo).

@@ -11,7 +11,7 @@ It is read-only. It never claims a drop, never simulates watching, and never ope
 > Unofficial. It uses the same private GraphQL operations as twitch.tv, which can change without notice. Not affiliated with Twitch.
 
 ## Contents
-- [Install](#install)
+- [Install](#install) ([Chrome Web Store](https://chromewebstore.google.com/detail/drops-tracker/ijgmbcfeemlooekeibhgimikgmejohlh))
 - [What you see](#what-you-see)
 - [How it works](#how-it-works)
 - [Project layout](#project-layout)
@@ -20,12 +20,17 @@ It is read-only. It never claims a drop, never simulates watching, and never ope
 - [Reference: measured Twitch behaviour](docs/twitch-drops-facts.md)
 
 ## Install
+**[Get it on the Chrome Web Store](https://chromewebstore.google.com/detail/drops-tracker/ijgmbcfeemlooekeibhgimikgmejohlh).** It works in Chrome, Brave, Edge and other Chromium browsers, and updates itself.
+
+It uses the Twitch login already in that browser.
+
+### From source
 1. Clone this repo.
 2. Open `chrome://extensions` (or `brave://extensions`, `edge://extensions`).
 3. Turn on **Developer mode**.
 4. Click **Load unpacked** and pick the `extension/` folder.
 
-It uses the Twitch login already in that browser. There is no build step. After changing the code, press **Reload** on the extension's card; open Twitch tabs pick up the new version without a refresh.
+There is no build step. After changing the code, press **Reload** on the extension's card; open Twitch tabs pick up the new version without a refresh. Remove the store copy first, or both will run.
 
 ## What you see
 
