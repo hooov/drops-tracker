@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, events, badge, summarize, warning, TIMELINE_MAX, creditRate } from '../extension/lib/tracker.js';
+import { update, events, badge, summarize, warning, TIMELINE_MAX, creditRate, LOST_SHOWN_MS } from '../extension/lib/tracker.js';
+import { verdictTone } from '../extension/lib/states.js';
 import { timelineCells } from '../extension/lib/minutelog.js';
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/gql-2026-11-06.json', import.meta.url)));
@@ -416,13 +417,45 @@ test('channel losing eligibility while earning warns, sticks, and clears when ea
   assert.equal(s.verdict.lost, true);
   assert.equal(r.ev.filter((e) => e.type === 'warning').length, 1);
   assert.equal(warning(s, r.now).short, 'Stopped earning Drops');
-  assert.equal(badge(s).text, 'STOP');
+  assert.equal(badge(s).text, '!');
   r = at(6, 197, noLongerDrops);
   assert.equal(s.verdict.lost, true, 'stays warned until it is resolved');
   assert.equal(r.ev.filter((e) => e.type === 'warning').length, 0, 'same episode does not re-notify');
   r = at(7, 198, alpha);
   assert.equal(s.verdict.code, 'earning');
   assert.equal(warning(s, r.now), null);
+});
+
+test('stopped earning settles to a plain idle after LOST_SHOWN_MS, and stays settled', () => {
+  const noLongerDrops = { ...alpha, campaigns: [] };
+  let s;
+  const at = (i, m, ch) => { const now = T0 + i * MIN; const next = update(s, obs(m, [stream(1, ch, 100 + i * 60)]), now); const ev = events(s, next, now); s = next; return { now, ev }; };
+  at(0, 195, alpha);
+  at(1, 196, alpha);
+  at(2, 197, alpha);
+  for (let i = 3; i <= 5; i++) at(i, 197, noLongerDrops);
+  assert.equal(s.verdict.lost, true);
+  const lostAt = s.lostAt;
+  const shownPolls = LOST_SHOWN_MS / MIN;
+  for (let i = 6; i < 5 + shownPolls; i++) {
+    at(i, 197, noLongerDrops);
+    assert.equal(s.verdict.lost, true, `still amber at poll ${i}`);
+    assert.equal(s.lostAt, lostAt, 'one episode keeps one start');
+  }
+  let r = at(5 + shownPolls, 197, noLongerDrops);
+  assert.equal(s.verdict.code, 'idle');
+  assert.notEqual(s.verdict.lost, true);
+  assert.equal(verdictTone(s.verdict), 'idle');
+  assert.equal(warning(s, r.now), null);
+  assert.equal(badge(s).text, '');
+  assert.equal(r.ev.filter((e) => e.type === 'warning').length, 0, 'settling is not news');
+  for (let i = 6 + shownPolls; i < 10 + shownPolls; i++) {
+    r = at(i, 197, noLongerDrops);
+    assert.notEqual(s.verdict.lost, true, `does not come back at poll ${i}`);
+    assert.equal(r.ev.filter((e) => e.type === 'warning').length, 0);
+  }
+  at(10 + shownPolls, 198, alpha);
+  assert.equal(s.verdict.code, 'earning', 'minutes coming back still reads as earning');
 });
 
 test('closing every tab is deliberate and does not warn', () => {
@@ -470,7 +503,7 @@ test('the toolbar badge keeps showing the next drop while earning with a claim w
   assert.equal(b.color, '#067647', 'green: a claim waiting is not a warning');
   assert.deepEqual(badge({ ...earning, active: [] }), { text: 'CLM', color: '#6941c6' }, 'nothing left to earn: purple, not amber');
   assert.equal(badge({ ...earning, verdict: { code: 'idle' } }).text, 'CLM', 'not earning');
-  assert.equal(badge({ ...earning, verdict: { code: 'idle', lost: true } }).text, 'STOP', 'stopping outranks a claim');
+  assert.equal(badge({ ...earning, verdict: { code: 'idle', lost: true } }).text, '!', 'stopping outranks a claim');
   assert.equal(badge({ ...earning, verdict: { code: 'idle', limited: true } }).text, '?', 'not knowing outranks a claim');
   assert.equal(badge({ ...earning, unclaimed: [] }).color, '#067647', 'green without a claim waiting');
 });
@@ -479,7 +512,27 @@ test('badge reflects verdict', () => {
   const earning = run([195, 196], (i) => [stream(1, alpha, 100 + i * 60)]);
   assert.deepEqual(badge(earning).text, '81%');
   const stalled = run([195, 196, 196, 196, 196, 196], (i) => [stream(1, alpha, 100 + i * 60)]);
-  assert.equal(badge(stalled).text, 'HUNG');
+  assert.equal(badge(stalled).text, '!');
+});
+
+test('every toolbar badge fits: about 3 characters show, and HUNG was cut to HUN (2026-11-13)', () => {
+  const verdicts = [
+    { code: 'starting' }, { code: 'waiting' }, { code: 'stalled' }, { code: 'signed_out' }, { code: 'api_changed' }, { code: 'error' },
+    { code: 'earning' }, { code: 'earning', slow: true }, { code: 'idle' }, { code: 'idle', lost: true }, { code: 'idle', limited: true },
+  ];
+  const shapes = [{ active: [{ pct: 99 }], unclaimed: [] }, { active: [], unclaimed: [{ campaignActive: true }] }, { active: [], unclaimed: [] }];
+  for (const v of verdicts) {
+    for (const shape of shapes) {
+      const b = badge({ verdict: v, ...shape });
+      assert.ok(b.text.length <= 3, `${JSON.stringify(v)} gave "${b.text}"`);
+    }
+  }
+  // The two "!" badges differ by colour and say which in the tooltip.
+  const hung = badge({ verdict: { code: 'stalled' }, active: [], unclaimed: [] });
+  const lost = badge({ verdict: { code: 'idle', lost: true }, active: [], unclaimed: [] });
+  assert.notEqual(hung.color, lost.color);
+  assert.match(hung.title, /not counting/);
+  assert.match(lost.title, /stopped earning/);
 });
 
 test('state stays bounded: timeline capped, closed tabs and vanished drops are dropped', () => {

@@ -385,6 +385,7 @@ function applyCampaigns(channel, item) {
     // A channel's own badge has an explicit null game, and Inventory never lists it (measured).
     // Exactly null: if the field ever goes missing, a game campaign must not fall silent.
     channelOwned: x.game === null,
+    game: x.game?.displayName || null,
     endAt: x.endAt,
     image: x.imageURL,
     watchDrops: watchDropsOf(x).map((d) => ({

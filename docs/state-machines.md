@@ -34,6 +34,8 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
 - `idle`: nothing open can earn. `lost` (was earning, the tab can no longer), `limited` (cannot
   tell: lookups failed, a badge timer, or the next drop cannot count yet). Only idle carries these.
+  `lost` lasts `LOST_SHOWN_MS` (10 min) from `lostAt`, then settles to a plain idle and does not
+  come back until something earns again: left amber with nothing to act on, it read as a fault.
 
 `wasted` (`wastedCredit()`): the session's drop rose this poll but is already earned, or cannot
 finish before its campaign ends, while the credited channel is open here. A quiet poll keeps the

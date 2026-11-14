@@ -21,6 +21,9 @@ const DROPS_MAX = 100;
 const DIP_POLLS = 3; // A lower reading must last this many polls before it is believed.
 const FRESH_READING_MS = 5000;
 const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can still arrive after leaving.
+// "Stopped earning" is news when it happens; left amber with nothing to do about it, it reads as a
+// fault. After this it settles to a plain idle, and stays there until something can earn again.
+export const LOST_SHOWN_MS = 10 * 60000;
 
 export function emptyState() {
   return {
@@ -199,28 +202,31 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked) {
 }
 
 /**
- * A channel's own badge campaign never appears in Inventory, so the session is the only place
- * its minutes are reported. Shaped like an Inventory campaign, so everything downstream treats
- * it the same: rising minutes are still the only proof of earning.
+ * Campaigns a channel offers that Inventory leaves out, read from the session instead. A channel's
+ * own badge is never in Inventory. A game campaign can be missing too while Twitch credits it
+ * (2026-11-12, a Streamer Awards Minecraft drop: Twitch's page showed it rising while this said
+ * "may need your game account linked" and drew those minutes dead). Shaped like an Inventory
+ * campaign, so everything downstream treats it the same: rising minutes are still the only proof.
  */
 function sessionCampaigns(streams, inventoryIds, sessions, rewards) {
   const out = new Map();
   const owned = new Set(rewards.ids);
   for (const st of streams) {
     for (const c of st.channel?.campaigns || []) {
-      // Badges only. A game campaign missing from Inventory is unstarted or needs linking, and
-      // its session answering does not make it a hang.
-      if (!c.channelOwned || inventoryIds.has(c.id) || out.has(c.id)) continue;
+      if (inventoryIds.has(c.id) || out.has(c.id)) continue;
       if (c.benefitIds?.length > 0 && c.benefitIds.every((id) => owned.has(id))) continue;
       const session = (sessions || []).find((x) => c.watchDrops?.some((d) => d.id === x.dropId));
       if (!session || typeof session.minutes !== 'number') continue;
+      // A game campaign the session names at 0 has not started counting: that is still the
+      // unstarted case (maybe linking), and it must not become a hang. Minutes on it mean it has.
+      if (!c.channelOwned && !(session.minutes > 0)) continue;
       const d = c.watchDrops.find((x) => x.id === session.dropId);
       out.set(c.id, {
         id: c.id,
         name: c.name,
         endAt: c.endAt,
         imageURL: c.image,
-        game: { name: st.channel.displayName || st.login },
+        game: { name: c.channelOwned ? st.channel.displayName || st.login : c.game || c.name },
         timeBasedDrops: [{
           id: d.id,
           name: d.name,
@@ -569,6 +575,7 @@ export function update(prev, obs, now) {
         limited: true,
         badge: first.channelState === 'badge_unseen',
         blocked: first.channelState === 'blocked',
+        unstarted: first.channelState === 'unstarted',
         message,
       };
   } else if (!candidates.length) {
@@ -579,8 +586,11 @@ export function update(prev, obs, now) {
     const finished = earningOn ? earningOn.channelState === 'finished' : streams.some((st) => st.channelState === 'finished');
     // A tab that could earn is still open but no longer can: the channel changed game, went
     // offline or raided away. Closing it is deliberate, so that stays a plain idle.
-    if (hasStreams && wasTracking && !finished && s.earnerTabs.length) {
-      s.lostAt = prev?.lostAt ?? now;
+    // Once LOST_SHOWN_MS has passed, lostAt is cleared and tracking drops, so the next poll no
+    // longer counts as wasTracking and the plain idle sticks.
+    const lostAt = prev?.lostAt ?? now;
+    if (hasStreams && wasTracking && !finished && s.earnerTabs.length && now - lostAt < LOST_SHOWN_MS) {
+      s.lostAt = lostAt;
       s.verdict.lost = true;
       s.verdict.message = 'No open stream can earn a drop now. The channel may have changed game, gone offline or raided away.';
     }
@@ -646,14 +656,16 @@ export function events(prev, next, now) {
 export function badge(state, prefs = {}) {
   const claim = prefs.claimReminders !== false && state.unclaimed?.some((u) => u.campaignActive);
   switch (state.verdict.code) {
-    case 'stalled': return { text: 'HUNG', color: '#d92d20' };
+    // The toolbar badge shows about 3 characters: HUNG was cut to HUN in Brave (2026-11-13), and
+    // STOP is as long. The words go in the icon's tooltip instead.
+    case 'stalled': return { text: '!', color: '#d92d20', title: 'Drops Tracker: Drops not counting' };
     case 'signed_out': return { text: 'OFF', color: '#667085' };
     case 'error':
     case 'api_changed': return { text: 'ERR', color: '#667085' };
     default: break;
   }
   // Tracking having stopped outranks a reward waiting, which can wait.
-  if (state.verdict.lost) return { text: 'STOP', color: '#b54708' };
+  if (state.verdict.lost) return { text: '!', color: '#b54708', title: 'Drops Tracker: stopped earning Drops' };
   if (state.verdict.limited) return { text: '?', color: '#b54708' };
   // A claim waiting does not colour the badge: amber read as something wrong (2026-11-09). The
   // number keeps showing the next drop; the chip and panel carry the claim.

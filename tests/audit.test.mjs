@@ -56,7 +56,7 @@ test('finishing a drop with the tab left open is not "Stopped earning"', () => {
   assert.equal(s.streams[0].channelState, 'finished');
   assert.notEqual(s.verdict.lost, true);
   assert.equal(warning(s, T0 + 9 * MIN), null);
-  assert.notEqual(badge(s).text, 'STOP');
+  assert.notEqual(badge(s).text, '!');
 });
 
 test('a channel really losing its campaign mid-watch still warns', () => {
@@ -67,7 +67,7 @@ test('a channel really losing its campaign mid-watch still warns', () => {
     s = poll(s, [camp('c', [drop('d', i < 3 ? 100 + i : 102)])], [st(i < 3 ? live : gone, i)], [], i);
   }
   assert.equal(s.verdict.lost, true);
-  assert.equal(badge(s).text, 'STOP');
+  assert.equal(badge(s).text, '!');
 });
 
 test('a game campaign missing from Inventory never reads as Hung, even when a session answers', () => {
@@ -121,7 +121,7 @@ test('a failed check at the moment earning stops must not lose the warning', () 
     else s = poll(s, [camp('c', [drop('d', i < 3 ? 100 + i : 102)])], [st(i < 3 ? live : gone, i)], [], i);
   }
   assert.equal(s.verdict.lost, true);
-  assert.equal(badge(s).text, 'STOP');
+  assert.equal(badge(s).text, '!');
   assert.ok(warning(s, T0 + 8 * MIN));
 });
 
@@ -214,7 +214,7 @@ test('a raid moves the same tab to another channel, which is still a warning', (
   let s = earnThenClose();
   for (let i = 4; i < 9; i++) s = poll(s, [camp('c', [drop('d', 103)])], [st(chan('raided', []), i, 1), st(noDrops, i, 2)], [], i);
   assert.equal(s.verdict.lost, true);
-  assert.equal(badge(s).text, 'STOP');
+  assert.equal(badge(s).text, '!');
   assert.ok(warning(s, T0 + 8 * MIN));
   assert.equal(s.closedName, null);
 });
