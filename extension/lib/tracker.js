@@ -138,7 +138,9 @@ export function wastedCredit(session, active, streams, risen) {
   // while the campaign's next drop does the rising, and that is ordinary earning.
   if (!session?.dropId || !risen?.has(session.dropId) || !streams.some((st) => st.login === session.login)) return null;
   const drop = active.find((d) => d.id === session.dropId);
-  const earned = !drop && session.required > 0 && session.minutes >= session.required;
+  // Over the requirement, not at it: the minute that reaches it is the one that earns the drop
+  // (seen 2026-11-14, 30 of 30 flagged as waste for one poll). A badge credited on reads 362 of 360.
+  const earned = !drop && session.required > 0 && session.minutes > session.required;
   if (!earned && !drop?.atRisk) return null;
   const channel = session.displayName || session.login;
   const badge = streams.flatMap((st) => st.badges || []).flatMap((b) => b.drops || []).find((d) => d.id === session.dropId);
@@ -549,9 +551,14 @@ export function update(prev, obs, now) {
     const slow = s.rate.watched >= RATE_MIN_MINUTES && s.rate.counted / s.rate.watched < SLOW_BELOW;
     // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
     // rather than flickering the warning off and on.
+    // Kept only while the same channel is still credited and its tab still open: after the user
+    // closed it, the old warning kept saying to close it (2026-11-14).
+    const keep = prev?.verdict?.code === 'earning' && prev.verdict.wasted && session
+      && streams.some((st) => st.login === session.login)
+      && (prev.verdict.channel ?? null) === (session.displayName || null);
     const wasted = risen.size
       ? wastedCredit(session, s.active, streams, risen)
-      : prev?.verdict?.code === 'earning' ? prev.verdict.wasted ?? null : null;
+      : keep ? prev.verdict.wasted : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.

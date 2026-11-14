@@ -147,3 +147,29 @@ test('credited outside this browser: nothing to close here, so no call to action
   }
   assert.equal(s.verdict.wasted ?? null, null);
 });
+
+// Live test 2026-11-14: the poll where a 30-minute drop reached 30 of 30 read as "already earned,
+// Twitch is still crediting it" for one poll. Reaching the requirement is earning it, not waste.
+test('the minute that completes a drop is not called wasted', () => {
+  const india = chan('india', [{ id: 'rivals' }]);
+  let s;
+  [28, 29, 30].forEach((m, i) => {
+    // As on Twitch: the poll that reaches the requirement already lists the drop as earned
+    // (a dropInstanceID), so it leaves the active list in that same poll.
+    const campaign = watch('rivals', m, 30);
+    if (m >= 30) campaign.timeBasedDrops[0].self.dropInstanceID = 'instance-1';
+    s = poll(s, i, { campaigns: [campaign], channels: [india], sessions: [session('india', 'rivals-drop', m, 30)] });
+    assert.equal(s.verdict.wasted ?? null, null, `poll at ${m} of 30`); // The first poll is waiting: no field at all.
+  });
+  assert.equal(s.verdict.code, 'earning');
+});
+
+// Live test 2026-11-14: after the credited badge tab was closed, the warning kept telling the user
+// to close it for two quiet polls. A kept judgement needs the same channel still open.
+test('closing the wasted channel clears the warning on the next quiet poll', () => {
+  const s = badgeRun(true);
+  assert.equal(s.verdict.wasted?.reason, 'earned');
+  const india = chan('india', [{ id: 'rivals' }]);
+  const next = poll(s, 5, { campaigns: [watch('rivals', 69, 360)], channels: [india], sessions: [] });
+  assert.equal(next.verdict.wasted, null);
+});
