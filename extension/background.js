@@ -187,6 +187,7 @@ async function paintBadge(state, prefs) {
   const b = badge(state, prefs);
   await chrome.action.setBadgeText({ text: b.text });
   await chrome.action.setBadgeBackgroundColor({ color: b.color });
+  await chrome.action.setTitle({ title: b.title || 'Drops Tracker' });
   if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#ffffff' });
 }
 

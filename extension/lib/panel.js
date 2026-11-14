@@ -157,7 +157,7 @@ function ago(ms) {
 
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-function verdictText(state, now) {
+export function verdictText(state, now) {
   const v = state.verdict;
   const lastGood = state.lastOkAt ? ` Last good data ${ago(now - state.lastOkAt)}.` : '';
   switch (v.code) {
@@ -174,7 +174,9 @@ function verdictText(state, now) {
       return ['Not counting', v.message];
     case 'idle':
       if (v.lost) return ['Stopped earning', v.message];
-      if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked ? 'Not counting yet' : 'Cannot check streams', v.message];
+      // "Cannot check streams" is for failed lookups only: a campaign Twitch has not started was
+      // shown under it (2026-11-13), which read as the extension failing.
+      if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked || v.unstarted ? 'Not counting yet' : 'Cannot check streams', v.message];
       if (state.closedName) return ['Not earning', `You left ${state.closedName}, so nothing open can earn right now.`];
       return ['Not earning', v.hasStreams ? 'None of your open streams have Drops you need.' : 'No stream is open in this browser.'];
     case 'signed_out':

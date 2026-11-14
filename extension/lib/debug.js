@@ -12,7 +12,7 @@ const short = (hash) => (typeof hash === 'string' ? hash.slice(0, 8) : 'none');
 
 function verdictLine(v) {
   if (!v?.code) return 'none';
-  const flags = ['cause', 'slow', 'wasted', 'lost', 'limited', 'badge', 'blocked']
+  const flags = ['cause', 'slow', 'wasted', 'lost', 'limited', 'badge', 'blocked', 'unstarted']
     .filter((k) => v[k]).map((k) => (k === 'cause' ? v.cause : k));
   return [v.code, ...flags].join(', ');
 }

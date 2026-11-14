@@ -64,7 +64,7 @@ export const VERDICT_CODES = {
   waiting: ['since'], // Something can earn; the first minute has not landed yet.
   earning: ['channel', 'slow', 'wasted'],
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'message'],
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],

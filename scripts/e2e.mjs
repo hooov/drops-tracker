@@ -485,14 +485,14 @@ try {
   s = await poll();
   assert.equal(s.verdict.code, 'stalled');
   assert.equal(s.verdict.cause, 'uncounted');
-  assert.equal(await badgeText(), 'HUNG');
+  assert.equal(await badgeText(), '!');
   await shot('3-stalled-uncounted');
   assert.match(await popup.textContent('#verdict-age'), /^[1-9]\d*m$/);
   assert.match(await popup.textContent('#streams'), /Last credited/);
   assert.doesNotMatch(await popup.textContent('#streams'), /Earning/);
   const bg = await popup.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert.equal(bg, 'rgb(24, 24, 27)');
-  step('no minutes for 5 min: Not counting, badge HUNG, dark UI, no false "earning" label');
+  step('no minutes for 5 min: Not counting, red ! badge, dark UI, no false "earning" label');
 
   // On-page warning: real DOM on the real tab, readable without opening anything.
   const pillText = (page) => page.evaluate(() => {
@@ -532,7 +532,7 @@ try {
   await sw.evaluate(() => { self.__noCampaigns = true; });
   for (let i = 0; i < 3; i++) { await advance(1); await alpha.waitForTimeout(150); s = await poll(); }
   assert.equal(s.verdict.lost, true, JSON.stringify(s.verdict));
-  assert.equal(await badgeText(), 'STOP');
+  assert.equal(await badgeText(), '!');
   assert.equal(await pillText(alpha), 'Stopped earning Drops');
   await shot('7-stopped-earning');
   await sw.evaluate(() => { self.__noCampaigns = false; });
@@ -540,7 +540,7 @@ try {
   s = await poll();
   assert.equal(s.verdict.code, 'earning');
   assert.equal(await pillText(alpha), null);
-  step('channel losing its drops mid-watch warns: badge STOP and pill, cleared on recovery');
+  step('channel losing its drops mid-watch warns: amber ! badge and pill, cleared on recovery');
 
   // 6. A genuinely hung player: not paused, no data, clock not moving.
   await alpha.evaluate(() => { const v = document.querySelector('video'); v.srcObject = null; v.play().catch(() => {}); });
@@ -725,7 +725,7 @@ try {
   assert.equal(badgeRow.channelState, 'eligible', JSON.stringify(s.streams));
   assert.notEqual(s.verdict.limited, true, 'a timer badge must not read as Drops ?');
   assert.equal(s.verdict.code, 'stalled', JSON.stringify(s.verdict));
-  assert.equal(await badgeText(), 'HUNG');
+  assert.equal(await badgeText(), '!');
   assert.match(await pillText(alpha), /^Drops not counting for /);
   await popup.bringToFront();
   await popup.waitForFunction(() => /The Two Rings/.test(document.getElementById('drops').textContent));
@@ -779,7 +779,7 @@ try {
   await sw.evaluate(() => { self.__transform = null; self.__minutes += 1; });
   await advance(1);
   s = await poll();
-  step('timer badge: listed in My Drops, flat minutes warn as HUNG, rising minutes read as earning');
+  step('timer badge: listed in My Drops, flat minutes warn with a red !, rising minutes read as earning');
 
   // Auto-reload, through the real toggle and real tab reloads. The channel page is fake, so no
   // stream plays. A badge is tracked the same way, so what holds here holds for one.

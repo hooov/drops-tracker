@@ -44,8 +44,8 @@ There is no build step. After changing the code, press **Reload** on the extensi
 |---|---|
 | `81%` green | Minutes are rising |
 | `...` blue | Stream just opened, waiting for the first minute |
-| `HUNG` red | A stream that can earn is open, but no minutes are being added |
-| `STOP` amber | You were earning and now no open stream can (game change, offline, raid) |
+| `!` red | A stream that can earn is open, but no minutes are being added |
+| `!` amber | You were earning and now no open stream can (game change, offline, raid). Clears to no badge after 10 minutes |
 | `51%` amber | Earning slowly, or the minutes are going to a drop already earned or one that cannot finish in time |
 | `CLM` purple | A drop is ready to claim, and nothing is being earned. While earning, a waiting claim does not change the badge |
 | `?` amber | Open streams cannot be checked, so tracking is unknown |

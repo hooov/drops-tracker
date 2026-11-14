@@ -70,7 +70,7 @@ test('a timer badge is tracked like any drop: flat minutes on a playing channel 
   assert.equal(s.verdict.code, 'stalled');
   assert.equal(s.verdict.cause, 'uncounted');
   assert.match(chipView(s, T0 + 7 * MIN).text, /^Hung \d+m$/);
-  assert.equal(badge(s).text, 'HUNG');
+  assert.equal(badge(s).text, '!');
   assert.match(warning(s, T0 + 7 * MIN).short, /^Drops not counting/);
   assert.deepEqual([s.active[0].name, s.active[0].game, s.active[0].minutes, s.active[0].required], ['The Two Rings', 'Charlie', 3, 180]);
 });
