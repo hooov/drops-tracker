@@ -292,7 +292,7 @@ export function unplacedBadges(prev, groups, placed, now) {
     });
 }
 
-function rewardCampaigns(streams, inventoryIds, groups, sessions, now) {
+function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
   const out = new Map();
   if (!groups?.length) return [];
   for (const st of streams) {
@@ -316,7 +316,10 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now) {
             requiredMinutesWatched: d.required,
             endAt: d.endAt,
             benefitEdges: [{ benefit: { name: d.name, imageAssetURL: d.image } }],
-            unjudged: true,
+            // A channel's own badge is judged like any drop when this poll read it: its minutes
+            // here rose one a minute (2026-11-19, 69 to 106 of 180), and leaving it unjudged hid a
+            // 10-minute stall behind "today's reward drop is earned". Repeating rewards stay unjudged.
+            unjudged: !(c.channelOwned && !g.repeatTimes && fresh),
           };
           if (g.repeatTimes) {
             const done = g.grants != null && g.grants >= g.repeatTimes;
@@ -666,7 +669,9 @@ export function update(prev, obs, now) {
   // unplaced: hold the marks.
   const blind = (obs.streams || []).some((st) => st.channel?.unknown || st.channel?.badgeLookupFailed);
   s.unplacedBadges = unplacedBadges(prev?.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
-  const fromRewards =rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now);
+  // Fresh: answered this poll. A held answer is up to REWARD_HOLD_MS old, so a badge read from it
+  // would look flat and must not be judged.
+  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups));
   const fromSessions = sessionCampaigns(obs.streams || [], new Set([...inventoryIds0, ...fromRewards.map((c) => c.id)]), obs.sessions, s.rewards, s.drops, now);
   const allCampaigns = [...obs.campaigns, ...fromRewards, ...fromSessions];
   const { active, unclaimed } = summarize(allCampaigns, now);

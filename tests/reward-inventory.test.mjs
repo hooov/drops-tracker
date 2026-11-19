@@ -124,10 +124,12 @@ test('a badge the session is silent on: its minutes come from the reward invento
   const T = Date.parse('2026-11-06T19:00:00Z');
   let s;
   for (let i = 0; i < 8; i++) s = await poll(s, T + i * MIN, i, { login: 'charlie', available: badgeFx.mixed, rewardAnswer: inv });
-  assert.equal(s.streams[0].channelState, 'reward');
+  // Judged like any drop since 2026-11-19: flat for 8 minutes on a playing tab is a stall.
+  assert.equal(s.streams[0].channelState, 'eligible');
   assert.deepEqual(s.active.filter((d) => d.id === BADGE_DROP).map((d) => [d.minutes, d.required]), [[2, 180]]);
   assert.equal(s.streams[0].badges[0].drops.find((d) => d.id === BADGE_DROP).minutes, 2, 'the Badges tab shows it too');
   assert.notEqual(s.verdict.limited, true);
+  assert.equal(s.verdict.code, 'stalled', JSON.stringify(s.verdict));
 });
 
 test('a badge the session answers for keeps the session, which has been measured', async () => {

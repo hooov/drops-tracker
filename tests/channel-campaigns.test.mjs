@@ -77,9 +77,11 @@ test('the badge only ChannelDropsCampaigns lists reaches the Badges tab, with it
   assert.deepEqual(s.unplacedBadges, [], 'placed now, so the "no open channel lists" note is gone');
 
   const row = s.active.find((d) => d.id === WATCH_GROUP);
-  assert.deepEqual([row.minutes, row.required, row.unjudged], [22, 180, true]);
-  assert.equal(s.streams[0].channelState, 'reward');
-  assert.notEqual(s.verdict.code, 'stalled');
+  // A channel's own badge read fresh from the reward inventory is judged like any drop, so the
+  // channel can earn rather than being a quiet reward channel (2026-11-19).
+  assert.deepEqual([row.minutes, row.required, row.unjudged ?? false], [22, 180, false]);
+  assert.equal(s.streams[0].channelState, 'eligible');
+  assert.equal(s.verdict.code, 'earning');
 });
 
 test('ChannelDropsCampaigns failing costs only its badges: the channel is still read, and the tab says it could not check', async () => {
@@ -95,7 +97,7 @@ test('ChannelDropsCampaigns failing costs only its badges: the channel is still 
 // the session still naming it with GTAVI's running total (322 of 60), and the channel's own badge
 // rising in the reward inventory (72 of 180). The panel turned amber: "already earned, these
 // minutes do nothing". They were earning the badge.
-function dayTwoEvening({ badge, total }) {
+function dayTwoEvening({ badge, total, rewardFails = false }) {
   const a = inventoryAt(badge);
   const dvd = a.data.currentUser.inventory.viewerRewardDropCampaignsInProgress[1].rewardGroups[0];
   dvd.self.currentMinutesWatched = 60;
@@ -106,7 +108,7 @@ function dayTwoEvening({ badge, total }) {
     const ops = JSON.parse(init.body);
     const base = await (await twitch({ minutes: badge })(_url, init)).json();
     return json(base.map((x, i) => {
-      if (ops[i].operationName === 'ViewerRewardDropInventory') return a;
+      if (ops[i].operationName === 'ViewerRewardDropInventory') return rewardFails ? { errors: [{ message: 'service timeout' }], data: null } : a;
       if (ops[i].operationName === 'DropCurrentSessionContext') return { data: { currentUser: { dropCurrentSession: session } } };
       return x;
     }));
@@ -166,9 +168,9 @@ test('a badge both queries list is shown once', async () => {
 
 // The same evening with a second tab open on a channel with no drops (Tyler's setup: a 24/7
 // channel beside the badge channel). Its chip showed a bare full ring.
-async function twoTabPoll(prev, i, minutes) {
+async function twoTabPoll(prev, i, minutes, { total = 319 + i, rewardFails = false } = {}) {
   const t = Date.parse('2026-11-19T19:00:00Z') + i * MIN;
-  const one = dayTwoEvening({ badge: minutes, total: 319 + i });
+  const one = dayTwoEvening({ badge: minutes, total, rewardFails });
   const fake = async (_url, init) => {
     const ops = JSON.parse(init.body);
     const base = await (await one(_url, init)).json();
@@ -208,4 +210,28 @@ test('a second tab with no drops shows the badge channel\'s percentage, and name
   assert.equal(s.streams.find((t) => t.login === 'echo_247').channelState, 'no_drops');
   const { drops, from } = channelDrops(s, 'echo_247');
   assert.deepEqual([drops[0].id, from], [WATCH_GROUP, 'Foxtrot']);
+});
+
+// 2026-11-19, 19:50 to 20:00 UTC (Tyler's bundle): the badge stopped at 106 of 180 and the session
+// at 356 with a second stream playing, and the panel said only "today's reward drop is earned".
+test('the badge stopping on a reward channel is a stall, naming the second stream', async () => {
+  let s;
+  const minutes = [103, 104, 105, 106, 106, 106, 106, 106, 106, 106];
+  for (const [i, m] of minutes.entries()) s = await twoTabPoll(s, i, m, { total: 353 + Math.min(i, 3) });
+  assert.equal(s.streams.find((t) => t.login === 'foxtrot').channelState, 'eligible');
+  assert.equal(s.verdict.code, 'stalled', JSON.stringify(s.verdict));
+  assert.equal(s.verdict.cause, 'second_stream', JSON.stringify(s.verdict));
+});
+
+test('a failed reward inventory call never reads as the badge stalling', async () => {
+  let s;
+  for (const [i, m] of [103, 104, 105, 106].entries()) s = await twoTabPoll(s, i, m, { total: 353 + i });
+  // Twitch keeps crediting, but the reward inventory times out for 8 polls: the held reading is flat.
+  for (let i = 4; i < 12; i++) s = await twoTabPoll(s, i, 106 + i, { total: 353 + i, rewardFails: true });
+  assert.notEqual(s.verdict.code, 'stalled', JSON.stringify(s.verdict));
+  // And with nothing rising anywhere and only held readings: still never a stall from the badge.
+  let q;
+  for (const [i, m] of [103, 104, 105, 106].entries()) q = await twoTabPoll(q, i, m, { total: 353 + i });
+  for (let i = 4; i < 12; i++) q = await twoTabPoll(q, i, 106, { total: 356, rewardFails: true });
+  assert.notEqual(q.streams.find((t) => t.login === 'foxtrot').channelState, 'eligible', 'a held reading is not judged');
 });
