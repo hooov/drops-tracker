@@ -104,7 +104,7 @@ const TEMPLATE = `
           <label for="badge-alerts" aria-hidden="true"></label>
         </span>
       </div>
-      <p id="badge-alerts-hint" class="sub setting-hint">Notify when a badge no open channel lists is rising.</p>
+      <p id="badge-alerts-hint" class="sub setting-hint">A desktop notification when a badge no open channel lists is rising.</p>
     </div>
     <p class="sub group-label">Advanced</p>
     <div class="section plain">
