@@ -107,3 +107,8 @@ test('the Debug tab module is web accessible, or the chat panel would not load',
   const manifest = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url)));
   assert.ok(manifest.web_accessible_resources[0].resources.includes('lib/debug.js'));
 });
+
+test('the bundle carries drops with no minutes reported, which the panel lists (2026-11-19)', () => {
+  const pending = [{ id: 'p', name: 'Next drop', campaignId: 'c', minutes: null, required: 60 }];
+  assert.deepEqual(debugBundle({ state: { pending } }, T0).state.pending, pending);
+});

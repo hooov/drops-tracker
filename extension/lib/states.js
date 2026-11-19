@@ -48,7 +48,13 @@ export const CHANNEL_STATES = {
   finished: { label: 'Campaign finished' },
   offline: { label: 'Offline' },
   unknown: { label: 'Cannot check this channel' },
-  unstarted: { label: 'Campaign not started yet' },
+  // Twitch not counting it, which is not the same as the campaign not having started: shown for a
+  // campaign running since the day before (2026-11-19).
+  unstarted: { label: 'Not counting yet' },
+  // A badge or reward campaign whose progress comes from Twitch's reward inventory or a session
+  // running total: shown as Twitch reports it, never judged. On 2026-11-18 the tracker saw about
+  // 15 of 250 minutes Twitch counted there, and called a hang while it counted.
+  reward: { label: 'Reward, progress as Twitch reports it' },
   not_channel: { label: 'Uses a stream slot' },
 };
 
@@ -64,7 +70,7 @@ export const VERDICT_CODES = {
   waiting: ['since'], // Something can earn; the first minute has not landed yet.
   earning: ['channel', 'slow', 'wasted'],
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'message'],
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],

@@ -241,7 +241,8 @@ test('timer badge with no minutes and too little time left: the headline says it
   assert.equal(late.verdict.badge, true);
   assert.match(late.verdict.message, /Echo's badge has a watch timer/);
   assert.match(late.verdict.message, /needs 3h and its campaign ends in 1h 10m, so it cannot finish/);
-  assert.doesNotMatch(late.verdict.message, /already have earned it/);
+  // The 2026-11-15 badge turned out to be claimed already (Twitch's inventory), so that stays first.
+  assert.match(late.verdict.message, /You may already have earned it; if not/);
   const roomy = run(600);
   assert.match(roomy.verdict.message, /already have earned it/);
   assert.doesNotMatch(roomy.verdict.message, /cannot finish/);

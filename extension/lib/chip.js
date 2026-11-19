@@ -21,7 +21,7 @@ export function channelFromPath(pathname) {
  * those drops are earned there instead. login is null when no channel is in view (the toolbar popup
  * over another site). All Drops still lists every campaign with its progress.
  */
-export function channelDrops(state, login) {
+export function channelDrops(state, login, { pending = false } = {}) {
   const active = state?.active ?? [];
   const streams = state?.streams;
   const everything = { drops: active, from: null };
@@ -31,7 +31,10 @@ export function channelDrops(state, login) {
   const here = login ? streams.find((s) => s.login === login) : null;
   // A failed lookup says nothing about what this channel can earn, so it must not hide progress.
   if (here?.channelState === 'unknown') return everything;
-  if (here && on([here]).length) return { drops: on([here]), from: null };
+  // A drop Twitch reports no minutes for yet (minutes: null), on the channel being looked at only,
+  // as Twitch's own panel lists it. Opt-in: the chip's percentage needs a drop with minutes.
+  const unseen = pending && here ? (state.pending || []).filter((d) => here.campaignIds.includes(d.campaignId)) : [];
+  if (here && (on([here]).length || unseen.length)) return { drops: [...on([here]), ...unseen], from: null };
   // Watching one channel while another tab earns is a common setup, and hiding that would hide
   // the progress the verdict is talking about.
   const earners = streams.filter((s) => s.channelState === 'eligible');
@@ -67,7 +70,11 @@ export function chipView(state, now, login = null, prefs = {}) {
 
 function chipViewOf(state, now, login) {
   if (!state) return { tone: 'idle', text: 'Drops', pct: null, title: 'Drops Tracker is starting' };
-  const top = channelDrops(state, login).drops[0];
+  // While Twitch credits a drop that is not listed (a reward read as a running total, a badge
+  // already earned), another listed drop's progress would read as what is rising.
+  const cc = state.creditedCampaign;
+  const elsewhere = state.verdict?.code === 'earning' && cc && !(state.active || []).some((d) => d.campaignId === cc);
+  const top = elsewhere ? undefined : channelDrops(state, login).drops[0];
   const pct = top ? top.pct : null;
   if (state.lastPollAt && now - state.lastPollAt > STALE_MS) {
     const min = Math.round((now - state.lastPollAt) / 60000);
@@ -75,7 +82,8 @@ function chipViewOf(state, now, login) {
   }
   const v = state.verdict;
   const label = pct != null ? `${pct}%` : null;
-  const progress = top ? `${top.name}: ${top.minutes}/${top.required} min.` : '';
+  // Clamped as the panel's bar is: a session can read past the requirement (362/360).
+  const progress = top ? `${top.name}: ${Math.min(top.minutes, top.required)}/${top.required} min.` : '';
   const waiting = (state.unclaimed || []).filter((u) => u.campaignActive);
   const claim = waiting[0];
   switch (v.code) {
@@ -90,12 +98,21 @@ function chipViewOf(state, now, login) {
     default:
       break;
   }
-  const claimNote = waiting.length > 1 ? `${waiting.length} drops are ready to claim. ` : claim ? `${claim.name} is ready to claim. ` : '';
+  // Connect-first rewards read "Connect" on Twitch's inventory, so they are not "ready to claim".
+  const connect = waiting.filter((u) => u.needsConnect).length;
+  const connectOnly = waiting.length > 0 && connect === waiting.length;
+  let claimNote = '';
+  if (waiting.length === 1) claimNote = claim.needsConnect ? `${claim.name} is earned; connect your game account to claim it. ` : `${claim.name} is ready to claim. `;
+  else if (waiting.length > 1) {
+    claimNote = !connect ? `${waiting.length} drops are ready to claim. `
+      : connectOnly ? `${waiting.length} drops are earned and need your game account connected to claim. `
+        : `${waiting.length} earned drops to claim or connect. `;
+  }
   // Tracking having stopped outranks a reward waiting, which can wait.
   if (v.lost) return { tone: 'warn', text: 'Stopped', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
   if (v.limited) return { tone: 'warn', text: 'Drops ?', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
   // Nothing left to earn here, only a reward: a full purple ring, not a warning.
-  if (claim && !top) return { tone: 'info', text: 'Claim', pct: 100, title: claimNote.trim() };
+  if (claim && !top) return { tone: 'info', text: connectOnly ? 'Connect' : 'Claim', pct: 100, title: claimNote.trim() };
   const view = runningView(v, state.rate, label, pct, progress);
   // A claim can wait a long time, so it must not hide the progress of the next drop or change what
   // the ring's colour says about earning. The count says it instead.
@@ -116,6 +133,8 @@ function runningView(v, rate, label, pct, progress) {
   if (v.code === 'waiting') {
     return { tone: 'info', text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
   }
+  // A reward channel is not known to be idle: Twitch's numbers there are shown, not judged.
+  if (v.reward) return { tone: 'idle', text: label || 'Drops', pct, title: `${progress} ${v.message}`.trim() };
   return { tone: 'idle', text: label || 'Drops', pct, title: `${progress} Not earning right now.`.trim() };
 }
 

@@ -47,7 +47,7 @@ test('rows: yours first, then sitewide, then soonest ending', () => {
   const krunker = parsed().campaigns.find((c) => c.game === 'Krunker').id;
   const { rows } = directoryRows(parsed(), [{ campaignId: krunker, pct: 30 }, { campaignId: krunker, pct: 82 }], '', NOW);
   assert.deepEqual(rows.map((r) => r.game), ['Krunker', 'Pokémon Night Out Campaign', 'League of Legends', 'Madden NFL 27']);
-  assert.equal(rows[0].tag, '82% done');
+  assert.equal(rows[0].tag, 'Next drop 82%', 'not "done": earned drops are not counted in it');
 });
 
 test('rows: the saved list is re-checked against the clock', () => {

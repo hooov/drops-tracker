@@ -589,3 +589,18 @@ test('claim reminders switched off: the toolbar badge shows no CLM', () => {
   assert.equal(badge(claimOnly).text, 'CLM');
   assert.notEqual(badge(claimOnly, { claimReminders: false }).text, 'CLM');
 });
+
+test('a drop earned but needing a game account connected is not announced as ready to claim', () => {
+  const next = { verdict: { code: 'idle' }, unclaimed: [{ id: 'u', name: 'Token', campaignActive: true, needsConnect: true }], active: [], streams: [] };
+  const [note] = events({}, next, Date.now()).filter((e) => e.type === 'claim');
+  assert.equal(note.title, 'Drop earned');
+  assert.match(note.message, /connect your game account before you can claim it/);
+  assert.doesNotMatch(note.message, /ready to claim/);
+});
+
+test('"connect first" needs a link page as well as the not-connected flag', () => {
+  const earned = (url) => [{ id: 'c', name: 'c', status: 'ACTIVE', endAt: '2026-12-30T00:00:00Z', accountLinkURL: url, self: { isAccountConnected: false }, timeBasedDrops: [{ id: 'd', name: 'd', requiredMinutesWatched: 30, self: { currentMinutesWatched: 30, dropInstanceID: 'x', isClaimed: false } }] }];
+  const now = Date.parse('2026-11-19T12:00:00Z');
+  assert.equal(summarize(earned('https://example.com/link'), now).unclaimed[0].needsConnect, true);
+  assert.equal(summarize(earned(null), now).unclaimed[0].needsConnect, false);
+});

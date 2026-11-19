@@ -33,9 +33,12 @@ export function logEntry(prev, obs, next, now) {
   const m = Math.floor(now / 60000);
   if (obs.error) return next.tracking ? { m, x: 1 } : null; // Unknown, so never counted as lost.
   const eligible = (next.streams || []).filter((s) => s.channelState === 'eligible');
-  if (!eligible.length) return null;
+  // Reward channels too, though they are never judged: logging Twitch's readings there each minute
+  // is how to learn whether they rise every minute (on 2026-11-18 they looked like they did not).
+  const reward = (next.streams || []).filter((s) => s.channelState === 'reward');
+  if (!eligible.length && !reward.length) return null;
   // The one Twitch credits if known. Otherwise the first that could earn.
-  const primary = eligible.find((s) => s.credited) || eligible[0];
+  const primary = [...eligible, ...reward].find((s) => s.credited) || eligible[0] || reward[0];
   const raw = (obs.streams || []).find((s) => s.tabId === primary.tabId);
   const player = raw?.player ?? {};
   const tab = raw?.tab ?? {};
@@ -47,8 +50,14 @@ export function logEntry(prev, obs, next, now) {
     if (seconds >= 5) speed = Math.max(0, Math.min(200, Math.round(((player.currentTime - before.lastTime) / seconds) * 100)));
   }
   const minute = next.timeline?.[next.timeline.length - 1];
+  // For a reward channel: the raw readings of both sources, side by side, flat or not. From this
+  // poll's answers, not the tracker's choice of session, which stays empty until something rises.
+  const isReward = primary.channelState === 'reward';
+  const group = isReward ? (next.rewardInv?.groups || []).find((g) => primary.campaignIds?.includes(g.campaignId)) : null;
+  const sessionHere = isReward ? (obs.sessions || []).find((x) => x.login === primary.login)?.minutes : null;
   return {
     m,
+    ...(isReward ? { rw: 1, rm: typeof group?.minutes === 'number' ? group.minutes : null, sm: typeof sessionHere === 'number' ? sessionHere : null } : {}),
     d: minute?.m === m ? minute.d ?? 0 : 0, // Minutes Twitch credited during this minute.
     e: eligible.length,
     p: next.streams.filter((s) => s.playerState === 'playing').length,
@@ -103,7 +112,8 @@ function tally(entries) {
  * asleep player stays in, since those are what this is trying to find.
  */
 export function compareMinutes(log) {
-  const logged = (Array.isArray(log) ? log : []).filter((e) => e && !e.x && e.e > 0);
+  // Reward minutes are left out: whether Twitch's numbers there move every minute is not known.
+  const logged = (Array.isArray(log) ? log : []).filter((e) => e && !e.x && e.e > 0 && !e.rw);
   const minutes = logged.filter((e) => e.st !== 'paused');
   const rows = FACTORS.map((f) => {
     const yes = tally(minutes.filter((e) => f.test(e) === true));

@@ -60,8 +60,18 @@ Anything that must follow one hang across that (Auto-reload) uses its own identi
 
 ## 4. Channel state
 `stream.channelState`, from `classifyChannel()`. `CHANNEL_STATES` in states.js; only `eligible` can
-earn (`canEarn()`). Companions: `blockedOpens` only for `blocked`, `credited` only for eligible tabs
-the session names. A failed lookup is `unknown`, which hides nothing and is never a hang.
+earn (`canEarn()`). Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
+it is eligible or its drop is a reward running total (`creditedCampaign` in state is that drop's
+campaign, which the badge, chip and finish times compare against), `pendingDrop` only for `unstarted`/`badge_unseen` when a campaign built from the
+session has a drop Twitch reports no minutes for (`pendingDrops()`, kept as `state.pending`, listed
+in Watch Drops on its channel without a bar and never in `active`). `reward`: a campaign read from
+Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`) or a session running
+total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
+nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
+drop is earned and the next can start later. The reward inventory answer is kept as
+`state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
+call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
+which hides nothing and is never a hang.
 
 ## 5. Player state
 `stream.playerState`, from `classifyPlayer()`: asleep (tab discarded or frozen by the browser),

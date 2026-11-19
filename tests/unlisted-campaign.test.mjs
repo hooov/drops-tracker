@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { update, warning } from '../extension/lib/tracker.js';
 import { verdictTone } from '../extension/lib/states.js';
+import { channelDrops } from '../extension/lib/chip.js';
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/gql-2026-11-06.json', import.meta.url)));
 const T0 = Date.parse('2026-11-06T15:00:00Z');
@@ -74,4 +75,91 @@ test('a campaign Twitch has not started reads "Not counting yet", not "Cannot ch
   // A failed lookup is the one case that headline is for.
   const unknown = { ...s, verdict: { code: 'idle', hasStreams: true, limited: true, message: 'x' } };
   assert.equal(verdictText(unknown, T0 + 10 * MIN)[0], 'Cannot check streams');
+});
+
+// Bundle 2026-11-19: the session named a campaign's first drop at 250 of 60, done, and only that
+// drop was built from it, so the channel read "finished" while Twitch's page offered the second
+// one at 0 of 60. Names replaced.
+const chest = { id: 'gta-chest', name: 'Chest', required: 60, benefitIds: ['chest'] };
+const chain = { id: 'gta-chain', name: 'Chain', required: 60, benefitIds: ['chain'] };
+const launch = (second = chain) => ({ id: 'gta', name: 'Launch', channelOwned: false, game: 'Launch', benefitIds: ['chest', 'chain'], endAt: END, watchDrops: [chest, second] });
+
+function runLaunch(polls, { second, named = () => ['gta-chest', 250], owned = [] } = {}) {
+  let s;
+  const seen = [];
+  for (let i = 0; i < polls; i++) {
+    const [dropId, minutes] = named(i);
+    const session = { login: 'charlie', displayName: 'Charlie', dropId, minutes, required: 60 };
+    s = update(s, { campaigns: [], rewards: { ids: owned, complete: true }, session, sessions: [session], streams: [stream(channel([launch(second)]), 100 + i * 60)] }, T0 + i * MIN);
+    seen.push(s.verdict);
+  }
+  return { s, seen };
+}
+
+test('a session campaign whose named drop is done still offers its next drop: not counting yet, not finished', async () => {
+  const { verdictText } = await import('../extension/lib/panel.js');
+  const { s, seen } = runLaunch(10);
+  assert.equal(s.streams[0].channelState, 'unstarted');
+  assert.ok(seen.every((v) => v.code !== 'stalled'), 'no reading of the next drop, so never a hang');
+  assert.equal(s.verdict.unstarted, true);
+  assert.match(s.verdict.message, /No minutes are rising on Charlie, and Twitch reports none for its Chain/);
+  assert.doesNotMatch(s.verdict.message, /account linked/);
+  assert.equal(verdictText(s, T0 + 10 * MIN)[0], 'Not counting yet');
+  // Unknown minutes are not listed as 0, and not in the active list, where they would read as eligible.
+  assert.deepEqual(s.active.map((d) => [d.name, d.minutes]), [['Chest', 250]]);
+  // My Drops lists it on its channel, as Twitch's panel does; the chip's percentage does not use it.
+  assert.deepEqual(channelDrops(s, 'charlie', { pending: true }).drops.map((d) => [d.name, d.minutes]), [['Chest', 250], ['Chain', null]]);
+  assert.deepEqual(channelDrops(s, 'charlie').drops.map((d) => d.name), ['Chest']);
+});
+
+test('the next drop already owned: the campaign is finished', () => {
+  const { s } = runLaunch(6, { owned: ['chain'] });
+  assert.equal(s.streams[0].channelState, 'finished');
+});
+
+test('when Twitch starts crediting the next drop it reads as earning, and once that is done the campaign is finished', () => {
+  const named = (i) => (i < 3 ? ['gta-chest', 250] : ['gta-chain', Math.min(i - 2, 60)]);
+  const { s } = runLaunch(8, { named });
+  assert.equal(s.streams[0].channelState, 'eligible');
+  assert.equal(s.verdict.code, 'earning');
+  assert.deepEqual(s.active.find((d) => d.id === 'gta-chain')?.minutes, 5);
+  // The session no longer names the chest, so only its reading of 250 says it is done.
+  const after = runLaunch(70, { named }).s;
+  assert.equal(after.streams[0].channelState, 'finished');
+  assert.deepEqual(after.pending, []);
+});
+
+test('a next drop whose window opens later reads as blocked with its date', () => {
+  const opens = new Date(T0 + 24 * 60 * MIN).toISOString();
+  const { s } = runLaunch(6, { second: { ...chain, startAt: opens } });
+  assert.equal(s.streams[0].channelState, 'blocked');
+  assert.equal(s.streams[0].blockedOpens, Date.parse(opens));
+});
+
+test('a drop whose window closed unearned does not hide a later window: blocked, not finished', () => {
+  const closed = new Date(T0 - 60 * MIN).toISOString();
+  const opens = new Date(T0 + 24 * 60 * MIN).toISOString();
+  const day1 = { ...chain, id: 'gta-day1', endAt: closed };
+  const day2 = { ...chain, id: 'gta-day2', name: 'Day 2', benefitIds: ['day2'], startAt: opens };
+  const ch = channel([{ ...launch(), watchDrops: [chest, day1, day2] }]);
+  let s;
+  for (let i = 0; i < 6; i++) {
+    const session = { login: 'charlie', displayName: 'Charlie', dropId: 'gta-chest', minutes: 250, required: 60 };
+    s = update(s, { campaigns: [], rewards: { ids: [], complete: true }, session, sessions: [session], streams: [stream(ch, 100 + i * 60)] }, T0 + i * MIN);
+  }
+  assert.equal(s.streams[0].channelState, 'blocked');
+  assert.equal(s.streams[0].blockedOpens, Date.parse(opens));
+});
+
+test('a drop Twitch has not started is "not counting yet" in the pill and notification too, not "not being tracked"', () => {
+  const { s } = run(10, channel([hoodie]), () => 0);
+  const w = warning(s, T0 + 10 * MIN);
+  assert.equal(w.short, 'Drops not counting yet');
+  assert.equal(w.title, 'Drops not counting yet');
+});
+
+test('an offline channel is not said to have no Drops', async () => {
+  const { verdictText } = await import('../extension/lib/panel.js');
+  const s = { verdict: { code: 'idle', hasStreams: true }, streams: [{ login: 'charlie', displayName: 'Charlie', channelState: 'offline' }] };
+  assert.deepEqual(verdictText(s, T0), ['Not earning', 'Charlie is offline, so it cannot earn right now.']);
 });
