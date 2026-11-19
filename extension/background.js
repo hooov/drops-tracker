@@ -167,6 +167,7 @@ async function observe() {
       rewards: snap.rewards,
       session: snap.session,
       sessions: snap.sessions,
+      rewardGroups: snap.rewardGroups,
       streams: relevant.map((t) => ({ ...t, channel: t.login ? snap.channels[t.login] : null })),
     };
   } catch (e) {

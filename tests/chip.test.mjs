@@ -155,3 +155,15 @@ test('before the first poll the chip says it is checking, not "Not earning right
   assert.equal(v.tone, 'info');
   assert.doesNotMatch(v.title, /Not earning/);
 });
+
+// Twitch's inventory shows "Connect" for these (all 13 waiting on 2026-11-19), so not "ready to claim".
+test('earned drops that need a game account connected are not called ready to claim', () => {
+  const one = chipView(state({ code: 'idle' }, { active: [], unclaimed: [{ name: 'Token', campaignActive: true, needsConnect: true }] }), NOW);
+  assert.equal(one.text, 'Connect');
+  assert.match(one.title, /^Token is earned; connect your game account to claim it/);
+  const many = chipView(state({ code: 'idle' }, { unclaimed: [{ name: 'A', campaignActive: true, needsConnect: true }, { name: 'B', campaignActive: true, needsConnect: true }] }), NOW);
+  assert.match(many.title, /^2 drops are earned and need your game account connected/);
+  const mixed = chipView(state({ code: 'idle' }, { active: [], unclaimed: [{ name: 'A', campaignActive: true, needsConnect: true }, { name: 'B', campaignActive: true }] }), NOW);
+  assert.equal(mixed.text, 'Claim');
+  assert.match(mixed.title, /^2 earned drops to claim or connect/);
+});

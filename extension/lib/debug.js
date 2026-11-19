@@ -12,7 +12,7 @@ const short = (hash) => (typeof hash === 'string' ? hash.slice(0, 8) : 'none');
 
 function verdictLine(v) {
   if (!v?.code) return 'none';
-  const flags = ['cause', 'slow', 'wasted', 'lost', 'limited', 'badge', 'blocked', 'unstarted']
+  const flags = ['cause', 'slow', 'wasted', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward']
     .filter((k) => v[k]).map((k) => (k === 'cause' ? v.cause : k));
   return [v.code, ...flags].join(', ');
 }
@@ -40,6 +40,7 @@ export function debugRows({ state, hashes, autoReload, directory, minuteLog, ver
     ['Drops being earned', String(s.active?.length ?? 0)],
     ['Earned, not claimed', String(s.unclaimed?.length ?? 0)],
     ['Minute marks saved', String(Object.keys(s.drops ?? {}).length)],
+    ['Reward inventory', s.rewardCheck ? `${s.rewardCheck.ok ? `${s.rewardCheck.groups} groups` : 'failed'}, ${when(s.rewardCheck.at, now)}` : 'not asked'],
     ['Auto-reload this hang', autoReload?.lastAt ? `${autoReload.tries} tries, last ${when(autoReload.lastAt, now)}` : 'none'],
     ['All Drops list', directory?.at ? `${directory.campaigns?.length ?? 0} saved, ${when(directory.at, now)}` : 'not loaded'],
     ['All Drops error', directory?.error?.kind ?? 'none'],
@@ -67,7 +68,8 @@ export function debugStreams(state) {
 // Named one by one so anything added to storage later stays out until someone decides otherwise.
 const STATE_FIELDS = [
   'lastPollAt', 'lastOkAt', 'lastGainAt', 'resumeAt', 'closedAt', 'closedName', 'earnerTabs', 'tracking',
-  'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'unclaimed', 'tabs', 'drops',
+  'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'pending', 'unclaimed', 'tabs', 'drops',
+  'rewardCheck', 'rewardInv', 'creditedCampaign',
 ];
 
 /** What Copy debug info hands over. Built from named fields only, so a token can never ride along. */

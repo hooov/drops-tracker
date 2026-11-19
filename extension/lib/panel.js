@@ -177,8 +177,16 @@ export function verdictText(state, now) {
       // "Cannot check streams" is for failed lookups only: a campaign Twitch has not started was
       // shown under it (2026-11-13), which read as the extension failing.
       if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked || v.unstarted ? 'Not counting yet' : 'Cannot check streams', v.message];
+      // Twitch's numbers shown, nothing judged: see the reward channel state in states.js.
+      if (v.reward) return ['Reward campaign', v.message];
       if (state.closedName) return ['Not earning', `You left ${state.closedName}, so nothing open can earn right now.`];
-      return ['Not earning', v.hasStreams ? 'None of your open streams have Drops you need.' : 'No stream is open in this browser.'];
+      if (!v.hasStreams) return ['Not earning', 'No stream is open in this browser.'];
+      {
+        // An offline channel may well run Drops; "none have Drops" would say it does not.
+        const offline = (state.streams || []).find((s) => s.channelState === 'offline');
+        if (offline) return ['Not earning', `${offline.displayName || offline.login} is offline, so it cannot earn right now.`];
+      }
+      return ['Not earning', 'None of your open streams have Drops you need.'];
     case 'signed_out':
       return ['Signed out', 'Log in to twitch.tv in this browser.'];
     case 'api_changed':
@@ -585,17 +593,27 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function renderDrops(state, now) {
-    const { drops: list, from } = channelDrops(state, channelLogin?.() ?? null);
+    const { drops: list, from } = channelDrops(state, channelLogin?.() ?? null, { pending: true });
     $('drops-section').hidden = !list.length;
     $('drops-label').textContent = from ? `Watch Drops on ${from}` : 'Watch Drops';
     const ratio = state.rate?.watched >= RATE_MIN_MINUTES && state.rate.counted > 0 ? Math.min(1, state.rate.counted / state.rate.watched) : 1;
     // A finish time only for drops the minutes are going to: not while they are being wasted
     // elsewhere, and not for another campaign than the one Twitch names as credited.
     const credited = state.active?.find((x) => x.id === state.session?.dropId)?.campaignId;
-    const timed = (d) => state.verdict.code === 'earning' && !state.verdict.wasted && (!credited || d.campaignId === credited);
+    // A session naming a drop not listed (a reward read as a running total) is credit going
+    // elsewhere, so no listed drop gets a finish time.
+    const cc = state.creditedCampaign ?? credited;
+    const timed = (d) => state.verdict.code === 'earning' && !state.verdict.wasted && (!cc || d.campaignId === cc);
     const rows = list.map((d) => {
+      // No minutes reported: the whole requirement, no bar and no finish time (as the Badges tab).
+      // A sibling can tick with the drop the session names (facts), so the full time is an upper bound.
+      if (d.minutes == null) return { ...d, line: d.runningTotal ? `Needs ${span(d.required)}, progress not readable here` : `Watch up to ${span(d.required)} to earn` };
+      // Reached but still listed, as a session-only drop is (it never gets an instance ID): read
+      // "Watch 0m to earn" live on 2026-11-19.
+      if (d.remaining <= 0) return { ...d, line: 'Watch time reached' };
       const left = span(d.remaining);
-      const eta = timed(d) ? `, about ${clock(now + (d.remaining / ratio) * 60000)}` : '';
+      // None for a reward reading: how fast Twitch's numbers there move is not known.
+      const eta = timed(d) && !d.unjudged ? `, about ${clock(now + (d.remaining / ratio) * 60000)}` : '';
       return { ...d, line: d.atRisk && d.endsAt ? `Watch ${left} to earn, ends ${day(d.endsAt)}` : `Watch ${left} to earn${eta}` };
     });
     setList($('drops'), JSON.stringify(rows.map((r) => [r.id, r.minutes, r.line, r.image])), () => rows.map((d) => {
@@ -611,6 +629,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       const text = el('div', 'card-text');
       text.append(el('p', 'strong ellipsis', d.name), el('p', 'sub ellipsis', d.game || d.campaign), el('p', d.atRisk ? 'sub warn' : 'sub', d.line));
       top.append(text);
+      if (d.minutes == null) {
+        card.append(top);
+        return card;
+      }
       const bar = el('div', 'bar');
       bar.setAttribute('role', 'progressbar');
       bar.setAttribute('aria-valuenow', String(d.pct));
@@ -670,7 +692,9 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     if (!list.length) return;
     // The same purple count as the chip, so the two read as one thing.
     $('unclaimed-count').textContent = String(list.length);
-    $('unclaimed-summary').textContent = 'Ready to claim';
+    // As Twitch's inventory words it: "Connect" rows are earned but not claimable yet.
+    const connect = list.filter((u) => u.needsConnect).length;
+    $('unclaimed-summary').textContent = !connect ? 'Ready to claim' : connect === list.length ? 'Earned, connect to claim' : 'Ready to claim or connect';
     setList($('unclaimed'), JSON.stringify(list.map((u) => [u.id, u.claimBy, u.needsConnect])), () => list.map((u) => {
       const row = el('div', 'row');
       const text = el('div', 'row-text');

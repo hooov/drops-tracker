@@ -774,6 +774,32 @@ try {
   assert.equal(await bravo.locator('#drops-tracker-panel #drops .card').count(), s.active.filter((d) => s.streams.find((t) => t.login === 'alphatv').campaignIds.includes(d.campaignId)).length);
   await bravo.keyboard.press('Escape');
   step('a channel with no drops lists only what another open tab is earning, and names that tab');
+  // A drop Twitch reports no minutes for is listed on its own channel, with no bar (2026-11-19:
+  // Twitch's panel offered it at 0 of 60 while this listed nothing).
+  await alpha.bringToFront();
+  await alpha.evaluate(() => document.getElementById('drops-tracker-chip').shadowRoot.querySelector('button').click());
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-panel')?.style.visibility === '');
+  await alpha.click('#drops-tracker-panel #tab-mine');
+  // After opening: opening the panel can start a poll, which would rebuild the list.
+  await popup.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    const campaignId = state.streams.find((t) => t.login === 'alphatv').campaignIds[0];
+    const row = { id: 'e2e-pending', name: 'Not Yet Counted', campaignId, campaign: 'x', game: 'x', image: null, minutes: null, required: 60, endsAt: null };
+    const reached = { id: 'e2e-reached', name: 'Already Reached', campaignId, campaign: 'x', game: 'x', image: null, minutes: 250, required: 60, remaining: 0, pct: 100, endsAt: null, atRisk: false };
+    await chrome.storage.local.set({ state: { ...state, active: [...state.active, reached], pending: [row] } });
+  });
+  await alpha.waitForFunction(() => /Not Yet Counted/.test(document.getElementById('drops-tracker-panel').shadowRoot.getElementById('drops').textContent));
+  const pendingCard = await alpha.evaluate(() => {
+    const card = [...document.getElementById('drops-tracker-panel').shadowRoot.querySelectorAll('#drops .card')].find((c) => /Not Yet Counted/.test(c.textContent));
+    return { text: card.textContent, bars: card.querySelectorAll('.bar').length };
+  });
+  assert.match(pendingCard.text, /Watch up to 1h to earn/);
+  assert.doesNotMatch(pendingCard.text, /null|NaN|undefined/);
+  assert.equal(pendingCard.bars, 0, 'no minutes reported, so no bar');
+  const reachedText = await alpha.evaluate(() => [...document.getElementById('drops-tracker-panel').shadowRoot.querySelectorAll('#drops .card')].find((c) => /Already Reached/.test(c.textContent)).textContent);
+  assert.match(reachedText, /Watch time reached/, 'a drop at its requirement does not say "Watch 0m to earn"');
+  await alpha.keyboard.press('Escape');
+  step('a drop with no minutes reported is listed with the full requirement and no bar; one at its requirement says so');
   await popup.bringToFront();
   step('Badges tab: shows sub and watch drops with progress, follows the channel, and says when there are none');
   await sw.evaluate(() => { self.__transform = null; self.__minutes += 1; });
@@ -993,7 +1019,7 @@ try {
   assert.equal(rows[1], 'Pokémon Night Out Campaign', 'then the sitewide reward');
   assert.equal(rows.includes('Expired Game'), false);
   assert.equal(rows.includes('Ended Still Active'), false);
-  assert.match(await popup.textContent('#dir-list .dir-row .tag'), /^\d+% done$/);
+  assert.match(await popup.textContent('#dir-list .dir-row .tag'), /^Next drop \d+%$/);
   assert.equal(campaignPageLoads, 1);
   assert.deepEqual(await sw.evaluate(() => self.__created), [false], 'the tab must open in the background');
   await popup.waitForFunction(async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);

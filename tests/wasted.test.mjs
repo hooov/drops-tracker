@@ -4,7 +4,7 @@
 // minutes with about 95 left in its campaign. Through the real tracker, not hand-made state.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { update } from '../extension/lib/tracker.js';
+import { update, badge } from '../extension/lib/tracker.js';
 import { channelDrops, chipView } from '../extension/lib/chip.js';
 
 const T0 = Date.parse('2026-11-09T14:00:00Z');
@@ -125,6 +125,11 @@ test('a session still naming an earned drop while the next drop rises is not cal
   assert.equal(s.session?.dropId, 'a', 'the session still names the earned drop');
   assert.equal(s.verdict.code, 'earning');
   assert.equal(s.verdict.wasted, null, 'b is rising: ordinary earning');
+  // The earned drop has left the active list, but its campaign is the one rising: its next
+  // drop's percentage still shows on the toolbar badge and the chip.
+  assert.equal(s.creditedCampaign, 'rivals');
+  assert.equal(badge(s).text, `${s.active[0].pct}%`);
+  assert.equal(chipView(s, T0 + 5 * MIN, 'india').pct, s.active[0].pct);
 });
 
 test('a quiet poll between credits keeps the warning instead of flickering it off', () => {

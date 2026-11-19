@@ -27,7 +27,11 @@ export const PINNED = {
   DropCurrentSessionContext: ['4d06b702d25d652afb9ef835d2a550031f1cf762b193523a92166f40ea3d142b'],
   DropsHighlightService_AvailableDrops: ['782dad0f032942260171d2d80a654f88bdd0c5a9dddc392e9bc92218a0f42d20'],
   VideoPlayerStreamInfoOverlayChannel: ['198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d'],
+  // What Twitch's own Inventory page asked on 2026-11-19, with no variables.
+  ViewerRewardDropInventory: ['828f9f0bdbc735ce3162519717f918b811902984580389a67ad733c684291e62'],
 };
+const MAX_REWARD_GROUPS = 200; // Two campaigns, eight groups, seen on 2026-11-19.
+const REWARD_WAIT_MS = 4000;
 
 // Fields of Inventory that failing does not affect tracking. Seen failing constantly.
 const OPTIONAL_INVENTORY_FIELDS = new Set(['gameEventDrops', 'gameEventDropsConnection', 'earnedDropRewards']);
@@ -385,6 +389,11 @@ function applyCampaigns(channel, item) {
     // A channel's own badge has an explicit null game, and Inventory never lists it (measured).
     // Exactly null: if the field ever goes missing, a game campaign must not fall silent.
     channelOwned: x.game === null,
+    // Twitch's own flag, on a campaign with a game. Its daily drop reports a running total, and its
+    // other watch drop can be a final reward locked behind every other one (2026-11-19, captured,
+    // sitewide, game "Special Events"). A channel badge carries the same flag, but its session
+    // minutes are real progress (measured 2026-11-06), so it is left out.
+    rewardCampaign: x.summary?.isRewardCampaign === true && x.game !== null,
     game: x.game?.displayName || null,
     endAt: x.endAt,
     image: x.imageURL,
@@ -395,8 +404,50 @@ function applyCampaigns(channel, item) {
       required: d.requiredMinutesWatched,
       startAt: d.startAt,
       endAt: d.endAt,
+      benefitIds: (d.benefitEdges || []).map((b) => b.benefit?.id).filter(Boolean),
     })),
   }));
+}
+
+/**
+ * Watch progress from Twitch's reward inventory (`ViewerRewardDropInventory`, the query its own
+ * Inventory page makes). It covers channel badges and reward campaigns, which Inventory leaves out,
+ * and for a repeating drop it has the 24-hour window that the session's running total does not
+ * (captured 2026-11-19: 60 of 60 in a window that had ended, one grant of six, while the session
+ * read 250). Only the fields the tracker uses are kept: no sub counts, no reward names.
+ * Returns null when the answer cannot be read, which means unknown, never "nothing in progress".
+ * A campaign missing from it is unknown too: a badge already claimed was not listed.
+ */
+export function parseRewardInventory(item) {
+  if (errorsOf(item).length || needsIntegrity(item) || isStale(item)) return null;
+  const list = item?.data?.currentUser?.inventory?.viewerRewardDropCampaignsInProgress;
+  if (!Array.isArray(list)) return null;
+  const groups = [];
+  for (const c of list) {
+    if (!c?.id || !Array.isArray(c.rewardGroups)) continue;
+    for (const g of c.rewardGroups) {
+      const crit = g?.progressCriteria;
+      const required = crit?.requirements?.minutesWatched;
+      if (!g?.id || crit?.requirementType !== 'WATCH' || !(required > 0) || !g.self) continue;
+      const repeat = crit.repeatableConfig;
+      const win = g.self.currentWindow;
+      groups.push({
+        campaignId: c.id,
+        id: g.id,
+        required,
+        minutes: typeof g.self.currentMinutesWatched === 'number' ? g.self.currentMinutesWatched : null,
+        status: typeof g.self.status === 'string' ? g.self.status : null,
+        earned: !!g.self.earnedReward,
+        preconditionsMet: g.self.hasPreconditionsMet !== false,
+        repeatTimes: repeat?.repeatableTimes > 0 ? repeat.repeatableTimes : null,
+        grants: typeof g.self.grantCount === 'number' ? g.self.grantCount : null,
+        windowEnd: win ? dateOrNull(win.expiresAt) : null,
+        nextEligibleAt: dateOrNull(g.self.nextEligibleAt),
+      });
+      if (groups.length >= MAX_REWARD_GROUPS) return groups;
+    }
+  }
+  return groups;
 }
 
 /**
@@ -440,5 +491,24 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
     }
   }
 
-  return { campaigns, rewards, channels, session: sessions[0] ?? null, sessions, working: ctx.working };
+  // Asked only when an open channel offers a campaign Inventory leaves out, as a request of its
+  // own, so it can never cost the poll: every failure, 401 and 429 included, is "unknown".
+  let rewardGroups;
+  const inventoryIds = new Set(campaigns.map((c) => c.id));
+  if (liveChannels.some((c) => (c.campaigns || []).some((x) => !inventoryIds.has(x.id)))) {
+    // A slow answer must not hold the poll: after REWARD_WAIT_MS it counts as unknown.
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), REWARD_WAIT_MS); });
+    try {
+      const asked = run(token, [{ name: 'ViewerRewardDropInventory', variables: {} }], ctx)
+        .then(([answer]) => parseRewardInventory(answer), () => null);
+      rewardGroups = await Promise.race([asked, late]);
+    } catch {
+      rewardGroups = null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return { campaigns, rewards, channels, session: sessions[0] ?? null, sessions, rewardGroups, working: ctx.working };
 }
