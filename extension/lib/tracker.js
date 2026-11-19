@@ -4,6 +4,7 @@
 // The states it writes (verdict codes, causes, channel and player states) are declared in
 // states.js; the map of how they move is docs/state-machines.md.
 import { PLAYER_STATES, RATE_MIN_MINUTES } from './states.js';
+import { span } from './directory.js';
 
 export { RATE_MIN_MINUTES };
 
@@ -171,6 +172,23 @@ function classifyPlayer(stream, rec, now) {
   if (hasPrior && player.currentTime === rec.lastTime) return { state: 'frozen' };
   if (!hasPrior && player.readyState < 2) return { state: 'frozen' };
   return { state: 'playing' };
+}
+
+// A badge channel none of whose timed badges can finish before its campaign ends. Minutes Twitch
+// never reported count as none, so the caller's message has to allow for progress it did not see.
+// Seen 2026-11-15: a 180-minute badge with 70 minutes left read only "you may already have earned it".
+function badgeTooLate(stream, now) {
+  let worst = null;
+  for (const b of stream.badges || []) {
+    const timed = (b.drops || []).filter((d) => d.required > 0);
+    if (!timed.length) continue;
+    const end = Date.parse(b.endAt);
+    if (Number.isNaN(end)) return null;
+    const need = Math.min(...timed.map((d) => d.required - (d.minutes ?? 0)));
+    if (need * 60000 <= end - now) return null;
+    worst ??= { need, left: Math.max(0, Math.floor((end - now) / 60000)) };
+  }
+  return worst;
 }
 
 function classifyChannel(stream, active, inventoryIds, rewards, blocked) {
@@ -567,8 +585,11 @@ export function update(prev, obs, now) {
     const open = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
     const since = Math.max(s.resumeAt ?? 0, Math.min(...open.map((st) => st.stateSince)));
     const first = open[0];
+    const late = first.channelState === 'badge_unseen' ? badgeTooLate(first, now) : null;
     const message = {
-      badge_unseen: `${first.displayName}'s badge has a watch timer, but Twitch is not reporting its minutes. You may already have earned it.`,
+      badge_unseen: late
+        ? `${first.displayName}'s badge has a watch timer, but Twitch is not reporting its minutes. It needs ${span(late.need)} and its campaign ends in ${span(late.left)}, so it cannot finish unless most of it was already counted.`
+        : `${first.displayName}'s badge has a watch timer, but Twitch is not reporting its minutes. You may already have earned it.`,
       unstarted: `${first.displayName} has a campaign that has not started counting. It may need your game account linked.`,
       blocked: first.blockedOpens != null
         ? `${first.displayName}'s next drop opens ${new Date(first.blockedOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`

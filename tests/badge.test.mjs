@@ -219,6 +219,34 @@ test('Badges tab: says why when there is nothing, and never reads unknown as non
   assert.match(at('unknown'), /Cannot check/);
 });
 
+// Bundle 2026-11-15: a 180-minute badge, no session, campaign ending in about 70 minutes. The
+// headline only said "you may already have earned it"; the deadline was the useful part.
+test('timer badge with no minutes and too little time left: the headline says it cannot finish', () => {
+  const run = (endsInMin) => {
+    const endAt = new Date(T0 + endsInMin * MIN).toISOString();
+    const camp = { id: 'frog', name: 'Frog', channelOwned: true, endAt, benefitIds: ['frog-benefit'], watchDrops: [{ id: 'frog-drop', name: 'frog', required: 180 }] };
+    const channel = {
+      id: 'echo', login: 'echo', displayName: 'Echo', live: true, campaigns: [camp],
+      badges: [{ id: 'frog', name: 'Frog', endAt, drops: [{ id: 'frog-drop', name: 'frog', required: 180, subs: 0 }, { id: 'frog-sub', name: 'sub', required: 0, subs: 1 }] }],
+    };
+    let s;
+    for (let i = 0; i < 6; i++) {
+      const player = { hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: 100 + i * 60 };
+      s = update(s, { campaigns: [], rewards: { ids: [], complete: true }, session: null, sessions: [], streams: [{ tabId: 1, login: 'echo', channel, tab: {}, player }] }, T0 + i * MIN);
+    }
+    return s;
+  };
+  const late = run(75);
+  assert.equal(late.streams[0].channelState, 'badge_unseen');
+  assert.equal(late.verdict.badge, true);
+  assert.match(late.verdict.message, /Echo's badge has a watch timer/);
+  assert.match(late.verdict.message, /needs 3h and its campaign ends in 1h 10m, so it cannot finish/);
+  assert.doesNotMatch(late.verdict.message, /already have earned it/);
+  const roomy = run(600);
+  assert.match(roomy.verdict.message, /already have earned it/);
+  assert.doesNotMatch(roomy.verdict.message, /cannot finish/);
+});
+
 test('Badges tab: warns when the time left is too short to finish', () => {
   const late = { id: 'x', name: 'One', endAt: new Date(T0 + 30 * MIN).toISOString(), drops: [{ id: 'a', name: 'A', required: 180, subs: 0, minutes: 5 }] };
   const drop = badgeSections([{ login: 'a', channelState: 'badge_unseen', badges: [late] }], 'a', T0)[0].campaigns[0].drops[0];
