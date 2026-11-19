@@ -146,10 +146,13 @@ test('the same evening: the chip ring and the toolbar badge show the badge\'s pe
   assert.equal(s.creditedCampaign, BADGE);
 });
 
-test('today\'s reward drop earned and nothing else rising: still not called wasted (a running total judges nothing)', async () => {
+// Corrected by the all-views check (2026-11-19): this asserted "not wasted", but today's reward drop
+// done and only its running total rising means the minutes count for nothing until the next window.
+test('today\'s reward drop earned and only its running total rising: wasted, naming the reward', async () => {
   let s;
   for (let i = 0; i < 4; i++) s = await eveningPoll(s, i, { badge: 72, total: 319 + i });
-  assert.equal(s.verdict.wasted ?? null, null, JSON.stringify(s.verdict));
+  assert.equal(s.verdict.wasted?.reason, 'earned', JSON.stringify(s.verdict));
+  assert.match(s.verdict.wasted.message, /GTA DVD Chest is already earned/);
 });
 
 test('a badge both queries list is shown once', async () => {
