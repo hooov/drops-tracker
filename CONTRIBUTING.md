@@ -13,6 +13,8 @@ npm run e2e
 
 New behaviour comes with a test. A test for a bug should fail on the old code first: run it before the fix and see it fail.
 
+Failing on the old code proves the test sees a change, not that the new expectation is right. Take the expected value from what Twitch did and what the user should see, never from the fix. On 2026-11-19 a test written to match a fix ("a running total is never wasted") locked in a regression that switched a real warning off, until `tests/all-views.test.mjs` caught it. Every clause a fix adds needs a reason from a captured case; a fix that adds an extra rule "to be safe" is how that one happened.
+
 ## Rules that bite
 - **Rising minutes are the only proof of earning.** `dropCurrentSession` keeps naming a channel during a hang, and Twitch answers a session for channels you are not even watching. Never derive "earning" from it.
 - **Unknown is never stalled.** A failed or partial poll has its own verdict (`error`, `api_changed`, `signed_out`, `limited`). Calling it Hung trains people to ignore the warning. Before changing failure handling, read "What each Twitch failure does" in [docs/twitch-drops-facts.md](docs/twitch-drops-facts.md), and test against the real response bodies in `tests/fixtures/`. Real failures were not what you would guess: one response often carries good data and an error together.
@@ -26,6 +28,17 @@ New behaviour comes with a test. A test for a bug should fail on the old code fi
 
 ## Adding a module the panel imports
 Content scripts load panel modules by URL, so every file under `extension/lib/` the panel reaches must be listed in `web_accessible_resources` in `manifest.json`. `tests/manifest.test.mjs` checks this. After a manifest change, reload the extension: open tabs keep the old manifest until then and fail with "Failed to fetch dynamically imported module".
+
+## An e2e wait that passes at once
+Never pass an async function to Playwright's `waitForFunction`: it returns a Promise, which counts as truthy, so the wait passes immediately whatever the value (measured 2026-11-19: an always-false async predicate "passed" after 11ms; five e2e waits had been checking nothing). Use `until(page, fn, arg)` in `scripts/e2e.mjs`, which polls with `evaluate`. `tests/e2e-waits.test.mjs` fails if the pattern comes back.
+
+## Testing in your own Brave
+Checking a change against real Twitch before it ships, without opening extra streams:
+- Reload the extension at brave://extensions, then the Twitch tab, so the page sends its queries again.
+- Copy debug info (Settings, Developer mode) holds the state, the minute log and `pageOps`, the operations Twitch's page sent. A query Twitch moved data to shows up there.
+- Snippets that read or change the extension's storage go in the **service worker** console: brave://extensions, the "service worker" link on the Drops Tracker card. The Twitch page's own console has no `chrome.storage`. Wrap them as `await (async () => { ... })()` so they print their result and can be run twice.
+- No desktop notification: in that console, `await chrome.notifications.getPermissionLevel()` should say `granted`, and a `chrome.notifications.create` call should show one. If it does not appear, Windows is hiding it: Brave in Windows Settings > System > Notifications, and Do Not Disturb off (hit on 2026-11-19).
+- Check every view the change can reach, not only the one reported: the panel headline, the chip on the channel's own tab and on a second tab, the toolbar badge and the Badges tab.
 
 ## Adding a captured fixture, or e2e failing days later with a campaign "finished"
 `scripts/e2e.mjs` and `scripts/screenshots.mjs` run against the real clock, so they load fixtures through `loadFixture` in `scripts/fixtures.mjs`, which moves every timestamp forward by the time since capture. Never read a fixture there with plain `JSON.parse`: it passes on capture day and fails once a real campaign ends. All current fixtures share one capture time (`CAPTURED_AT`). A fixture captured on another day needs its own capture time there, or its campaigns will be shifted by the wrong amount.

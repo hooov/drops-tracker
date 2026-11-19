@@ -19,6 +19,17 @@ const fx = loadFixture(root, 'gql-2026-11-06.json');
 const BROWSER = process.env.E2E_BROWSER || 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe';
 const profile = mkdtempSync(join(tmpdir(), 'drops-e2e-'));
 const step = (msg) => console.log(`ok - ${msg}`);
+// Polls an async check in the page until it holds. Never waitForFunction with an async predicate:
+// it returns a Promise, which counts as truthy, so the wait passes at once (measured 2026-11-19:
+// an always-false async predicate "passed" after 11ms). See CONTRIBUTING.md.
+async function until(page, fn, arg, { timeout = 30000, every = 100 } = {}) {
+  const end = Date.now() + timeout;
+  for (;;) {
+    if (await page.evaluate(fn, arg)) return;
+    if (Date.now() > end) throw new Error(`until: still false after ${timeout}ms: ${String(fn).slice(0, 120)}`);
+    await new Promise((resolve) => { setTimeout(resolve, every); });
+  }
+}
 
 // A "stream" whose <video> really plays, from a canvas, so currentTime genuinely advances.
 const FAKE_CHANNEL = `<!doctype html><title>fake</title><video id="v" muted autoplay width="640" height="360"></video><script>
@@ -654,7 +665,7 @@ try {
       body: JSON.stringify([{ operationName: 'Inventory', variables: {}, extensions: { persistedQuery: { version: 1, sha256Hash: hash } } }]),
     }).catch(() => {});
   }, NEW_HASH);
-  await popup.waitForFunction(async (hash) => (await chrome.storage.local.get('hashes')).hashes?.learned?.Inventory === hash, NEW_HASH, { timeout: 5000 });
+  await until(popup, async (hash) => (await chrome.storage.local.get('hashes')).hashes?.learned?.Inventory === hash, NEW_HASH, { timeout: 5000 });
   await sw.evaluate(([stale, hash]) => {
     self.__transform = (answer, ops) => answer.map((a, i) => (ops[i].operationName === 'Inventory' && ops[i].extensions.persistedQuery.sha256Hash !== hash ? stale : a));
   }, [STALE, NEW_HASH]);
@@ -1001,7 +1012,7 @@ try {
   const beforeCheck = (await state()).lastPollAt;
   await advance(1);
   await popup.click('#debug-poll');
-  await popup.waitForFunction(async (t) => (await chrome.storage.local.get('state')).state.lastPollAt > t, beforeCheck, { timeout: 8000 });
+  await until(popup, async (t) => (await chrome.storage.local.get('state')).state.lastPollAt > t, beforeCheck, { timeout: 8000 });
   // Reading the clipboard back is refused in this test browser, so see the text on its way in.
   await popup.evaluate(() => {
     const real = navigator.clipboard.writeText.bind(navigator.clipboard);
@@ -1107,7 +1118,7 @@ try {
   assert.match(await popup.textContent('#dir-list .dir-row .tag'), /^Next drop \d+%$/);
   assert.equal(campaignPageLoads, 1);
   assert.deepEqual(await sw.evaluate(() => self.__created), [false], 'the tab must open in the background');
-  await popup.waitForFunction(async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
+  await until(popup, async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
   assert.equal(campaignTabs(), 0, 'the background tab must close itself');
   step('All Drops: opened from a background tab that closes itself; yours first, expired and ended left out');
 
@@ -1159,7 +1170,7 @@ try {
   await popup.waitForFunction(() => !document.getElementById('dir-error').hidden, null, { timeout: 15000 });
   assert.match(await popup.textContent('#dir-error'), /changed how this list loads/);
   assert.equal((await dirRows(popup)).length, 117, 'a failure must keep the last list');
-  await popup.waitForFunction(async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
+  await until(popup, async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
   await popup.screenshot({ path: join(out, '19-all-drops-failed.png') });
   step('integrity failure: says so, keeps the last list, closes the tab');
 
@@ -1168,7 +1179,7 @@ try {
   await popup.click('#dir-refresh');
   await popup.waitForFunction(() => /did not answer/.test(document.getElementById('dir-error').textContent), null, { timeout: 35000 });
   assert.equal(await popup.$eval('#foot-link', (a) => a.href), 'https://www.twitch.tv/drops/campaigns', 'the fallback link must be there');
-  await popup.waitForFunction(async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
+  await until(popup, async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
   const beforeRetry = campaignPageLoads;
   await popup.click('#tab-mine');
   await popup.click('#tab-all');
