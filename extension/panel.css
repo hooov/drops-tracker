@@ -207,6 +207,8 @@ details[open] .chevron { transform: rotate(90deg); }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
 .setting > label:not([aria-hidden]) { cursor: pointer; }
 .setting-hint { margin-top: 2px; padding-right: 44px; }
+/* A second switch sharing a box (Badge alerts under Claim reminders). */
+.next-setting { margin-top: 8px; }
 /* Advanced: Developer mode set apart from the settings everyone uses, without a box of its own. */
 .group-label { margin: 12px 2px 4px; }
 .section.plain { background: none; border-color: transparent; padding-top: 0; }

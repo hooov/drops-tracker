@@ -4,7 +4,9 @@ import { STALL_CAUSES } from './states.js';
 export const INTERVALS = [1, 5, 10, 30];
 // Both helpers are on by default (Tyler's call, 2026-11-09, for the store release). devMode only
 // shows the debug tools in the Settings tab. claimReminders off hides every claim prompt.
-export const DEFAULTS = { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false, claimReminders: true };
+// badgeAlerts: the desktop notification for a badge no open channel lists, off by default
+// (Tyler's call, 2026-11-19); the Badges tab note shows either way.
+export const DEFAULTS = { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false, claimReminders: true, badgeAlerts: false };
 export const DROPS_PAGES = ['https://www.twitch.tv/drops/*'];
 const JITTER_MS = 5000; // The alarm can fire slightly early; do not slip a whole minute over that.
 
@@ -19,7 +21,18 @@ export function normalize(raw) {
     autoReload: bool(raw?.autoReload, DEFAULTS.autoReload),
     devMode: bool(raw?.devMode, DEFAULTS.devMode),
     claimReminders: bool(raw?.claimReminders, DEFAULTS.claimReminders),
+    badgeAlerts: bool(raw?.badgeAlerts, DEFAULTS.badgeAlerts),
   };
+}
+
+/**
+ * Whether an event from tracker.js events() becomes a desktop notification. Switched-off kinds
+ * are still marked as notified there, so switching one on later brings no burst of old ones.
+ */
+export function notifiable(ev, prefs) {
+  if (ev.type === 'claim') return prefs.claimReminders;
+  if (ev.type === 'unplaced') return prefs.badgeAlerts;
+  return true;
 }
 
 // Auto-reload of a hung stream tab. Hangs of about 5 minutes were measured, one of which recovered

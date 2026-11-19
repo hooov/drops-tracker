@@ -4,8 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot, PINNED } from '../extension/lib/twitch.js';
-import { update } from '../extension/lib/tracker.js';
+import { update, badge } from '../extension/lib/tracker.js';
 import { badgeSections } from '../extension/lib/badges.js';
+import { chipView, channelDrops } from '../extension/lib/chip.js';
 
 const cc = JSON.parse(readFileSync(new URL('./fixtures/channel-campaigns-2026-11-19.json', import.meta.url)));
 const inv = JSON.parse(readFileSync(new URL('./fixtures/reward-inventory-2026-11-19.json', import.meta.url))).answer;
@@ -126,6 +127,23 @@ test('today\'s reward drop earned while the channel\'s badge rises: earning, nev
   assert.equal(s.active.find((d) => d.id === WATCH_GROUP).minutes, 72);
 });
 
+test('the same evening: the chip ring and the toolbar badge show the badge\'s percentage, also on a quiet minute', async () => {
+  let s;
+  // 69, 70, 71, then a minute where nothing rose, then 72.
+  for (const [i, m] of [69, 70, 71, 71, 72].entries()) {
+    s = await eveningPoll(s, i, { badge: m, total: 319 + i });
+    const at = Date.parse('2026-11-19T19:00:00Z') + i * MIN;
+    const pct = Math.floor((m / 180) * 100);
+    assert.equal(chipView(s, at, 'foxtrot').pct, pct, `chip at ${m}`);
+    // The first poll is a baseline, so the toolbar has no "earning" to show yet.
+    if (i > 0) {
+      assert.equal(s.verdict.code, 'earning', `minute ${i}`);
+      assert.equal(badge(s).text, `${pct}%`, `toolbar at ${m}`);
+    }
+  }
+  assert.equal(s.creditedCampaign, BADGE);
+});
+
 test('today\'s reward drop earned and nothing else rising: still not called wasted (a running total judges nothing)', async () => {
   let s;
   for (let i = 0; i < 4; i++) s = await eveningPoll(s, i, { badge: 72, total: 319 + i });
@@ -144,4 +162,50 @@ test('a badge both queries list is shown once', async () => {
   const snap = await fetchSnapshot('tok', ['foxtrot'], f, {}, { askRewards: true });
   assert.equal(snap.channels.foxtrot.badges.filter((b) => b.id === BADGE).length, 1);
   assert.equal(snap.channels.foxtrot.campaigns.filter((c) => c.id === BADGE).length, 1);
+});
+
+// The same evening with a second tab open on a channel with no drops (Tyler's setup: a 24/7
+// channel beside the badge channel). Its chip showed a bare full ring.
+async function twoTabPoll(prev, i, minutes) {
+  const t = Date.parse('2026-11-19T19:00:00Z') + i * MIN;
+  const one = dayTwoEvening({ badge: minutes, total: 319 + i });
+  const fake = async (_url, init) => {
+    const ops = JSON.parse(init.body);
+    const base = await (await one(_url, init)).json();
+    return json(base.map((a, k) => {
+      const o = ops[k];
+      const echo = o.variables?.channel === 'echo_247' || o.variables?.channelID === '20000011';
+      if (!echo) return a;
+      switch (o.operationName) {
+        case 'VideoPlayerStreamInfoOverlayChannel': return { data: { user: { id: '20000011', login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } };
+        case 'DropsHighlightService_AvailableDrops': return { data: { channel: { id: '20000011', viewerDropCampaigns: [] } } };
+        case 'ChannelDropsCampaigns': return { data: { channelDropCampaigns: [] } };
+        case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: badgeFx.zeroedSession } } };
+        default: return a;
+      }
+    }));
+  };
+  const snap = await fetchSnapshot('tok', ['foxtrot', 'echo_247'], fake, {}, { askRewards: true });
+  const player = (tabTime) => ({ hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: tabTime });
+  return update(prev, {
+    campaigns: snap.campaigns, rewards: snap.rewards, session: snap.session, sessions: snap.sessions, rewardGroups: snap.rewardGroups,
+    streams: [
+      { tabId: 1, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: player(100 + i * 60) },
+      { tabId: 2, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: player(500 + i * 60) },
+    ],
+  }, t);
+}
+
+test('a second tab with no drops shows the badge channel\'s percentage, and names it', async () => {
+  let s;
+  for (const [i, m] of [69, 70, 71, 71, 72].entries()) {
+    s = await twoTabPoll(s, i, m);
+    const at = Date.parse('2026-11-19T19:00:00Z') + i * MIN;
+    // The first poll is a baseline: nothing has risen, so no channel is known to be credited yet.
+    // From then on, quiet minutes (71 twice) included.
+    if (i > 0) assert.equal(chipView(s, at, 'echo_247').pct, Math.floor((m / 180) * 100), `second tab at ${m}`);
+  }
+  assert.equal(s.streams.find((t) => t.login === 'echo_247').channelState, 'no_drops');
+  const { drops, from } = channelDrops(s, 'echo_247');
+  assert.deepEqual([drops[0].id, from], [WATCH_GROUP, 'Foxtrot']);
 });

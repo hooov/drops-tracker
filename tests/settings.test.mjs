@@ -1,20 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, refreshDue, autoReloadStep, autoReloadNote, DEFAULTS, DROPS_PAGES, RELOAD_MAX } from '../extension/lib/settings.js';
+import { normalize, notifiable, refreshDue, autoReloadStep, autoReloadNote, DEFAULTS, DROPS_PAGES, RELOAD_MAX } from '../extension/lib/settings.js';
 
 const MIN = 60000;
-const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: true, devMode: false, claimReminders: true });
+const on = (minutes) => ({ autoRefresh: true, autoRefreshMinutes: minutes, autoReload: true, devMode: false, claimReminders: true, badgeAlerts: false });
 
 test('helpers on and developer mode off by default; bad stored values fall back to the defaults', () => {
   assert.deepEqual(normalize(undefined), DEFAULTS);
-  assert.deepEqual(DEFAULTS, { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false, claimReminders: true });
-  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7, autoReload: 1, devMode: 'on', claimReminders: 0 }), DEFAULTS);
+  assert.deepEqual(DEFAULTS, { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: false, claimReminders: true, badgeAlerts: false });
+  assert.deepEqual(normalize({ autoRefresh: 'yes', autoRefreshMinutes: 7, autoReload: 1, devMode: 'on', claimReminders: 0, badgeAlerts: 'yes' }), DEFAULTS);
   assert.deepEqual(normalize({ autoRefresh: true, autoRefreshMinutes: 10 }), on(10));
 });
 
 test('a saved off wins over a default-on setting, so turning one off sticks', () => {
   const off = normalize({ autoRefresh: false, autoReload: false, devMode: true, claimReminders: false });
   assert.deepEqual([off.autoRefresh, off.autoReload, off.devMode, off.claimReminders], [false, false, true, false]);
+});
+
+test('badge alerts: off by default, a saved on sticks, and only they gate the unplaced-badge notification', () => {
+  assert.equal(normalize(undefined).badgeAlerts, false);
+  assert.equal(normalize({ badgeAlerts: true }).badgeAlerts, true);
+  const unplaced = { type: 'unplaced', title: 't', message: 'm' };
+  assert.equal(notifiable(unplaced, normalize(undefined)), false);
+  assert.equal(notifiable(unplaced, normalize({ badgeAlerts: true })), true);
+  assert.equal(notifiable({ type: 'claim' }, normalize({ badgeAlerts: true, claimReminders: false })), false, 'claims still follow Claim reminders');
+  assert.equal(notifiable({ type: 'claim' }, normalize(undefined)), true);
+  assert.equal(notifiable({ type: 'warning' }, normalize({ claimReminders: false })), true, 'warnings always notify');
 });
 
 test('off never refreshes and clears the timer', () => {

@@ -753,7 +753,19 @@ export function update(prev, obs, now) {
   // The campaign of the drop Twitch names as credited, from every campaign known, not just the
   // active list: an earned drop leaves that list while the session keeps naming it and its
   // campaign's next drop rises. The badge, chip and finish times compare against this.
-  s.creditedCampaign = session ? allCampaigns.find((c) => (c.timeBasedDrops || []).some((d) => d.id === session.dropId))?.id ?? null : null;
+  let credited = session ? allCampaigns.find((c) => (c.timeBasedDrops || []).some((d) => d.id === session.dropId))?.id ?? null : null;
+  // Named but with nothing listed (today's reward drop done) while another listed drop on that
+  // channel rises: that drop is what the minutes go to. Kept on quiet polls between its rises, so
+  // the ring does not flick between its percentage and none (2026-11-19: a full ring with no
+  // percentage while the channel's badge rose 69 to 72 of 180).
+  if (credited && !active.some((d) => d.campaignId === credited)) {
+    const here = streams.find((st) => st.login === session.login)?.campaignIds || [];
+    const listedHere = (id) => active.some((d) => d.campaignId === id && here.includes(id));
+    const rising = active.find((d) => risen.has(d.id) && here.includes(d.campaignId));
+    const kept = prev?.creditedCampaign && prev.creditedCampaign !== credited && listedHere(prev.creditedCampaign) ? prev.creditedCampaign : null;
+    credited = rising?.campaignId ?? kept ?? credited;
+  }
+  s.creditedCampaign = credited;
   s.active = active.sort((a, b) => risen.has(b.id) - risen.has(a.id) || (b.id === session?.dropId) - (a.id === session?.dropId) || a.remaining - b.remaining);
   s.unclaimed = unclaimed.sort((a, b) => (a.claimBy ?? Infinity) - (b.claimBy ?? Infinity) || 0);
 
@@ -949,6 +961,20 @@ export function events(prev, next, now) {
     }
   }
   next.notifiedClaims = next.unclaimed.filter((u) => u.campaignActive).map((u) => u.id);
+  // A badge Twitch is counting that no open channel lists: once per campaign, since the Badges
+  // tab note alone goes unseen. Bound: kept only while the campaign is in unplacedBadges.
+  const told = new Set(prev?.notifiedUnplaced || []);
+  const unplaced = next.unplacedBadges || [];
+  for (const u of unplaced) {
+    if (!u.rising || told.has(u.campaignId)) continue;
+    told.add(u.campaignId);
+    out.push({
+      type: 'unplaced',
+      title: 'Badge Drops Tracker cannot show',
+      message: `Twitch is counting minutes on a badge (${u.minutes} of ${u.required} min) that no open channel lists. Twitch may have changed where it lists badges. Reload the channel's tab, then Copy debug info in Settings.`,
+    });
+  }
+  next.notifiedUnplaced = [...told].filter((id) => unplaced.some((u) => u.campaignId === id));
   return out;
 }
 

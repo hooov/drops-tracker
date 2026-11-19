@@ -102,6 +102,7 @@ try {
   assert.equal(await popup.isChecked('#auto-refresh'), true, 'Auto-refresh is on by default');
   assert.equal(await popup.isChecked('#auto-reload'), true, 'Auto-reload is on by default');
   assert.equal(await popup.isChecked('#claim-reminders'), true, 'Claim reminders are on by default');
+  assert.equal(await popup.isChecked('#badge-alerts'), false, 'Badge alerts are off by default');
   assert.equal(await popup.isChecked('#dev-mode'), false, 'Developer mode is off by default');
   assert.equal(await popup.isVisible('#log-section'), false, 'debug tools stay hidden until Developer mode');
   // Keyboard: arrows move between tabs, and only the selected tab is a Tab stop.
@@ -116,7 +117,22 @@ try {
   assert.equal(await popup.isVisible('#log-section'), true);
   assert.equal(await popup.isVisible('#debug-status'), true);
   assert.deepEqual(await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings),
-    { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true, claimReminders: true });
+    { autoRefresh: true, autoRefreshMinutes: 5, autoReload: true, devMode: true, claimReminders: true, badgeAlerts: false });
+  // Badge alerts: the real switch saves it, and the hint says what it does.
+  assert.match(await popup.textContent('#badge-alerts-hint'), /badge no open channel lists/);
+  // Polled by hand: an async waitForFunction predicate returns a Promise, which counts as truthy.
+  const savedBadgeAlerts = async (want) => {
+    for (let i = 0; i < 20; i++) {
+      if ((await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings?.badgeAlerts)) === want) return;
+      await popup.waitForTimeout(100);
+    }
+    throw new Error(`badgeAlerts never saved as ${want}`);
+  };
+  await popup.click('.toggle:has(#badge-alerts)');
+  await savedBadgeAlerts(true);
+  assert.equal(await popup.isChecked('#badge-alerts'), true);
+  await popup.click('.toggle:has(#badge-alerts)');
+  await savedBadgeAlerts(false);
   // From here both helpers are switched off, as a user can, so the steps below control when they act.
   await popup.evaluate(() => chrome.storage.local.set({ settings: { autoRefresh: false, autoRefreshMinutes: 5, autoReload: false, devMode: true, claimReminders: true } }));
   await popup.waitForFunction(() => !document.getElementById('auto-reload').checked);
@@ -585,7 +601,7 @@ try {
   assert.equal(streamLoads, 0, 'stream tabs must never be reloaded by this');
   await popup.screenshot({ path: join(out, '13-auto-refresh-on.png'), fullPage: true });
   const savedSettings = await popup.evaluate(async () => (await chrome.storage.local.get('settings')).settings);
-  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false, devMode: true, claimReminders: true });
+  assert.deepEqual(savedSettings, { autoRefresh: true, autoRefreshMinutes: 1, autoReload: false, devMode: true, claimReminders: true, badgeAlerts: false });
   await popup.click('.toggle');
   await advance(2);
   await poll();
@@ -1009,9 +1025,22 @@ try {
   await alpha.waitForFunction(() => document.getElementById('drops-tracker-panel')?.style.visibility === '');
   await alpha.click('#drops-tracker-panel #tab-settings');
   await alpha.waitForSelector('#drops-tracker-panel #auto-reload-note', { state: 'attached' });
-  const debugFit = await alpha.evaluate(() => { const h = document.getElementById('drops-tracker-panel'); return h.scrollHeight - h.clientHeight; });
-  assert.equal(debugFit, 0, 'the Settings tab must not scroll while its sections are closed');
+  // With Developer mode on, its two closed sections may push the tab past the panel (Tyler's call,
+  // 2026-11-19, when Badge alerts was added): the panel scrolls, so nothing may be cut off. With it
+  // off, which is everyone else, the tab must fit.
+  const settingsFit = () => alpha.evaluate(() => {
+    const h = document.getElementById('drops-tracker-panel');
+    return { over: h.scrollHeight - h.clientHeight, scrolls: getComputedStyle(h).overflowY === 'auto' };
+  });
+  const devFit = await settingsFit();
+  assert.ok(devFit.over === 0 || devFit.scrolls, `Developer mode: ${devFit.over}px over and the panel does not scroll`);
   await alpha.screenshot({ path: join(out, '28-debug-in-chat.png') });
+  await alpha.click('#drops-tracker-panel .toggle:has(#dev-mode)');
+  await alpha.waitForFunction(() => document.getElementById('drops-tracker-panel').shadowRoot.getElementById('debug-sections').hidden);
+  const plainFit = await settingsFit();
+  assert.equal(plainFit.over, 0, 'with Developer mode off the Settings tab must not scroll');
+  await alpha.click('#drops-tracker-panel .toggle:has(#dev-mode)');
+  await alpha.waitForFunction(() => !document.getElementById('drops-tracker-panel').shadowRoot.getElementById('debug-sections').hidden);
   await alpha.keyboard.press('Escape');
   await popup.bringToFront();
   step('Settings tab with Developer mode: holds the settings and log, shows real state, runs a check, copies with no token');

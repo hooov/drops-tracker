@@ -43,7 +43,7 @@ WHAT YOU SEE
 - My Drops: what the channel you are on can earn, with progress and time left
 - All Drops: every Drops campaign running on Twitch right now
 - Badges: a channel's own sub and watch-time badges
-- Settings: the two helpers below, claim reminders, and an optional Developer mode with a per-minute log for bug reports
+- Settings: the two helpers below, claim reminders, optional badge alerts, and an optional Developer mode with a per-minute log for bug reports
 
 WHAT IT DOES TO YOUR TABS
 Two helpers, both on by default and both can be switched off in the Settings tab:

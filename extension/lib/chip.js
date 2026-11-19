@@ -38,7 +38,9 @@ export function channelDrops(state, login, { pending = false } = {}) {
   // Watching one channel while another tab earns is a common setup, and hiding that would hide
   // the progress the verdict is talking about.
   const earners = streams.filter((s) => s.channelState === 'eligible');
-  const credited = earners.filter((s) => s.credited);
+  // A reward channel is never "eligible", but one Twitch credits is earning too: without it a
+  // second tab showed a bare full ring while the reward channel's badge rose (2026-11-19).
+  const credited = streams.filter((s) => s.credited && (s.channelState === 'eligible' || s.channelState === 'reward'));
   const elsewhere = credited.length ? credited : earners;
   const drops = on(elsewhere);
   if (drops.length) return { drops, from: elsewhere.length === 1 && elsewhere[0].login !== login ? elsewhere[0].displayName : null };
