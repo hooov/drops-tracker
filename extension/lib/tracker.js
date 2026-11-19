@@ -147,6 +147,10 @@ export function wastedCredit(session, active, streams, risen, running) {
   if (!session?.dropId || !risen?.has(session.dropId) || !streams.some((st) => st.login === session.login)) return null;
   // A running total over its requirement says nothing about today's drop.
   if (running?.has(session.dropId)) return null;
+  // Minutes rising on another drop of the credited channel are being used, whatever the session
+  // names (2026-11-19: it named GTAVI's DVD drop, done for the day, while the channel's badge rose).
+  const channelCampaigns = streams.find((st) => st.login === session.login)?.campaignIds || [];
+  if (active.some((d) => d.id !== session.dropId && risen.has(d.id) && channelCampaigns.includes(d.campaignId))) return null;
   const drop = active.find((d) => d.id === session.dropId);
   // Over the requirement, not at it: the minute that reaches it is the one that earns the drop
   // (seen 2026-11-14, 30 of 30 flagged as waste for one poll). A badge credited on reads 362 of 360.
@@ -808,6 +812,9 @@ export function update(prev, obs, now) {
       ? wastedCredit(session, s.active, streams, risen, new Set([
         ...(s.pending || []).filter((d) => d.runningTotal).map((d) => d.id),
         ...s.active.filter((d) => d.unjudged).map((d) => d.id),
+        // From every campaign, not only active: today's reward drop, once earned, leaves the
+        // active list while the session keeps naming it with the campaign's running total.
+        ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).filter((d) => d.unjudged).map((d) => d.id)),
       ]))
       : keep ? prev.verdict.wasted : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };

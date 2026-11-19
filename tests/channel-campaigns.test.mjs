@@ -90,6 +90,48 @@ test('ChannelDropsCampaigns failing costs only its badges: the channel is still 
   assert.equal(badgeSections(state.streams, 'foxtrot', T)[0].note, "Cannot read this channel's badge drops right now.");
 });
 
+// 2026-11-19, Tyler's bundle at 19:03 UTC: today's GTAVI DVD drop earned (60 of 60, second grant),
+// the session still naming it with GTAVI's running total (322 of 60), and the channel's own badge
+// rising in the reward inventory (72 of 180). The panel turned amber: "already earned, these
+// minutes do nothing". They were earning the badge.
+function dayTwoEvening({ badge, total }) {
+  const a = inventoryAt(badge);
+  const dvd = a.data.currentUser.inventory.viewerRewardDropCampaignsInProgress[1].rewardGroups[0];
+  dvd.self.currentMinutesWatched = 60;
+  dvd.self.grantCount = 2;
+  dvd.self.currentWindow = { startedAt: '2026-11-19T17:50:15Z', expiresAt: '2026-11-20T17:50:15Z' };
+  const session = { channel: { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: '2283245e-d15c-11f1-8cdd-0a58a9feac02', game: null, requiredMinutesWatched: 60 };
+  return async (_url, init) => {
+    const ops = JSON.parse(init.body);
+    const base = await (await twitch({ minutes: badge })(_url, init)).json();
+    return json(base.map((x, i) => {
+      if (ops[i].operationName === 'ViewerRewardDropInventory') return a;
+      if (ops[i].operationName === 'DropCurrentSessionContext') return { data: { currentUser: { dropCurrentSession: session } } };
+      return x;
+    }));
+  };
+}
+
+async function eveningPoll(prev, i, opts) {
+  const t = Date.parse('2026-11-19T19:00:00Z') + i * MIN;
+  const snap = await fetchSnapshot('tok', ['foxtrot'], dayTwoEvening(opts), {}, { askRewards: true });
+  return update(prev, { campaigns: snap.campaigns, rewards: snap.rewards, session: snap.session, sessions: snap.sessions, rewardGroups: snap.rewardGroups, streams: [{ tabId: 1, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: { hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: 100 + i * 60 } }] }, t);
+}
+
+test('today\'s reward drop earned while the channel\'s badge rises: earning, never "these minutes do nothing"', async () => {
+  let s;
+  for (let i = 0; i < 4; i++) s = await eveningPoll(s, i, { badge: 69 + i, total: 319 + i });
+  assert.equal(s.verdict.code, 'earning');
+  assert.equal(s.verdict.wasted, null, JSON.stringify(s.verdict.wasted));
+  assert.equal(s.active.find((d) => d.id === WATCH_GROUP).minutes, 72);
+});
+
+test('today\'s reward drop earned and nothing else rising: still not called wasted (a running total judges nothing)', async () => {
+  let s;
+  for (let i = 0; i < 4; i++) s = await eveningPoll(s, i, { badge: 72, total: 319 + i });
+  assert.equal(s.verdict.wasted ?? null, null, JSON.stringify(s.verdict));
+});
+
 test('a badge both queries list is shown once', async () => {
   const both = structuredClone(cc.answer);
   const fromHighlight = { ...reward, viewerDropCampaigns: [...reward.viewerDropCampaigns, { id: BADGE, name: 'FoxtrotGTA', game: null, endAt: '2026-11-19T23:00:00.962Z', timeBasedDrops: [{ id: WATCH_GROUP, name: '', requiredMinutesWatched: 180, requiredSubs: 0, benefitEdges: [{ benefit: { id: 'b', name: 'Foxtrot Watch Badge' } }] }] }] };
