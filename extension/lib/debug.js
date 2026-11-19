@@ -1,5 +1,6 @@
 // The Debug tab: what the tracker currently believes, and a bundle to paste when reporting a
 // problem. Pure, no chrome.*.
+import { dropOps } from './pageops.js';
 
 const ago = (ms) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -25,8 +26,14 @@ function hashLines(hashes) {
   ]);
 }
 
+function unplacedLine(list) {
+  if (!Array.isArray(list) || !list.length) return 'none';
+  const rising = list.filter((u) => u.rising).length;
+  return `${list.length} in progress, ${rising} rising`;
+}
+
 /** Label and value pairs for the tab. Everything here is safe to show. */
-export function debugRows({ state, hashes, autoReload, directory, minuteLog, version }, now) {
+export function debugRows({ state, hashes, autoReload, directory, minuteLog, pageOps, version }, now) {
   const s = state ?? {};
   const session = s.session;
   const rows = [
@@ -45,7 +52,10 @@ export function debugRows({ state, hashes, autoReload, directory, minuteLog, ver
     ['All Drops list', directory?.at ? `${directory.campaigns?.length ?? 0} saved, ${when(directory.at, now)}` : 'not loaded'],
     ['All Drops error', directory?.error?.kind ?? 'none'],
     ['Minute log', `${Array.isArray(minuteLog) ? minuteLog.length : 0} minutes`],
+    ['Badges no open channel lists', unplacedLine(s.unplacedBadges)],
     ...hashLines(hashes),
+    ['Page operations seen', String(Object.keys(pageOps ?? {}).length)],
+    ...dropOps(pageOps).map((o) => [`Page: ${o.op}`, o.line]),
   ];
   return rows.map(([label, value]) => ({ label, value: String(value) }));
 }
@@ -69,11 +79,11 @@ export function debugStreams(state) {
 const STATE_FIELDS = [
   'lastPollAt', 'lastOkAt', 'lastGainAt', 'resumeAt', 'closedAt', 'closedName', 'earnerTabs', 'tracking',
   'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'pending', 'unclaimed', 'tabs', 'drops',
-  'rewardCheck', 'rewardInv', 'creditedCampaign',
+  'rewardCheck', 'rewardInv', 'creditedCampaign', 'unplacedBadges',
 ];
 
 /** What Copy debug info hands over. Built from named fields only, so a token can never ride along. */
-export function debugBundle({ state, settings, hashes, autoReload, directory, minuteLog, version }, now) {
+export function debugBundle({ state, settings, hashes, autoReload, directory, minuteLog, pageOps, version }, now) {
   const picked = {};
   for (const field of STATE_FIELDS) if (state?.[field] !== undefined) picked[field] = state[field];
   return {
@@ -86,5 +96,7 @@ export function debugBundle({ state, settings, hashes, autoReload, directory, mi
     // The list itself is public and long, so only how it stands.
     directory: directory ? { at: directory.at ?? null, triedAt: directory.triedAt ?? null, error: directory.error ?? null, campaigns: directory.campaigns?.length ?? 0 } : null,
     minuteLog: Array.isArray(minuteLog) ? minuteLog : [],
+    // Operation names, hashes and variable types only (lib/pageops.js), so nothing identifying.
+    pageOps: pageOps && typeof pageOps === 'object' ? pageOps : {},
   };
 }

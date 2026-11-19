@@ -260,6 +260,34 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
  * answers for keeps the session, which has been measured. Drops it does not list are left out:
  * missing is unknown. Bound: the channels' own campaigns.
  */
+/**
+ * Badge campaigns Twitch's reward inventory has in progress that no open channel lists. Most are
+ * from channels watched before, so being here means nothing; minutes rising here means an open
+ * channel is earning a badge this tracker cannot see, which is Twitch having moved where it lists
+ * them (a GTAVI channel, 2026-11-19). Only a fresh answer moves the marks. Bound: what the answer
+ * holds (MAX_REWARD_GROUPS), since anything no longer in it is dropped.
+ */
+export function unplacedBadges(prev, groups, placed, now) {
+  if (!Array.isArray(groups)) return Array.isArray(prev) ? prev : [];
+  const old = new Map((Array.isArray(prev) ? prev : []).map((u) => [`${u.campaignId}/${u.id}`, u]));
+  return groups
+    .filter((g) => g.badge && !g.earned && g.status !== 'CLAIMED' && typeof g.minutes === 'number' && !placed.has(g.campaignId))
+    .map((g) => {
+      const o = old.get(`${g.campaignId}/${g.id}`);
+      const first = o ? o.first : g.minutes;
+      return {
+        campaignId: g.campaignId,
+        id: g.id,
+        required: g.required,
+        minutes: g.minutes,
+        first,
+        firstAt: o ? o.firstAt : now,
+        at: now,
+        rising: g.minutes > first,
+      };
+    });
+}
+
 function rewardCampaigns(streams, inventoryIds, groups, sessions, now) {
   const out = new Map();
   if (!groups?.length) return [];
@@ -626,7 +654,15 @@ export function update(prev, obs, now) {
   s.rewardCheck = obs.rewardGroups === undefined ? (prev?.rewardCheck ?? null)
     : { at: now, ok: Array.isArray(obs.rewardGroups), groups: Array.isArray(obs.rewardGroups) ? obs.rewardGroups.length : null };
   const inventoryIds0 = new Set(obs.campaigns.map((c) => c.id));
-  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now);
+  const placed = new Set([
+    ...inventoryIds0,
+    ...(obs.streams || []).flatMap((st) => [...(st.channel?.campaigns || []), ...(st.channel?.badges || [])].map((c) => c.id)),
+  ]);
+  // A channel whose list (or badge list) could not be read would make its own badge look
+  // unplaced: hold the marks.
+  const blind = (obs.streams || []).some((st) => st.channel?.unknown || st.channel?.badgeLookupFailed);
+  s.unplacedBadges = unplacedBadges(prev?.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
+  const fromRewards =rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now);
   const fromSessions = sessionCampaigns(obs.streams || [], new Set([...inventoryIds0, ...fromRewards.map((c) => c.id)]), obs.sessions, s.rewards, s.drops, now);
   const allCampaigns = [...obs.campaigns, ...fromRewards, ...fromSessions];
   const { active, unclaimed } = summarize(allCampaigns, now);
@@ -692,6 +728,7 @@ export function update(prev, obs, now) {
         ...b,
         drops: b.drops.map((d) => ({ ...d, minutes: d.required > 0 ? s.drops[d.id]?.peak ?? null : null })),
       })),
+      badgeLookupFailed: !!st.channel?.badgeLookupFailed,
     };
   });
   s.tabs = tabs;

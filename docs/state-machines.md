@@ -71,7 +71,12 @@ nothing rises, `earning` when either reading rises; `rewardOpens` on the stream 
 drop is earned and the next can start later. The reward inventory answer is kept as
 `state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
-which hides nothing and is never a hang.
+which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
+leaves out, and at least every `REWARD_HOLD_MS` while any channel is live. `state.unplacedBadges`
+(`unplacedBadges()`): its badge campaigns that no open channel lists, each with its first and
+latest minutes; `rising` when they went up. Moved only by a fresh answer, and held when an open
+channel's list could not be read. It changes no channel state or verdict: a rising one is said at
+the top of the Badges tab, and all are counted in Debug.
 
 ## 5. Player state
 `stream.playerState`, from `classifyPlayer()`: asleep (tab discarded or frozen by the browser),

@@ -1,8 +1,9 @@
 import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, TwitchError } from './lib/twitch.js';
-import { update, events, badge, warning } from './lib/tracker.js';
+import { update, events, badge, warning, REWARD_HOLD_MS } from './lib/tracker.js';
 import { normalize, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
 import { logEntry, addMinute } from './lib/minutelog.js';
+import { extractOps, addPageOps, pageKind, MAX_PAGE_OPS } from './lib/pageops.js';
 
 const ALARM = 'poll';
 const MAX_TABS = 20;
@@ -115,7 +116,7 @@ async function readStreams() {
 
 // Self-repair for rotated hashes. Twitch's own page sends the current one for each operation,
 // so read it from there. Only the request body is requested, which holds no token, and only
-// the four operations this extension uses are kept, so this cannot grow.
+// the operations in PINNED are kept, so this cannot grow.
 let hashWrites = Promise.resolve();
 function updateHashes(change) {
   hashWrites = hashWrites.then(async () => {
@@ -133,12 +134,49 @@ function saveWorkingHashes(working) {
   });
 }
 
+// Every operation Twitch's page sends, so a query Twitch moved data to can be found (see
+// lib/pageops.js for what is kept). Gathered here and written at most every PAGE_OPS_FLUSH_MS.
+// Bound: pendingOps holds one entry per operation name, capped like the stored map.
+const PAGE_OPS_FLUSH_MS = 5000;
+const pendingOps = new Map();
+let pageOpsTimer = null;
+function notePageOps(body, tabId) {
+  const ops = extractOps(body);
+  if (!ops.length) return;
+  for (const o of ops) if (pendingOps.size < MAX_PAGE_OPS || pendingOps.has(o.op)) pendingOps.set(o.op, { ...o, tabId });
+  pageOpsTimer ??= setTimeout(() => {
+    pageOpsTimer = null;
+    // Chained, so two flushes never read and write the map over each other.
+    pageOpsWrites = pageOpsWrites.then(flushPageOps);
+  }, PAGE_OPS_FLUSH_MS);
+}
+let pageOpsWrites = Promise.resolve();
+async function flushPageOps() {
+  const batch = [...pendingOps.values()];
+  pendingOps.clear();
+  try {
+    const where = new Map();
+    for (const tabId of new Set(batch.map((o) => o.tabId))) {
+      const tab = tabId >= 0 ? await chrome.tabs.get(tabId).catch(() => null) : null;
+      where.set(tabId, tab?.url ? pageKind(tab.url, !!parseLogin(tab.url)) : 'unknown');
+    }
+    const { pageOps } = await chrome.storage.local.get('pageOps');
+    let next = pageOps;
+    for (const [tabId, kind] of where) next = addPageOps(next, batch.filter((o) => o.tabId === tabId), kind, Date.now());
+    await chrome.storage.local.set({ pageOps: next });
+  } catch {
+    // Only ever recording: losing a batch costs nothing.
+  }
+}
+
 chrome.webRequest.onBeforeRequest.addListener((details) => {
   if (!/^https:\/\/(www|m)\.twitch\.tv$/.test(details.initiator ?? '')) return; // Twitch's page, not us.
   const chunks = details.requestBody?.raw;
   if (!chunks?.length) return;
   const decoder = new TextDecoder();
-  const seen = extractHashes(chunks.map((c) => (c.bytes ? decoder.decode(c.bytes) : '')).join(''));
+  const body = chunks.map((c) => (c.bytes ? decoder.decode(c.bytes) : '')).join('');
+  notePageOps(body, details.tabId);
+  const seen = extractHashes(body);
   if (!Object.keys(seen).length) return;
   updateHashes((h) => {
     const same = Object.entries(seen).every(([op, hash]) => h.learned?.[op] === hash);
@@ -146,7 +184,7 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   });
 }, { urls: ['https://gql.twitch.tv/*'], types: ['xmlhttprequest'] }, ['requestBody']);
 
-async function observe() {
+async function observe(prev) {
   const cookie = await chrome.cookies.get({ url: 'https://www.twitch.tv', name: 'auth-token' });
   if (!cookie?.value) {
     // Twitch's other login cookie still being there means it moved the token, not that you left.
@@ -160,7 +198,9 @@ async function observe() {
   const relevant = tabs.filter((t) => t.login || (t.player?.hasVideo && !t.player.paused));
   try {
     const { hashes } = await chrome.storage.local.get('hashes');
-    const snap = await fetchSnapshot(cookie.value, relevant.map((t) => t.login).filter(Boolean), fetch, hashes ?? {});
+    // The reward inventory at least every REWARD_HOLD_MS, for badges no channel lists.
+    const askRewards = !(prev?.rewardCheck?.at && Date.now() - prev.rewardCheck.at < REWARD_HOLD_MS);
+    const snap = await fetchSnapshot(cookie.value, relevant.map((t) => t.login).filter(Boolean), fetch, hashes ?? {}, { askRewards });
     await saveWorkingHashes(snap.working);
     return {
       campaigns: snap.campaigns,
@@ -300,7 +340,7 @@ let inflight = null;
 async function pollOnce() {
   const { state: prev } = await chrome.storage.local.get('state');
   const now = Date.now();
-  const obs = await observe().catch(() => ({ error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }));
+  const obs = await observe(prev).catch(() => ({ error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }));
   // A throw here would freeze the badge on its last good news, so it must become a verdict.
   let next;
   try {

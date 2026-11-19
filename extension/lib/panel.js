@@ -254,7 +254,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   minutes.addEventListener('change', () => save({ autoRefreshMinutes: Number(minutes.value) }));
   let reloadMemo = null;
   let minuteLog = [];
-  const debugExtra = { hashes: null, directory: null };
+  const debugExtra = { hashes: null, directory: null, pageOps: null };
   const version = chrome.runtime.getManifest?.().version ?? null;
 
   function renderDebug(state, now) {
@@ -311,14 +311,16 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     }
     if (changes.hashes) debugExtra.hashes = changes.hashes.newValue;
     if (changes.directory) debugExtra.directory = changes.directory.newValue;
+    if (changes.pageOps) debugExtra.pageOps = changes.pageOps.newValue;
   };
   chrome.storage.onChanged.addListener(onStorage);
-  chrome.storage.local.get(['settings', 'autoReload', 'minuteLog', 'hashes', 'directory']).then((r) => {
+  chrome.storage.local.get(['settings', 'autoReload', 'minuteLog', 'hashes', 'directory', 'pageOps']).then((r) => {
     showSettings(r.settings);
     reloadMemo = r.autoReload ?? null;
     minuteLog = r.minuteLog ?? [];
     debugExtra.hashes = r.hashes ?? null;
     debugExtra.directory = r.directory ?? null;
+    debugExtra.pageOps = r.pageOps ?? null;
     renderLog();
   });
   const copyText = async (button, back, text) => {
@@ -337,7 +339,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   });
   $('debug-copy').addEventListener('click', async () => {
     // Read fresh, so it is what is really stored rather than what this panel last saw.
-    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog']);
+    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog', 'pageOps']);
     await copyText($('debug-copy'), 'Copy debug info', JSON.stringify(debugBundle({ ...stored, version }, Date.now())));
   });
 
@@ -551,7 +553,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function renderBadges(state, now) {
-    const sections = badgeSections(state.streams, channelLogin?.() ?? null, now);
+    const sections = badgeSections(state.streams, channelLogin?.() ?? null, now, state.unplacedBadges);
     setList($('view-badges'), JSON.stringify(sections), () => sections.map((sec) => {
       const box = el('div', 'section');
       if (sec.title) box.append(el('p', 'strong label', sec.title));
