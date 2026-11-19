@@ -60,7 +60,7 @@ There is no build step. After changing the code, press **Reload** on the extensi
 - **My Drops**: the verdict, a 30-minute credit strip, the drops you can earn where you are, each open stream's state with a reload button, and earned rewards you have not claimed. On a channel with no drops it shows what another open tab can earn, headed `Watch Drops on <channel>`, or nothing.
 - **All Drops**: every campaign running on Twitch, yours first, with search. Twitch only gives this list to its own campaigns page, so the extension opens that page in a background tab for a moment (no video, so it uses no stream slot) and reads the answer the page receives. Cached for 30 minutes.
 - **Badges**: the current channel's sub and watch badge drops. Watch badges are also tracked like any other drop.
-- **Settings**: the two helpers below, **Claim reminders** (the chip's purple count, the Ready to claim list and its notification; on by default), and under Advanced, **Developer mode**, which shows the debug tools: the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
+- **Settings**: the two helpers below, **Claim reminders** (the chip's purple count, the Ready to claim list and its notification; on by default), **Badge alerts** (a notification when Twitch counts minutes on a badge no open channel lists; off by default), and under Advanced, **Developer mode**, which shows the debug tools: the Lost minutes log, the tracker's current state, **Check now**, and **Copy debug info** for bug reports.
 
 | My Drops | All Drops | Badges |
 |---|---|---|

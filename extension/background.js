@@ -1,6 +1,6 @@
 import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, TwitchError } from './lib/twitch.js';
 import { update, events, badge, warning, REWARD_HOLD_MS } from './lib/tracker.js';
-import { normalize, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
+import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
 import { logEntry, addMinute } from './lib/minutelog.js';
 import { extractOps, addPageOps, pageKind, MAX_PAGE_OPS } from './lib/pageops.js';
@@ -356,7 +356,7 @@ async function pollOnce() {
   const prefs = normalize((await chrome.storage.local.get('settings')).settings);
   await paintBadge(next, prefs);
   // Before anything that can be slow: saving above has already marked these as sent.
-  evs.filter((e) => prefs.claimReminders || e.type !== 'claim').forEach(notify);
+  evs.filter((e) => notifiable(e, prefs)).forEach(notify);
   await paintWarnings(prev?.notifiedWarning, warning(next, now));
   await refreshDropsPages(now).catch(() => {}); // Must never stop tracking.
   await autoReloadHung(next, now).catch(() => {}); // Nor must this.

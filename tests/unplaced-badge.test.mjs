@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update } from '../extension/lib/tracker.js';
+import { update, events } from '../extension/lib/tracker.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { debugRows, debugBundle } from '../extension/lib/debug.js';
 
@@ -100,4 +100,37 @@ test('the reward inventory is asked for any live channel when asked to, and not 
   const snap = await fetchSnapshot('tok', ['bravo'], twitch(opts), {}, { askRewards: true });
   assert.equal(asked, 1);
   assert.equal(snap.rewardGroups.find((g) => g.campaignId === BADGE_CAMPAIGN).badge, true, 'brandName is kept');
+});
+
+/** Polls in order, as the background does: update, then events on the new state. */
+async function notesFor(minutes, opts) {
+  let s;
+  const fired = [];
+  for (const [i, m] of minutes.entries()) {
+    const next = await poll(s, T + i * MIN, i, opts(m));
+    fired.push(...events(s, next, T + i * MIN).filter((e) => e.type === 'unplaced'));
+    s = next;
+  }
+  return { s, fired };
+}
+
+test('notification: once, when the unlisted badge starts rising, not on every poll after', async () => {
+  const { s, fired } = await notesFor([2, 2, 3, 4, 5], (m) => gtaOnly(m));
+  assert.equal(fired.length, 1);
+  assert.equal(fired[0].title, 'Badge Drops Tracker cannot show');
+  assert.match(fired[0].message, /\(3 of 180 min\) that no open channel lists/);
+  assert.deepEqual(s.notifiedUnplaced, [BADGE_CAMPAIGN]);
+});
+
+test('notification: never for a flat one, nor for a badge the open channel lists', async () => {
+  assert.equal((await notesFor([2, 2, 2, 2], (m) => gtaOnly(m))).fired.length, 0);
+  const listed = (m) => ({ login: 'charlie', available: { id: badgeFx.mixed.id, viewerDropCampaigns: badgeFx.mixed.viewerDropCampaigns }, rewardAnswer: withBadge(m) });
+  assert.equal((await notesFor([2, 3, 4], listed)).fired.length, 0);
+});
+
+test('notification: a blind poll neither fires it nor forgets it was sent', async () => {
+  const { s } = await notesFor([2, 3], (m) => gtaOnly(m));
+  const blind = await poll(s, T + 2 * MIN, 2, gtaOnly(9, { badgeLookupFails: true }));
+  assert.equal(events(s, blind, T + 2 * MIN).filter((e) => e.type === 'unplaced').length, 0);
+  assert.deepEqual(blind.notifiedUnplaced, [BADGE_CAMPAIGN]);
 });

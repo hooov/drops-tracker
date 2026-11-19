@@ -96,6 +96,15 @@ const TEMPLATE = `
         </span>
       </div>
       <p id="claim-reminders-hint" class="sub setting-hint">The chip count, Ready to claim and its notification.</p>
+      <!-- In Claim reminders' box: a section of its own made the Settings tab scroll in chat. -->
+      <div class="setting next-setting">
+        <label for="badge-alerts">Badge alerts</label>
+        <span class="toggle">
+          <input id="badge-alerts" type="checkbox" aria-describedby="badge-alerts-hint">
+          <label for="badge-alerts" aria-hidden="true"></label>
+        </span>
+      </div>
+      <p id="badge-alerts-hint" class="sub setting-hint">Notify when a badge no open channel lists is rising.</p>
     </div>
     <p class="sub group-label">Advanced</p>
     <div class="section plain">
@@ -238,6 +247,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('auto-reload').checked = settings.autoReload;
     $('dev-mode').checked = settings.devMode;
     $('claim-reminders').checked = settings.claimReminders;
+    $('badge-alerts').checked = settings.badgeAlerts;
     if (lastState) renderUnclaimed(lastState);
     const wasHidden = $('debug-sections').hidden;
     $('debug-sections').hidden = !settings.devMode;
@@ -251,6 +261,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   $('auto-reload').addEventListener('change', () => save({ autoReload: $('auto-reload').checked }));
   $('dev-mode').addEventListener('change', () => save({ devMode: $('dev-mode').checked }));
   $('claim-reminders').addEventListener('change', () => save({ claimReminders: $('claim-reminders').checked }));
+  $('badge-alerts').addEventListener('change', () => save({ badgeAlerts: $('badge-alerts').checked }));
   minutes.addEventListener('change', () => save({ autoRefreshMinutes: Number(minutes.value) }));
   let reloadMemo = null;
   let minuteLog = [];
