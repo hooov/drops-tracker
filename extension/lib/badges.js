@@ -25,7 +25,11 @@ function section(stream, now) {
     return { title, note: 'Offline. Badge drops are only checked while the channel is live.', campaigns: [] };
   }
   if (stream.channelState === 'unknown') return { title, note: 'Cannot check this channel right now.', campaigns: [] };
-  if (!stream.badges?.length) return { title, note: 'No badge drops on this channel.', campaigns: [] };
+  if (!stream.badges?.length) {
+    // Badge campaigns come from a query of their own (ChannelDropsCampaigns), which can fail alone.
+    const note = stream.badgeLookupFailed ? "Cannot read this channel's badge drops right now." : 'No badge drops on this channel.';
+    return { title, note, campaigns: [] };
+  }
   return {
     title,
     note: null,
@@ -40,18 +44,31 @@ function section(stream, now) {
   };
 }
 
+// A badge Twitch is counting minutes on that no open channel lists (tracker.js unplacedBadges).
+function unplacedSection(unplaced) {
+  const rising = (unplaced || []).filter((u) => u.rising);
+  if (!rising.length) return [];
+  const counts = rising.map((u) => `${u.minutes} of ${u.required} min`).join('; ');
+  return [{
+    title: null,
+    note: `Twitch is counting minutes on a badge no open channel lists (${counts}). Twitch may have changed where it lists channel badges, so it cannot be shown here.`,
+    campaigns: [],
+  }];
+}
+
 /**
  * login: the channel being looked at. Without one (the toolbar popup over a page that is not a
- * channel), every open channel that has badges.
+ * channel), every open channel that has badges. unplaced: state.unplacedBadges.
  */
-export function badgeSections(streams, login, now) {
+export function badgeSections(streams, login, now, unplaced) {
+  const lead = unplacedSection(unplaced);
   const open = (streams || []).filter((s) => s.login);
   if (login) {
     const stream = open.find((s) => s.login === login);
-    if (stream) return [section(stream, now)];
-    return [{ title: null, note: "No data for this channel yet. It needs its own page open in this browser.", campaigns: [] }];
+    if (stream) return [...lead, section(stream, now)];
+    return [...lead, { title: null, note: "No data for this channel yet. It needs its own page open in this browser.", campaigns: [] }];
   }
   const withBadges = open.filter((s) => s.badges?.length);
-  if (withBadges.length) return withBadges.map((s) => section(s, now));
-  return [{ title: null, note: 'Open a channel to see its badge drops.', campaigns: [] }];
+  if (withBadges.length) return [...lead, ...withBadges.map((s) => section(s, now))];
+  return [...lead, { title: null, note: 'Open a channel to see its badge drops.', campaigns: [] }];
 }

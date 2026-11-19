@@ -29,6 +29,9 @@ export const PINNED = {
   VideoPlayerStreamInfoOverlayChannel: ['198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d'],
   // What Twitch's own Inventory page asked on 2026-11-19, with no variables.
   ViewerRewardDropInventory: ['828f9f0bdbc735ce3162519717f918b811902984580389a67ad733c684291e62'],
+  // Sent by Twitch's channel page on 2026-11-19 (operation logger), variables { channelID }.
+  // Answers signed out; the only place a creator badge campaign was found that day.
+  ChannelDropsCampaigns: ['bc073ff0bb13797898f83e93dc8009838545dec95ff7fe92243c8fa3a740f7e7'],
 };
 const MAX_REWARD_GROUPS = 200; // Two campaigns, eight groups, seen on 2026-11-19.
 const REWARD_WAIT_MS = 4000;
@@ -350,6 +353,59 @@ function parseChannel(login, item) {
   return { id: u.id, login, displayName: u.displayName || login, live: !!u.stream, campaigns: [] };
 }
 
+export const CREATOR_BADGE_BRAND = 'CREATOR_LED_BADGE_CAMPAIGN';
+
+/**
+ * A channel's own badge campaigns from ChannelDropsCampaigns. On 2026-11-19 a channel's badge
+ * (1 sub, or 180 minutes) was in this answer and missing from DropsHighlightService's,
+ * which listed only the sitewide GTAVI campaign. Picked by brandName, not by game: GTAVI's
+ * campaign has game null here too. Added in the shapes applyCampaigns gives, so the Badges tab
+ * and the reward inventory join (group ID = drop ID, confirmed on that badge) work unchanged.
+ * Failing only costs the badges it would add: badgeLookupFailed, never the channel unknown.
+ */
+function applyChannelCampaigns(channel, item) {
+  const c = channel;
+  if (c.unknown) return;
+  const list = item?.data?.channelDropCampaigns;
+  if (errorsOf(item).length || !Array.isArray(list)) {
+    c.badgeLookupFailed = true;
+    return;
+  }
+  c.badges ||= [];
+  c.campaigns ||= [];
+  const have = new Set([...c.badges, ...c.campaigns].map((x) => x.id));
+  for (const x of list) {
+    if (!x?.id || x.brandName !== CREATOR_BADGE_BRAND || have.has(x.id) || !Array.isArray(x.rewardGroups)) continue;
+    have.add(x.id);
+    const drops = x.rewardGroups.filter((g) => g?.id && g.progressCriteria).slice(0, MAX_BADGE_DROPS).map((g) => {
+      const crit = g.progressCriteria;
+      const reward = (g.rewards || [])[0];
+      return {
+        id: g.id,
+        name: reward?.name || g.name || x.name,
+        image: httpsOr(reward?.thumbnailURL) || httpsOr(x.imageURL),
+        required: crit.requirementType === 'WATCH' && crit.requirements?.minutesWatched > 0 ? crit.requirements.minutesWatched : 0,
+        subs: crit.requirements?.subs || 0,
+      };
+    });
+    if (c.badges.length < MAX_BADGE_CAMPAIGNS) c.badges.push({ id: x.id, name: x.name, endAt: x.endAt, drops });
+    const watch = drops.filter((d) => d.required > 0);
+    if (!watch.length) continue;
+    c.subOnly = false;
+    c.campaigns.push({
+      id: x.id,
+      name: x.name,
+      benefitIds: [],
+      channelOwned: true,
+      rewardCampaign: false,
+      game: null,
+      endAt: x.endAt,
+      image: x.imageURL,
+      watchDrops: watch.map((d) => ({ id: d.id, name: d.name, image: d.image, required: d.required, startAt: x.startAt, endAt: x.endAt, benefitIds: [] })),
+    });
+  }
+}
+
 function applyCampaigns(channel, item) {
   const c = channel;
   if (errorsOf(item).length || !item?.data || !('channel' in item.data)) {
@@ -434,6 +490,8 @@ export function parseRewardInventory(item) {
       groups.push({
         campaignId: c.id,
         id: g.id,
+        // A channel's own badge campaign, as Twitch's client tells them apart (2026-11-19).
+        badge: c.brandName === 'CREATOR_LED_BADGE_CAMPAIGN',
         required,
         minutes: typeof g.self.currentMinutesWatched === 'number' ? g.self.currentMinutesWatched : null,
         status: typeof g.self.status === 'string' ? g.self.status : null,
@@ -453,9 +511,9 @@ export function parseRewardInventory(item) {
 /**
  * Everything one poll needs. Throws TwitchError only when progress itself cannot be read; other
  * failures mark the affected channels unknown, so "stalled" is never judged on missing data.
- * known: { working: {op: hash}, learned: {op: hash} }.
+ * known: { working: {op: hash}, learned: {op: hash} }. options: { askRewards }.
  */
-export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}) {
+export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}, options = {}) {
   const unique = [...new Set(logins)].slice(0, MAX_CHANNELS);
   const ctx = { fetchImpl, known, working: {} };
   const first = await run(token, [
@@ -476,10 +534,12 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
       const second = await run(token, liveChannels.flatMap((c) => [
         { name: 'DropsHighlightService_AvailableDrops', variables: { channelID: c.id } },
         { name: 'DropCurrentSessionContext', variables: { channelID: c.id, channelLogin: '' } },
+        { name: 'ChannelDropsCampaigns', variables: { channelID: c.id } },
       ]), ctx);
       liveChannels.forEach((c, i) => {
-        applyCampaigns(c, second[i * 2]);
-        const sessionAnswer = second[i * 2 + 1];
+        applyCampaigns(c, second[i * 3]);
+        applyChannelCampaigns(c, second[i * 3 + 2]);
+        const sessionAnswer = second[i * 3 + 1];
         // The only source of a badge's minutes. Its query failing is not Twitch reporting none.
         if (errorsOf(sessionAnswer).length && c.campaigns.some((x) => x.channelOwned)) c.unknown = true;
         const seen = normalizeSession(sessionAnswer?.data?.currentUser?.dropCurrentSession);
@@ -491,11 +551,13 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
     }
   }
 
-  // Asked only when an open channel offers a campaign Inventory leaves out, as a request of its
-  // own, so it can never cost the poll: every failure, 401 and 429 included, is "unknown".
+  // Asked when an open channel offers a campaign Inventory leaves out, and while any channel is
+  // live at least every 15 minutes (options.askRewards), so a badge Twitch credits but no channel
+  // lists still shows up. A request of its own, so it can never cost the poll: every failure,
+  // 401 and 429 included, is "unknown".
   let rewardGroups;
   const inventoryIds = new Set(campaigns.map((c) => c.id));
-  if (liveChannels.some((c) => (c.campaigns || []).some((x) => !inventoryIds.has(x.id)))) {
+  if ((liveChannels.length && options.askRewards) || liveChannels.some((c) => (c.campaigns || []).some((x) => !inventoryIds.has(x.id)))) {
     // A slow answer must not hold the poll: after REWARD_WAIT_MS it counts as unknown.
     let timer;
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), REWARD_WAIT_MS); });

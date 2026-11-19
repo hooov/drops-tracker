@@ -51,6 +51,8 @@ const liveHandler = (ops) => json(ops.map((o) => {
       return { data: { channel: o.variables.channelID === '10000001' ? fx.availableEligible : fx.availableNone } };
     case 'DropCurrentSessionContext':
       return { data: { currentUser: { dropCurrentSession: o.variables.channelID === '10000001' ? fx.sessionCredited : fx.sessionUnrelatedChannelId } } };
+    case 'ChannelDropsCampaigns':
+      return { data: { channelDropCampaigns: [] } };
     default:
       throw new Error(o.operationName);
   }

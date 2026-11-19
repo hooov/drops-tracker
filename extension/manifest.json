@@ -14,7 +14,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["panel.css", "lib/chip.js", "lib/panel.js", "lib/settings.js", "lib/states.js", "lib/directory.js", "lib/badges.js", "lib/minutelog.js", "lib/debug.js"],
+      "resources": ["panel.css", "lib/chip.js", "lib/panel.js", "lib/settings.js", "lib/states.js", "lib/directory.js", "lib/badges.js", "lib/minutelog.js", "lib/debug.js", "lib/pageops.js"],
       "matches": ["https://www.twitch.tv/*", "https://m.twitch.tv/*"]
     }
   ],

@@ -162,6 +162,8 @@ try {
             return { data: { user: v.channel === 'bravo' ? fixtures.channelBravo : fixtures.channelAlpha } };
           case 'DropsHighlightService_AvailableDrops':
             return { data: { channel: v.channelID === '10000001' && !self.__noCampaigns ? fixtures.availableEligible : fixtures.availableNone } };
+          case 'ChannelDropsCampaigns':
+            return { data: { channelDropCampaigns: [] } };
           default:
             return { data: { currentUser: { dropCurrentSession: v.channelID === '10000001' ? fixtures.sessionCredited : fixtures.sessionUnrelatedChannelId } } };
         }
@@ -646,6 +648,29 @@ try {
   assert.equal(working, NEW_HASH);
   step('every pinned Inventory hash retired: repaired itself from a hash Twitch\'s page used');
 
+  // The operation logger, through the real webRequest listener: any operation the page sends,
+  // with where it was sent from and its variables' types, never their values.
+  await alpha.evaluate(async (hash) => {
+    await fetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: { 'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko', 'Content-Type': 'text/plain' },
+      body: JSON.stringify([{ operationName: 'E2eChannelBadgeDrops', variables: { channelID: '987654321', isLoggedIn: true }, extensions: { persistedQuery: { version: 1, sha256Hash: hash } } }]),
+    }).catch(() => {});
+  }, NEW_HASH);
+  // Polled here: written up to 5s later, by design.
+  let loggedOps = {};
+  for (let i = 0; i < 30 && !loggedOps.E2eChannelBadgeDrops; i++) {
+    await new Promise((r) => { setTimeout(r, 500); });
+    loggedOps = (await popup.evaluate(async () => (await chrome.storage.local.get('pageOps')).pageOps)) ?? {};
+  }
+  assert.ok(loggedOps.E2eChannelBadgeDrops, `not logged; saw ${Object.keys(loggedOps).join(', ') || 'nothing'}`);
+  assert.deepEqual(
+    [loggedOps.E2eChannelBadgeDrops.hash, loggedOps.E2eChannelBadgeDrops.where, loggedOps.E2eChannelBadgeDrops.vars],
+    [NEW_HASH, ['channel'], { channelID: 'string', isLoggedIn: true }],
+  );
+  assert.equal(JSON.stringify(loggedOps).includes('987654321'), false, 'no variable value is kept');
+  step('operation logger: records what Twitch\'s page sends and from which kind of page, no values');
+
   // No hash left at all: says so, keeps the data, and warns straight away.
   await popup.evaluate(() => chrome.storage.local.remove('hashes'));
   await sw.evaluate((stale) => {
@@ -802,6 +827,37 @@ try {
   step('a drop with no minutes reported is listed with the full requirement and no bar; one at its requirement says so');
   await popup.bringToFront();
   step('Badges tab: shows sub and watch drops with progress, follows the channel, and says when there are none');
+
+  // A badge only ChannelDropsCampaigns lists (captured 2026-11-19), its minutes from the reward
+  // inventory, drawn by the real popup.
+  const ccFx = loadFixture(root, 'channel-campaigns-2026-11-19.json');
+  const invFx = loadFixture(root, 'reward-inventory-2026-11-19.json');
+  await sw.evaluate(([cc, inv]) => {
+    const badgeInv = structuredClone(inv.answer);
+    const [camp] = badgeInv.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
+    camp.id = '2599eac2-414e-4165-8dfb-9184ea99f927';
+    camp.rewardGroups[0].id = 'afe7886c-e437-11f1-8716-0a58a9feac02';
+    camp.rewardGroups[0].self.currentMinutesWatched = 45;
+    self.__transform = (answer, ops) => answer.map((a, i) => {
+      switch (ops[i].operationName) {
+        case 'DropsHighlightService_AvailableDrops': return { data: { channel: { viewerDropCampaigns: [] } } };
+        case 'ChannelDropsCampaigns': return ops[i].variables.channelID === '10000001' ? cc.answer : { data: { channelDropCampaigns: [] } };
+        case 'ViewerRewardDropInventory': return badgeInv;
+        default: return a;
+      }
+    });
+  }, [ccFx, invFx]);
+  await advance(1);
+  s = await poll();
+  await popup.click('#tab-badges');
+  await popup.waitForFunction(() => /Foxtrot Watch Badge/.test(document.getElementById('view-badges').textContent));
+  const ccShown = await popup.textContent('#view-badges');
+  assert.match(ccShown, /Foxtrot Sub Badge/);
+  assert.match(ccShown, /Subscribe or gift a sub to earn/);
+  assert.match(ccShown, /Watch 2h 15m to earn/, '45 of 180 from the reward inventory');
+  assert.doesNotMatch(ccShown, /no open channel lists/, 'placed, so not reported as missing');
+  assert.equal(await popup.locator('#view-badges .bar').count(), 1, 'only the watch drop has a bar');
+  step('Badges tab: a badge only ChannelDropsCampaigns lists, with minutes from the reward inventory');
   await sw.evaluate(() => { self.__transform = null; self.__minutes += 1; });
   await advance(1);
   s = await poll();
