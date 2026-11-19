@@ -1,0 +1,173 @@
+// Every view at once, for each state captured on 2026-11-19 on a channel with both GTAVI's
+// sitewide reward campaign and its own badge (CONTRIBUTING: "A new source of minutes changes every
+// view"). Four bugs that day came one report at a time, each from this same mix. Placeholder names:
+// foxtrot is the badge channel, echo_247 a second tab with no drops.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fetchSnapshot } from '../extension/lib/twitch.js';
+import { update, events, badge, warning } from '../extension/lib/tracker.js';
+import { chipView, channelDrops } from '../extension/lib/chip.js';
+import { badgeSections } from '../extension/lib/badges.js';
+import { verdictText } from '../extension/lib/panel.js';
+
+const cc = JSON.parse(readFileSync(new URL('./fixtures/channel-campaigns-2026-11-19.json', import.meta.url)));
+const inv = JSON.parse(readFileSync(new URL('./fixtures/reward-inventory-2026-11-19.json', import.meta.url))).answer;
+const reward = JSON.parse(readFileSync(new URL('./fixtures/reward-campaign-2026-11-19.json', import.meta.url))).channel;
+const badgeFx = JSON.parse(readFileSync(new URL('./fixtures/badge-2026-11-06.json', import.meta.url)));
+const MIN = 60000;
+const BADGE = '2599eac2-414e-4165-8dfb-9184ea99f927';
+const WATCH_GROUP = 'afe7886c-e437-11f1-8716-0a58a9feac02';
+const DVD = '2283245e-d15c-11f1-8cdd-0a58a9feac02';
+const ECHO_ID = '20000011';
+const json = (body) => ({ status: 200, ok: true, json: async () => body });
+
+/**
+ * One poll's Twitch. badge: the 180-minute group's minutes, or null to leave it out of the reward
+ * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
+ * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
+ */
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true }) {
+  const answer = structuredClone(inv);
+  const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
+  b.id = BADGE;
+  b.rewardGroups[0].id = WATCH_GROUP;
+  b.rewardGroups[0].self = { ...b.rewardGroups[0].self, currentMinutesWatched: badgeMinutes ?? 0, ...badgeGroup };
+  if (badgeMinutes == null) answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress.splice(0, 1);
+  const g = gta.rewardGroups[0].self;
+  g.currentMinutesWatched = dvd.minutes;
+  g.grantCount = dvd.grants;
+  g.currentWindow = { startedAt: new Date(dvd.windowEnd - 86400000).toISOString(), expiresAt: new Date(dvd.windowEnd).toISOString() };
+  const session = { channel: { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
+  return async (_url, init) => {
+    const ops = JSON.parse(init.body);
+    return json(ops.map((o) => {
+      const isEcho = o.variables?.channel === 'echo_247' || o.variables?.channelID === ECHO_ID;
+      switch (o.operationName) {
+        case 'ViewerRewardDropInventory': return answer;
+        case 'Inventory': return { data: { currentUser: { inventory: { dropCampaignsInProgress: [], gameEventDrops: [] } } } };
+        case 'VideoPlayerStreamInfoOverlayChannel':
+          return isEcho
+            ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } }
+            : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', stream: { id: '1' } } } };
+        case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho ? { id: ECHO_ID, viewerDropCampaigns: [] } : reward } };
+        case 'ChannelDropsCampaigns': return isEcho || !badgeListed ? { data: { channelDropCampaigns: isEcho ? [] : cc.answer.data.channelDropCampaigns.filter((c) => c.id !== BADGE) } } : cc.answer;
+        case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: isEcho ? badgeFx.zeroedSession : session } } };
+        default: throw new Error(o.operationName);
+      }
+    }));
+  };
+}
+
+/** Polls a minute apart; returns the last state and every event raised on the way. */
+async function run(start, steps) {
+  let s;
+  const fired = [];
+  for (const [i, step] of steps.entries()) {
+    const t = start + i * MIN;
+    const logins = step.echo ? ['foxtrot', 'echo_247'] : ['foxtrot'];
+    const snap = await fetchSnapshot('tok', logins, twitchAt(step), {}, { askRewards: true });
+    const player = (base) => ({ hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: base + i * 60 });
+    const streams = [{ tabId: 1, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: player(100) }];
+    if (step.echo) streams.push({ tabId: 2, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: { ...player(500), hidden: true } });
+    const next = update(s, { campaigns: snap.campaigns, rewards: snap.rewards, session: snap.session, sessions: snap.sessions, rewardGroups: snap.rewardGroups, streams }, t);
+    fired.push(...events(s, next, t));
+    s = next;
+  }
+  return { s, fired, now: start + (steps.length - 1) * MIN };
+}
+
+/** Everything a user can see, in one object. */
+function views(s, now) {
+  const chip = (login) => { const c = chipView(s, now, login); return { pct: c.pct, tone: c.tone, text: c.text }; };
+  const list = (login) => { const d = channelDrops(s, login); return { ids: d.drops.map((x) => x.name), from: d.from }; };
+  const tb = badge(s);
+  const w = warning(s, now);
+  return {
+    verdict: s.verdict.code,
+    cause: s.verdict.cause ?? null,
+    wasted: s.verdict.wasted?.reason ?? null,
+    headline: verdictText(s, now),
+    toolbar: `${tb.text} ${tb.color}`,
+    chipFoxtrot: chip('foxtrot'),
+    chipEcho: s.streams.some((t) => t.login === 'echo_247') ? chip('echo_247') : null,
+    dropsFoxtrot: list('foxtrot'),
+    dropsEcho: s.streams.some((t) => t.login === 'echo_247') ? list('echo_247') : null,
+    badgesTab: badgeSections(s.streams, 'foxtrot', now, s.unplacedBadges).map((x) => x.note || x.campaigns.map((c) => c.drops.map((d) => d.line).join(' | ')).join('; ')),
+    warning: w ? w.title : null,
+    states: s.streams.map((t) => `${t.login}:${t.channelState}`).join(' '),
+    credited: s.creditedCampaign === BADGE ? 'badge' : s.creditedCampaign ? 'gtavi' : null,
+  };
+}
+
+const WINDOW_END = Date.parse('2026-11-20T17:50:15Z');
+const steps = (n, fn) => Array.from({ length: n }, (_, i) => fn(i));
+const PRINT = process.env.ALL_VIEWS_PRINT === '1';
+const show = (name, v) => { if (PRINT) console.log(`\n== ${name}\n${JSON.stringify(v, null, 1)}`); };
+
+test('18:10 UTC: today\'s GTAVI drop and the badge both rising, second tab open', async () => {
+  const { s, now } = await run(Date.parse('2026-11-19T18:05:00Z'), steps(6, (i) => ({ badge: 16 + i, dvd: { minutes: 16 + i, grants: 1, windowEnd: WINDOW_END }, total: 266 + i, echo: true })));
+  const v = views(s, now);
+  show('both rising', v);
+  assert.deepEqual([v.verdict, v.wasted, v.warning, v.states], ['earning', null, null, 'foxtrot:eligible echo_247:no_drops']);
+  assert.equal(v.headline[0], 'Earning on Foxtrot');
+  assert.equal(v.toolbar, '35% #067647', "today's GTAVI drop, the one the session names");
+  assert.deepEqual([v.chipFoxtrot.pct, v.chipEcho.pct, v.chipEcho.tone], [35, 35, 'ok']);
+  assert.deepEqual(v.dropsEcho, { ids: ['GTA DVD Chest', 'Foxtrot Watch Badge'], from: 'Foxtrot' });
+  assert.match(v.badgesTab[0], /Watch 2h 39m to earn/);
+});
+
+test('19:03 UTC: today\'s GTAVI drop done, the badge rising, second tab open', async () => {
+  const { s, now } = await run(Date.parse('2026-11-19T19:00:00Z'), steps(6, (i) => ({ badge: 69 + i, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 319 + i, echo: true })));
+  const v = views(s, now);
+  show('badge rising, gtavi done', v);
+  assert.deepEqual([v.verdict, v.wasted, v.warning, v.credited], ['earning', null, null, 'badge'], 'not "these minutes do nothing"');
+  assert.equal(v.toolbar, '41% #067647');
+  assert.deepEqual([v.chipFoxtrot.pct, v.chipFoxtrot.tone, v.chipEcho.pct, v.chipEcho.tone], [41, 'ok', 41, 'ok'], 'no bare ring on either tab');
+  assert.deepEqual(v.dropsEcho, { ids: ['Foxtrot Watch Badge'], from: 'Foxtrot' });
+});
+
+test('20:00 UTC: the badge stopped at 106, second tab playing', async () => {
+  const flat = [103, 104, 105, 106, 106, 106, 106, 106, 106, 106];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), flat.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3), echo: true })));
+  const v = views(s, now);
+  show('badge stalled, second stream', { ...v, notified: fired.map((e) => e.type) });
+  assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'second_stream', 'Drops not counting']);
+  assert.match(v.headline[1], /echo_247 is also playing.*Close or pause echo_247/);
+  assert.equal(v.toolbar, '! #d92d20');
+  assert.deepEqual([v.chipFoxtrot.tone, v.chipFoxtrot.pct, v.chipEcho.tone], ['bad', 58, 'bad']);
+  assert.deepEqual(fired.map((e) => e.type), ['warning'], 'one desktop notification');
+});
+
+test('the badge stopped, no second tab', async () => {
+  const flat = [103, 104, 105, 106, 106, 106, 106, 106, 106, 106];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), flat.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3) })));
+  const v = views(s, now);
+  show('badge stalled, alone', { ...v, notified: fired.map((e) => e.type) });
+  assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'uncounted', 'Drops not counting']);
+  assert.equal(v.toolbar, '! #d92d20');
+  assert.deepEqual([v.chipFoxtrot.tone, v.chipFoxtrot.pct], ['bad', 58]);
+  assert.deepEqual(fired.map((e) => e.type), ['warning']);
+});
+
+test('the badge reaching 180 and Twitch still crediting it', async () => {
+  const mins = [177, 178, 179, 180, 181, 182, 183];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T21:10:00Z'), mins.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 427 + i, echo: true, badgeGroup: m >= 180 ? { status: 'CLAIMED', earnedReward: {}, grantCount: 1 } : {} })));
+  const v = views(s, now);
+  show('badge earned, still credited', { ...v, notified: fired.map((e) => e.type) });
+  assert.deepEqual([v.verdict, v.wasted], ['earning', 'earned'], 'all-views check: was a green "Earning"');
+  assert.match(v.headline[1], /Foxtrot Watch Badge is already earned, but Twitch is still crediting it/);
+  assert.equal(v.toolbar, 'ON #b54708');
+  assert.deepEqual([v.chipFoxtrot.tone, v.chipEcho.tone], ['warn', 'warn']);
+  assert.match(v.badgesTab[0], /Watch time reached/);
+});
+
+test('the badge campaign over: gone from both answers', async () => {
+  const { s, now } = await run(Date.parse('2026-11-19T23:05:00Z'), steps(4, (i) => ({ badge: null, badgeListed: false, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 480 + i, echo: true })));
+  const v = views(s, now);
+  show('badge over', v);
+  assert.deepEqual([v.verdict, v.wasted], ['earning', 'earned'], 'all-views check: was a green "Earning"');
+  assert.match(v.headline[1], /GTA DVD Chest is already earned/);
+  assert.equal(v.toolbar, 'ON #b54708');
+  assert.deepEqual(v.badgesTab, ['No badge drops on this channel.']);
+});

@@ -141,7 +141,7 @@ export function creditRate(timeline) {
  * 95 left in its campaign. Twitch credits one channel at a time and nothing documented lets a
  * viewer choose, so the only remedy is stopping the stream it picked, which must be open here.
  */
-export function wastedCredit(session, active, streams, risen, running) {
+export function wastedCredit(session, active, streams, risen, running, names = new Map()) {
   // Only a drop seen rising this poll. The session can keep naming a drop after it was earned
   // while the campaign's next drop does the rising, and that is ordinary earning.
   if (!session?.dropId || !risen?.has(session.dropId) || !streams.some((st) => st.login === session.login)) return null;
@@ -157,9 +157,13 @@ export function wastedCredit(session, active, streams, risen, running) {
   const earned = !drop && session.required > 0 && session.minutes > session.required;
   if (!earned && !drop?.atRisk) return null;
   const channel = session.displayName || session.login;
-  const badge = streams.flatMap((st) => st.badges || []).flatMap((b) => b.drops || []).find((d) => d.id === session.dropId);
+  // Named by the session, or the channel's own badge Twitch is still crediting past its
+  // requirement while the session names a reward done for the day (all-views check, 2026-11-19).
+  const channelBadges = (streams.find((st) => st.login === session.login)?.badges || []).flatMap((b) => b.drops || []);
+  const badge = streams.flatMap((st) => st.badges || []).flatMap((b) => b.drops || []).find((d) => d.id === session.dropId)
+    || channelBadges.find((d) => risen.has(d.id) && d.required > 0 && (d.minutes ?? 0) > d.required);
   const what = earned
-    ? `${channel}'s ${badge?.name || 'drop'} is already earned, but Twitch is still crediting it, so these minutes do nothing.`
+    ? `${channel}'s ${badge?.name || names.get(session.dropId) || 'drop'} is already earned, but Twitch is still crediting it, so these minutes do nothing.`
     : `Twitch is crediting ${channel}, but ${drop.name} cannot finish before its campaign ends.`;
   // Another open tab with a drop it can still finish. Twitch decides which one gets the minutes.
   let alt = null;
@@ -828,11 +832,11 @@ export function update(prev, obs, now) {
       // Readings that are never judged are not judged as wasted either.
       ? wastedCredit(session, s.active, streams, risen, new Set([
         ...(s.pending || []).filter((d) => d.runningTotal).map((d) => d.id),
+        // Only drops still active: today's reward drop, once earned, leaves the list and waits
+        // for its next window, so the session's running total rising on it really is wasted
+        // (all-views check, 2026-11-19; an earlier fix had excluded it and turned that green).
         ...s.active.filter((d) => d.unjudged).map((d) => d.id),
-        // From every campaign, not only active: today's reward drop, once earned, leaves the
-        // active list while the session keeps naming it with the campaign's running total.
-        ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).filter((d) => d.unjudged).map((d) => d.id)),
-      ]))
+      ]), new Map(allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name]))))
       : keep ? prev.verdict.wasted : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
   } else if (!candidates.length && unchecked) {
