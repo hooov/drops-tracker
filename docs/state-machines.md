@@ -65,7 +65,7 @@ it is eligible or its drop is a reward running total (`creditedCampaign` in stat
 campaign, which the badge, chip and finish times compare against), `pendingDrop` only for `unstarted`/`badge_unseen` when a campaign built from the
 session has a drop Twitch reports no minutes for (`pendingDrops()`, kept as `state.pending`, listed
 in Watch Drops on its channel without a bar and never in `active`). `reward`: a campaign read from
-Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`) or a session running
+Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, except a channel's own non-repeating badge read fresh that poll, which is judged and makes its channel `eligible`) or a session running
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
 drop is earned and the next can start later. The reward inventory answer is kept as
