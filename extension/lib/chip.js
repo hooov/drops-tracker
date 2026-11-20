@@ -1,4 +1,5 @@
 // What the chat-row chip says, from tracker state. Pure, so it can be tested without a page.
+import { verdictTone } from './states.js';
 
 export const STALE_MS = 3 * 60000; // Polls run every minute; older than this means the tracker itself stopped.
 
@@ -78,11 +79,14 @@ function chipViewOf(state, now, login) {
   const elsewhere = state.verdict?.code === 'earning' && cc && !(state.active || []).some((d) => d.campaignId === cc);
   const top = elsewhere ? undefined : channelDrops(state, login).drops[0];
   const pct = top ? top.pct : null;
+  // The tracker cannot see: a grey dashed ring, with "?" inside it when chat is too narrow for the label.
+  const unknown = (title) => ({ tone: 'unknown', text: 'Drops ?', mark: '?', pct: null, title });
   if (state.lastPollAt && now - state.lastPollAt > STALE_MS) {
     const min = Math.round((now - state.lastPollAt) / 60000);
-    return { tone: 'warn', text: 'Drops ?', pct, title: `Drops Tracker has not updated for ${min} min, so this may be out of date` };
+    return unknown(`Drops Tracker has not updated for ${min} min, so this may be out of date`);
   }
   const v = state.verdict;
+  const tone = verdictTone(v);
   const label = pct != null ? `${pct}%` : null;
   // Clamped as the panel's bar is: a session can read past the requirement (362/360).
   const progress = top ? `${top.name}: ${Math.min(top.minutes, top.required)}/${top.required} min.` : '';
@@ -90,13 +94,13 @@ function chipViewOf(state, now, login) {
   const claim = waiting[0];
   switch (v.code) {
     case 'stalled':
-      return { tone: 'bad', text: `Hung ${Math.max(1, Math.round((now - v.since) / 60000))}m`, pct, title: `${progress} ${v.message}`.trim() };
+      return { tone, text: `Hung ${Math.max(1, Math.round((now - v.since) / 60000))}m`, pct, title: `${progress} ${v.message}`.trim() };
     case 'signed_out':
-      return { tone: 'warn', text: 'Drops off', pct, title: 'Not logged in to Twitch, so Drops cannot be tracked' };
+      return { tone, text: 'Log in', pct, title: 'Not logged in to Twitch, so Drops cannot be tracked' };
     case 'api_changed':
-      return { tone: 'warn', text: 'Drops ?', pct, title: `${v.message || 'Twitch changed its API'}. Opening your Drops page once may fix this.` };
+      return unknown(`${v.message || 'Twitch changed its API'}. Opening your Drops page once may fix this.`);
     case 'error':
-      return { tone: 'warn', text: 'Drops ?', pct, title: `${v.message}. Progress is unknown.` };
+      return unknown(`${v.message}. Progress is unknown.`);
     default:
       break;
   }
@@ -111,33 +115,45 @@ function chipViewOf(state, now, login) {
         : `${waiting.length} earned drops to claim or connect. `;
   }
   // Tracking having stopped outranks a reward waiting, which can wait.
-  if (v.lost) return { tone: 'warn', text: 'Stopped', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
-  if (v.limited) return { tone: 'warn', text: 'Drops ?', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
+  if (v.lost) return { tone, text: 'Stopped', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
+  if (v.limited) {
+    if (tone === 'unknown') return { ...unknown(`${claimNote}${progress} ${v.message}`.trim()), pct };
+    return { tone, text: 'Not yet', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
+  }
   // Nothing left to earn here, only a reward: a full purple ring, not a warning.
   if (claim && !top) return { tone: 'info', text: connectOnly ? 'Connect' : 'Claim', pct: 100, title: claimNote.trim() };
-  const view = runningView(v, state.rate, label, pct, progress);
+  const view = runningView(v, tone, state.rate, label, pct, progress, login && login === state.session?.login);
   // A claim can wait a long time, so it must not hide the progress of the next drop or change what
   // the ring's colour says about earning. The count says it instead.
   return claim ? { ...view, title: `${claimNote}${view.title}` } : view;
 }
 
-function runningView(v, rate, label, pct, progress) {
+// credited: this tab is the channel Twitch is crediting.
+function runningView(v, tone, rate, label, pct, progress, credited) {
   if (v.code === 'earning') {
     const where = v.channel ? ` on ${v.channel}` : '';
-    if (v.wasted) return { tone: 'warn', text: label || 'Drops', pct, title: `${progress} ${v.wasted.message}`.trim() };
-    if (v.slow) {
-      return { tone: 'warn', text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${rate.counted} of the last ${rate.watched} watched minutes counted.`.trim() };
+    if (v.wasted) {
+      const title = `${progress} ${v.wasted.message}`.trim();
+      // "Done" only with nothing else in progress on this tab: a badge still rising here keeps its
+      // own percentage on a quiet minute (2026-11-19, 71 of 180 while today's GTAVI drop was done).
+      if (v.wasted.reason === 'earned' && !v.wasted.actionable) return { tone, text: label || 'Done', pct: pct ?? 100, title };
+      // The action is on the credited tab; the tab that can earn keeps its own progress.
+      if (v.wasted.reason === 'earned' && credited) return { tone, text: 'Close tab', pct, title };
+      return { tone, text: label || 'Drops', pct, title };
     }
-    return { tone: 'ok', text: label || 'Drops', pct, title: `${progress} Earning${where}.`.trim() };
+    if (v.slow) {
+      return { tone, text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${rate.counted} of the last ${rate.watched} watched minutes counted.`.trim() };
+    }
+    return { tone, text: label || 'Drops', pct, title: `${progress} Earning${where}.`.trim() };
   }
   // Before the first poll lands. It used to fall through to "Not earning right now" in grey.
-  if (v.code === 'starting') return { tone: 'info', text: label || 'Drops', pct, title: 'Checking your Drops progress.' };
+  if (v.code === 'starting') return { tone, text: label || 'Drops', pct, title: 'Checking your Drops progress.' };
   if (v.code === 'waiting') {
-    return { tone: 'info', text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
+    return { tone, text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
   }
   // A reward channel is not known to be idle: Twitch's numbers there are shown, not judged.
-  if (v.reward) return { tone: 'idle', text: label || 'Drops', pct, title: `${progress} ${v.message}`.trim() };
-  return { tone: 'idle', text: label || 'Drops', pct, title: `${progress} Not earning right now.`.trim() };
+  if (v.reward) return { tone, text: label || 'Drops', pct, title: `${progress} ${v.message}`.trim() };
+  return { tone, text: label || 'Drops', pct, title: `${progress} Not earning right now.`.trim() };
 }
 
 /** Rough rendered width of the full chip: padding, ring and gap, plus the label at 14px semibold. */

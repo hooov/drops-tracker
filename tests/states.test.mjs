@@ -61,11 +61,16 @@ test('every verdict code the tracker writes is declared, and none that it never 
 });
 
 test('every verdict code has a deliberate colour', () => {
-  const expected = { starting: 'info', waiting: 'info', earning: 'ok', stalled: 'bad', idle: 'idle', signed_out: 'warn', api_changed: 'warn', error: 'warn' };
+  // One meaning per colour (2026-11-20): warn is "you should do something", unknown "cannot see".
+  const expected = { starting: 'wait', waiting: 'wait', earning: 'ok', stalled: 'bad', idle: 'idle', signed_out: 'warn', api_changed: 'unknown', error: 'unknown' };
   assert.deepEqual(Object.keys(expected).sort(), Object.keys(VERDICT_CODES).sort());
   for (const [code, tone] of Object.entries(expected)) assert.equal(verdictTone({ code }), tone, code);
-  assert.equal(verdictTone({ code: 'earning', slow: true }), 'warn');
-  assert.equal(verdictTone({ code: 'earning', wasted: { reason: 'earned' } }), 'warn');
+  assert.equal(verdictTone({ code: 'earning', slow: true }), 'ok');
+  assert.equal(verdictTone({ code: 'earning', wasted: { reason: 'earned' } }), 'idle');
+  assert.equal(verdictTone({ code: 'earning', wasted: { reason: 'earned', actionable: true } }), 'warn');
+  assert.equal(verdictTone({ code: 'earning', wasted: { reason: 'too_late' } }), 'warn');
   assert.equal(verdictTone({ code: 'idle', lost: true }), 'warn');
-  assert.equal(verdictTone({ code: 'idle', limited: true }), 'warn');
+  assert.equal(verdictTone({ code: 'idle', limited: true }), 'unknown');
+  assert.equal(verdictTone({ code: 'idle', limited: true, unstarted: true }), 'idle');
+  assert.equal(verdictTone({ code: 'idle', limited: true, blocked: true }), 'idle');
 });

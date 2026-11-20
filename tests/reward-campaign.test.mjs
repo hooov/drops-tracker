@@ -53,7 +53,7 @@ test('reward campaign: a running total is not shown as progress, and the final r
   assert.equal(s.verdict.reward, true);
   assert.notEqual(s.verdict.limited, true);
   assert.equal(warning(s, T0 + 8 * MIN), null, 'no pill, no notification');
-  assert.match(s.verdict.message, /Echo's GTA DVD Chest is a reward Twitch counts in its own windows, which could not be read this time/);
+  assert.match(s.verdict.message, /^Progress for Echo's GTA DVD Chest could not be read\. Twitch's Drops page shows it\.$/);
   assert.equal(verdictText(s, T0 + 8 * MIN)[0], 'Reward campaign');
 });
 

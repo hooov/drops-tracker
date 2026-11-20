@@ -42,7 +42,7 @@ export const PLAYER_STATES = {
 export const CHANNEL_STATES = {
   eligible: { label: 'Can earn, not credited' },
   no_drops: { label: 'No Drops on this channel' },
-  sub_only: { label: 'Drops here only come from subs' },
+  sub_only: { label: 'Sub drops only' },
   badge_unseen: { label: 'Badge timer, no minutes reported' },
   // Every timed badge here left Twitch's in-progress list within a minute or two of its
   // requirement, which is how an earned badge looked on 2026-11-20 (tracker.js leftBadges).
@@ -57,7 +57,7 @@ export const CHANNEL_STATES = {
   // A badge or reward campaign whose progress comes from Twitch's reward inventory or a session
   // running total: shown as Twitch reports it, never judged. On 2026-11-18 the tracker saw about
   // 15 of 250 minutes Twitch counted there, and called a hang while it counted.
-  reward: { label: 'Reward, progress as Twitch reports it' },
+  reward: { label: 'Reward campaign' },
   not_channel: { label: 'Uses a stream slot' },
 };
 
@@ -73,30 +73,53 @@ export const VERDICT_CODES = {
   waiting: ['since'], // Something can earn; the first minute has not landed yet.
   earning: ['channel', 'slow', 'wasted'],
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'badgeLeft', 'message'],
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'badgeLeft', 'since', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],
 };
 
 /**
- * One colour rule for the verdict, shared by the panel and the chip: bad when minutes stopped,
- * warn when earning is not as it should be or tracking is in doubt, info while waiting or
- * starting, ok when earning, idle otherwise. lost and limited only exist on idle.
+ * One meaning per colour (agreed 2026-11-20, see docs/state-machines.md "Colour"):
+ * ok earning; warn you should do something, and the panel says what; bad Twitch stopped counting a
+ * stream that should be earning; unknown the tracker cannot see (a grey dashed ring with "?");
+ * idle nothing to do; wait checking; info a reward to claim (the claim overlay only, never a verdict).
+ * Amber used to cover all of earning-but-not-ideal, cannot-see and act-now, which read alike.
+ * The panel dot, the chip and the toolbar all take their colour from this one function.
  */
+export const SLOW_TONE = 'ok'; // Still earning; the headline says "Earning slowly". One line to give it a colour of its own.
+
 export function verdictTone(v) {
   switch (v?.code) {
     case 'stalled': return 'bad';
-    case 'earning': return v.slow || v.wasted ? 'warn' : 'ok';
+    case 'earning':
+      // Already earned with nothing else open that can earn: done, nothing to act on.
+      if (v.wasted) return v.wasted.reason === 'too_late' || v.wasted.actionable ? 'warn' : 'idle';
+      return v.slow ? SLOW_TONE : 'ok';
     case 'waiting':
-    case 'starting': return 'info';
-    case 'signed_out':
+    case 'starting': return 'wait';
+    case 'signed_out': return 'warn'; // Log in.
     case 'api_changed':
-    case 'error': return 'warn';
-    case 'idle': return v.lost || v.limited ? 'warn' : 'idle';
+    case 'error': return 'unknown';
+    case 'idle':
+      if (v.lost) return 'warn'; // Find another stream.
+      // Twitch not counting a campaign yet: usually nothing to do but wait.
+      if (v.limited) return v.unstarted || v.blocked ? 'idle' : 'unknown';
+      return 'idle';
     default: return 'idle';
   }
 }
+
+/** Toolbar badge colours by tone. The chip and panel use Twitch's own tokens for the same tones. */
+export const TONE_COLORS = {
+  ok: '#067647',
+  warn: '#b54708',
+  bad: '#d92d20',
+  unknown: '#667085',
+  idle: '#667085',
+  wait: '#175cd3',
+  info: '#6941c6',
+};
 
 /** Reward inventory groups read at most (twitch.js): an answer this long may have been cut short. */
 export const MAX_REWARD_GROUPS = 200; // Two campaigns, eight groups, seen on 2026-11-19.

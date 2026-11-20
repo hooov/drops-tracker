@@ -636,7 +636,7 @@ try {
   });
   s = await earningNow();
   assert.equal(s.verdict.code, 'earning', JSON.stringify(s.verdict));
-  assert.notEqual(await badgeText(), 'ERR');
+  assert.notEqual(await badgeText(), '?');
   step('real partial error on rewards: still reads progress, stays Earning');
 
   // A channel lookup hash retiring: progress keeps working, and eligibility is not guessed.
@@ -649,6 +649,18 @@ try {
   assert.equal(s.verdict.limited, true, JSON.stringify(s.verdict));
   assert.notEqual(s.verdict.code, 'stalled', 'a blind spot must not be called a stall');
   assert.equal(await badgeText(), '?');
+  // Cannot see: grey and dashed, with "?" in the ring for a narrow chat. A new tone name with no CSS
+  // rule falls back to the plain grey ring silently, so read the real computed style.
+  const blind = await alpha.evaluate(() => {
+    const host = document.getElementById('drops-tracker-chip');
+    const arc = host.shadowRoot.querySelector('.arc');
+    return { tone: host.dataset.tone, dash: arc.getAttribute('stroke-dasharray'), cap: getComputedStyle(arc).strokeLinecap, mark: host.shadowRoot.querySelector('.pct').textContent };
+  });
+  assert.equal(blind.tone, 'unknown', JSON.stringify(blind));
+  assert.equal(blind.cap, 'butt', 'round caps would close the dashes');
+  assert.equal(new Set(blind.dash.split(' ')).size, 1, `a dash pattern, not a progress arc: ${blind.dash}`);
+  // Progress is still read here, so the ring keeps its percentage; "?" is for no percentage at all.
+  assert.match(blind.mark, /^\d+$/, JSON.stringify(blind));
   await shot('15-cannot-check-streams');
   await sw.evaluate(() => { self.__transform = null; });
   s = await earningNow();
@@ -705,7 +717,7 @@ try {
   }, STALE);
   s = await poll();
   assert.equal(s.verdict.code, 'api_changed', JSON.stringify(s.verdict));
-  assert.equal(await badgeText(), 'ERR');
+  assert.equal(await badgeText(), '?');
   assert.equal(s.active.length, 1, 'last good data kept');
   assert.equal(await pillText(alpha), 'Drops not being tracked');
   await shot('16-cannot-track');
@@ -720,7 +732,7 @@ try {
   });
   s = await poll();
   assert.equal(s.verdict.code, 'error', JSON.stringify(s.verdict));
-  assert.equal(await badgeText(), 'ERR');
+  assert.equal(await badgeText(), '?');
   await sw.evaluate(() => { self.__transform = null; });
   s = await earningNow();
   assert.equal(s.verdict.code, 'earning');
@@ -734,11 +746,20 @@ try {
   assert.equal(s.verdict.code, 'earning');
   step('damaged saved state: polling survives');
 
-  // Minutes going where they cannot help: the panel says so in amber, from the tracker's verdict.
+  // Minutes going where they cannot help. Amber only when another tab can earn; with nothing else
+  // to earn it is done, in grey (2026-11-20). From the tracker's verdict.
+  const doneMsg = 'loyalty badge is already earned, and nothing else open can earn right now.';
+  await popup.evaluate(async (message) => {
+    const { state } = await chrome.storage.local.get('state');
+    await chrome.storage.local.set({ state: { ...state, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', channel: 'AlphaTV', name: 'loyalty badge', opens: null, actionable: false, message } } } });
+  }, doneMsg);
+  await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'idle');
+  assert.equal(await popup.textContent('#verdict-title'), 'Already earned on AlphaTV');
+  assert.equal(await popup.textContent('#verdict-detail'), doneMsg);
   const wastedMsg = "AlphaTV's loyalty badge is already earned, but Twitch is still crediting it, so these minutes do nothing. Bravo can earn Marvel Rivals: close or pause AlphaTV.";
   await popup.evaluate(async (message) => {
     const { state } = await chrome.storage.local.get('state');
-    await chrome.storage.local.set({ state: { ...state, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', message } } } });
+    await chrome.storage.local.set({ state: { ...state, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', channel: 'AlphaTV', name: 'loyalty badge', opens: null, actionable: true, message } } } });
   }, wastedMsg);
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'warn');
   assert.equal(await popup.textContent('#verdict-detail'), wastedMsg);
@@ -1255,7 +1276,7 @@ try {
   await sw.evaluate(() => { self.__realFakeFetch = self.fetch; self.fetch = async () => { throw new TypeError('offline'); }; });
   s = await poll();
   assert.equal(s.verdict.code, 'error');
-  assert.equal(await badgeText(), 'ERR');
+  assert.equal(await badgeText(), '?');
   assert.equal(s.active.length, 1);
   await shot('5-network-error');
   step('network failure: Cannot read Twitch, not Stalled, last data kept');
