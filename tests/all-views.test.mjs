@@ -69,7 +69,7 @@ async function run(start, steps, { realAsk = false } = {}) {
     const t = start + i * MIN;
     const logins = step.echo ? ['foxtrot', 'echo_247'] : ['foxtrot'];
     // realAsk: the reward inventory only when background.js would ask it, not every poll.
-    const snap = await fetchSnapshot('tok', logins, twitchAt(step), {}, { askRewards: realAsk ? rewardsDue(s, t) : true });
+    const snap = await fetchSnapshot('tok', logins, twitchAt(step), {}, { askRewards: realAsk ? rewardsDue(s, t) : true, now: t });
     const player = (base) => ({ hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: base + i * 60 });
     const streams = [{ tabId: 1, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: player(100) }];
     if (step.echo) streams.push({ tabId: 2, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: { ...player(500), hidden: true } });

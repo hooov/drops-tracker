@@ -43,7 +43,9 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 finish before its campaign ends, while the credited channel is open here. A quiet poll keeps the
 last judgement so the warning does not flicker. A session drop the reward inventory says repeats
 is never "earned" from its session minutes (a running total) unless its window is still open at
-its requirement or every repeat is granted (`openWindowUnknown()`).
+its requirement, every repeat is granted, or Twitch's `nextEligibleAt` is still ahead
+(`openWindowUnknown()`). With no inventory reading for it, a `:total` mark on the drop counts as
+proof of a running total, so it is not judged either.
 
 Colour: `verdictTone()` in states.js, for the panel and the chip. The badge (`badge()`), the pill
 and notification (`warning()`), the chip text (`chipView()` in chip.js) and the panel text
@@ -77,7 +79,10 @@ drop is earned and the next can start later. The reward inventory answer is kept
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
 which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
 leaves out, at least every `REWARD_HOLD_MS` while any channel is live, and once after a window
-it read has ended (`rewardsDue()`). `state.unplacedBadges`
+it read has ended (`rewardsDue()`; after a failed ask, at most every `REWARD_RETRY_MS`). A
+dismissed campaign read from `ChannelDropsCampaigns` counts as "offered" like any other, so a
+channel with one that Inventory leaves out asks the reward inventory every poll, as a listed one
+always did. `state.unplacedBadges`
 (`unplacedBadges()`): its badge campaigns that no open channel lists, each with its first and
 latest minutes; `rising` when they went up. Moved only by a fresh answer, and held when an open
 channel's list could not be read. It changes no channel state or verdict: a rising one is said at

@@ -364,7 +364,7 @@ export const CREATOR_BADGE_BRAND = 'CREATOR_LED_BADGE_CAMPAIGN';
  * and the reward inventory join (group ID = drop ID, confirmed on that badge) work unchanged.
  * Failing only costs the badges it would add: badgeLookupFailed, never the channel unknown.
  */
-function applyChannelCampaigns(channel, item) {
+function applyChannelCampaigns(channel, item, now = Date.now()) {
   const c = channel;
   if (c.unknown) return;
   const list = item?.data?.channelDropCampaigns;
@@ -379,8 +379,11 @@ function applyChannelCampaigns(channel, item) {
     if (!x?.id || have.has(x.id) || !Array.isArray(x.rewardGroups)) continue;
     if (x.brandName !== CREATOR_BADGE_BRAND) {
       // Only one Twitch says you dismissed: why else the highlight answer leaves a campaign out
-      // (finished, say) is not known, and a guess there could become a false stall.
-      if (x.hasViewerDismissedHighlight === true) {
+      // (finished, say) is not known, and a guess there could become a false stall. An ended one
+      // is left out too: whether this answer keeps ended campaigns is unmeasured, and one would
+      // turn "No Drops" into "Not counting yet" on a channel that cannot earn (review, 2026-11-20).
+      const ended = Date.parse(x.endAt) <= now;
+      if (x.hasViewerDismissedHighlight === true && !ended) {
         addDismissedCampaign(c, x);
         have.add(x.id);
       }
@@ -428,7 +431,12 @@ function applyChannelCampaigns(channel, item) {
  */
 function addDismissedCampaign(c, x) {
   const watch = x.rewardGroups.filter((g) => g?.id && g.progressCriteria?.requirementType === 'WATCH' && g.progressCriteria.requirements?.minutesWatched > 0);
-  if (!watch.length || c.campaigns.length >= MAX_CHANNEL_CAMPAIGNS) return;
+  if (!watch.length) {
+    // Sub drops only: "Sub only", as the highlight answer would have made it, not "No Drops".
+    if (!c.campaigns.length && x.rewardGroups.some((g) => g?.progressCriteria?.requirementType === 'SUB')) c.subOnly = true;
+    return;
+  }
+  if (c.campaigns.length >= MAX_CHANNEL_CAMPAIGNS) return;
   c.subOnly = false;
   const rewardIds = (g) => (g.rewards || []).map((r) => r?.id).filter(Boolean);
   c.campaigns.push({
@@ -557,7 +565,8 @@ export function parseRewardInventory(item) {
 /**
  * Everything one poll needs. Throws TwitchError only when progress itself cannot be read; other
  * failures mark the affected channels unknown, so "stalled" is never judged on missing data.
- * known: { working: {op: hash}, learned: {op: hash} }. options: { askRewards }.
+ * known: { working: {op: hash}, learned: {op: hash} }. options: { askRewards, now } (now: the
+ * poll's clock, for campaign end times; Date.now() when left out).
  */
 export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}, options = {}) {
   const unique = [...new Set(logins)].slice(0, MAX_CHANNELS);
@@ -584,7 +593,7 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
       ]), ctx);
       liveChannels.forEach((c, i) => {
         applyCampaigns(c, second[i * 3]);
-        applyChannelCampaigns(c, second[i * 3 + 2]);
+        applyChannelCampaigns(c, second[i * 3 + 2], options.now ?? Date.now());
         const sessionAnswer = second[i * 3 + 1];
         // The only source of a badge's minutes. Its query failing is not Twitch reporting none.
         if (errorsOf(sessionAnswer).length && c.campaigns.some((x) => x.channelOwned)) c.unknown = true;

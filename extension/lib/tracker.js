@@ -10,6 +10,7 @@ export { RATE_MIN_MINUTES };
 
 export const STALL_MS = 4 * 60000; // Credit lands about every 60s (measured); 4 misses is a real stall.
 export const REWARD_HOLD_MS = 15 * 60000; // A failed reward inventory call reuses the last good answer this long.
+export const REWARD_RETRY_MS = 5 * 60000; // After a failed call, a window-end re-ask waits this long.
 export const DEAD_PLAYER_MS = 2 * 60000; // Every eligible player is visibly dead: no need to wait the full 4.
 export const NO_STREAM_MS = 2.5 * 60000; // No eligible tab: stop saying "earning" once a tick has been missed.
 export const GAP_MS = 3 * 60000; // Longer than this without good data (sleep, outage): restart the clock.
@@ -149,12 +150,17 @@ export function creditRate(timeline) {
  * inventory read 60 of 60 at 17:49:43 with the window ending 17:50:15; Twitch then counted the next
  * window (2 of 60) while the running total 637 read as "already earned" for minutes on end.
  */
-export function openWindowUnknown(session, rewardInv, now) {
-  const g = (rewardInv?.groups || []).find((x) => x.id === session?.dropId && x.repeatTimes);
-  if (!g) return [];
+export function openWindowUnknown(session, rewardInv, now, drops = {}) {
+  if (!session?.dropId) return [];
+  const g = (rewardInv?.groups || []).find((x) => x.id === session.dropId && x.repeatTimes);
+  // No reading for it (a failed ask, or the held answer expired): its own `:total` mark says its
+  // session minutes have been a running total, so they still prove nothing (review, 2026-11-20).
+  if (!g) return drops?.[`${session.dropId}:total`] && !(rewardInv?.groups || []).some((x) => x.id === session.dropId) ? [session.dropId] : [];
   const allGranted = g.grants != null && g.grants >= g.repeatTimes;
   const doneToday = g.windowEnd != null && now < g.windowEnd && typeof g.minutes === 'number' && g.minutes >= g.required;
-  return allGranted || doneToday ? [] : [g.id];
+  // Twitch saying the next window opens later: minutes until then really count for nothing.
+  const waiting = g.nextEligibleAt != null && now < g.nextEligibleAt;
+  return allGranted || doneToday || waiting ? [] : [g.id];
 }
 
 /**
@@ -165,6 +171,9 @@ export function openWindowUnknown(session, rewardInv, now) {
 export function rewardsDue(prev, now) {
   const at = prev?.rewardCheck?.at;
   if (!at || now - at >= REWARD_HOLD_MS) return true;
+  // After a failed ask, at most every REWARD_RETRY_MS: it fails on about half of real calls, and
+  // retrying every poll for the held answer's 15 minutes is not "once" (review, 2026-11-20).
+  if (prev.rewardCheck.ok === false && now - at < REWARD_RETRY_MS) return false;
   const read = prev?.rewardInv?.at ?? at;
   return (prev?.rewardInv?.groups || []).some((g) => g.windowEnd != null && g.windowEnd > read && g.windowEnd <= now);
 }
@@ -915,7 +924,7 @@ export function update(prev, obs, now) {
         // for its next window, so the session's running total rising on it really is wasted
         // (all-views check, 2026-11-19; an earlier fix had excluded it and turned that green).
         ...s.active.filter((d) => d.unjudged).map((d) => d.id),
-        ...openWindowUnknown(session, s.rewardInv, now),
+        ...openWindowUnknown(session, s.rewardInv, now, s.drops),
       ]), new Map([
         ...Object.entries(s.drops).filter(([, rec]) => rec?.name).map(([id, rec]) => [id.replace(/:total$/, ''), rec.name]),
         ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name])),
