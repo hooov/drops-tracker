@@ -45,11 +45,25 @@ last judgement so the warning does not flicker. A session drop the reward invent
 is never "earned" from its session minutes (a running total) unless its window is still open at
 its requirement, every repeat is granted, or Twitch's `nextEligibleAt` is still ahead
 (`openWindowUnknown()`). With no inventory reading for it, a `:total` mark on the drop counts as
-proof of a running total, so it is not judged either.
+proof of a running total, so it is not judged either. `wasted.actionable`: another open tab can
+earn (asked again on every poll, quiet ones too, through `wastedView()`). Only then, or for
+`too_late`, is it amber; already earned with nothing else to earn is grey "Done for today on X"
+(with the next start from the reward inventory) or "Already earned on X", and the chip reads
+"Done" unless a drop on that tab is still in progress. "Close tab" shows only on the credited tab.
 
-Colour: `verdictTone()` in states.js, for the panel and the chip. The badge (`badge()`), the pill
-and notification (`warning()`), the chip text (`chipView()` in chip.js) and the panel text
-(`verdictText()` in panel.js) each turn the verdict into words for their own space.
+Colour: one meaning per colour (agreed with Tyler 2026-11-20): `ok` green earning (slow too,
+`SLOW_TONE`), `warn` amber you should do something (the panel says what: too late, close a tab,
+stopped earning, log in), `bad` red Twitch stopped counting, `unknown` grey dashed ring with "?"
+the tracker cannot see (cannot read Twitch, API changed, cannot check streams, a badge with no
+minutes, the chip out of date), `idle` grey nothing to do (including "Not counting yet"), `wait`
+blue checking, `info` purple a reward to claim and nothing else. `verdictTone()` in states.js is
+the one source; the toolbar takes its colour from `TONE_COLORS[verdictTone(v)]`, and
+`tests/tones.test.mjs` checks panel, chip and toolbar agree for every state. A new tone needs a
+rule in panel.css and in content.js's chip CSS, or it falls back to plain grey without an error.
+The badge (`badge()`), the pill and notification (`warning()`), the chip text (`chipView()` in
+chip.js) and the panel text (`verdictText()` in panel.js) each turn the verdict into words for
+their own space. "Not counting yet" raises no pill or notification; "Cannot check streams" only
+after `GAP_MS` (its verdict carries `since`).
 
 ## 2. Stall cause
 `verdict.cause`, from `diagnose()` in tracker.js, checked in this order: every candidate not playing

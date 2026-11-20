@@ -172,6 +172,10 @@ export function verdictText(state, now) {
   switch (v.code) {
     case 'earning': {
       const where = v.channel ? ` on ${v.channel}` : '';
+      // Already earned with nothing else open that can earn: done, which wins over slow.
+      if (v.wasted?.reason === 'earned' && !v.wasted.actionable && v.wasted.name) {
+        return [`${v.wasted.opens != null ? 'Done for today' : 'Already earned'}${where}`, v.wasted.message];
+      }
       // With an eligible tab open the session may just have failed, so do not claim it is elsewhere.
       const elsewhere = !v.channel && !state.streams?.some((s) => s.channelState === 'eligible');
       const detail = v.wasted?.message || (elsewhere ? 'Minutes are rising from a stream outside this browser.' : '');
@@ -200,7 +204,7 @@ export function verdictText(state, now) {
     case 'signed_out':
       return ['Signed out', 'Log in to twitch.tv in this browser.'];
     case 'api_changed':
-      return ['Cannot track', `${v.message || 'Twitch changed its API'}. Opening your Drops page once may fix this, since the tracker learns from it. If not, it needs an update.${lastGood}`];
+      return ['Cannot track', `${v.message || 'Twitch changed its API'}. Opening your Drops page once may fix this. If not, the extension needs an update.${lastGood}`];
     case 'error':
       return ['Cannot read Twitch', `${v.message}. Progress is unknown, not stalled.${lastGood}`];
     default:
@@ -675,7 +679,12 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const rows = list.map((s) => {
       const problem = canEarn(s) ? PLAYER_STATES[s.playerState]?.label : null;
       if (problem) return { ...s, label: problem, tone: 'bad' };
-      if (s.credited && earning) return { ...s, label: 'Earning', tone: state.verdict.slow ? 'warn' : 'ok' };
+      if (s.credited && earning) {
+        // Same rule as the headline: amber only when another tab can earn (2026-11-20).
+        const w = state.verdict.wasted;
+        if (w?.reason === 'earned') return { ...s, label: 'Already earned', tone: w.actionable ? 'warn' : '' };
+        return { ...s, label: 'Earning', tone: 'ok' };
+      }
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
       // "Not credited" says another channel is getting it, which needs one to be.
       if (s.channelState === 'eligible' && !anyCredited) return { ...s, label: 'Can earn', tone: '' };

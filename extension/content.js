@@ -40,6 +40,9 @@
     :host([data-tone="bad"]){--tone:var(--color-fill-error,#ff4f4d)}
     :host([data-tone="warn"]){--tone:var(--color-fill-warn,#ffb31a)}
     :host([data-tone="info"]){--tone:var(--color-background-progress-status,#a970ff)}
+    :host([data-tone="wait"]){--tone:#4f8ff7}
+    :host([data-tone="unknown"]){--tone:rgba(173,173,184,.85)}
+    :host([data-tone="unknown"]) .arc{stroke-linecap:butt}
     button{all:unset;position:relative;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;min-width:32px;
       padding:0 6px;border-radius:9000px;cursor:pointer;font:600 14px/1 var(--font-base,Inter,"Helvetica Neue",Helvetica,Arial,sans-serif);white-space:nowrap}
     button:hover,button[aria-expanded="true"]{background:var(--color-background-button-text-hover,rgba(83,83,95,.48))}
@@ -86,8 +89,11 @@
     chip.dataset.tone = view.tone;
     // No percentage to show: a full ring, so the colour still reads.
     const fraction = view.pct == null ? 1 : view.pct / 100;
-    arc.setAttribute('stroke-dasharray', `${(fraction * RING_LENGTH).toFixed(2)} ${RING_LENGTH.toFixed(2)}`);
-    number.textContent = view.pct == null ? '' : String(view.pct);
+    // Cannot see: a dashed ring, 12 dashes, with butt caps so round caps cannot close the gaps.
+    const dash = (RING_LENGTH / 24).toFixed(2);
+    arc.setAttribute('stroke-dasharray', view.tone === 'unknown' ? `${dash} ${dash}` : `${(fraction * RING_LENGTH).toFixed(2)} ${RING_LENGTH.toFixed(2)}`);
+    // No percentage: the view's mark ("?") inside the ring, for a narrow chat where the label hides.
+    number.textContent = view.pct == null ? view.mark || '' : String(view.pct);
     number.classList.toggle('wide', view.pct === 100);
     label.textContent = view.text;
     const claims = view.claims || 0;

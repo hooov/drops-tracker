@@ -17,9 +17,10 @@ test('every failure to track is visibly not green', () => {
   const cases = [
     [{ code: 'stalled', since: NOW - 5 * 60000, message: 'Stuck.' }, 'bad', 'Hung 5m'],
     [{ code: 'idle', lost: true, message: 'Lost.' }, 'warn', 'Stopped'],
-    [{ code: 'signed_out' }, 'warn', 'Drops off'],
-    [{ code: 'api_changed' }, 'warn', 'Drops ?'],
-    [{ code: 'error', message: 'Could not reach Twitch' }, 'warn', 'Drops ?'],
+    [{ code: 'signed_out' }, 'warn', 'Log in'],
+    // Cannot see: grey dashed "?", not amber (2026-11-20). Still never green.
+    [{ code: 'api_changed' }, 'unknown', 'Drops ?'],
+    [{ code: 'error', message: 'Could not reach Twitch' }, 'unknown', 'Drops ?'],
   ];
   for (const [verdict, tone, text] of cases) {
     const v = chipView(state(verdict), NOW);
@@ -29,12 +30,12 @@ test('every failure to track is visibly not green', () => {
 
 test('streams that cannot be checked are not green', () => {
   const v = chipView(state({ code: 'idle', limited: true, message: 'Cannot check.' }), NOW);
-  assert.deepEqual([v.tone, v.text], ['warn', 'Drops ?']);
+  assert.deepEqual([v.tone, v.text], ['unknown', 'Drops ?']);
 });
 
 test('a tracker that stopped polling cannot keep showing green', () => {
   const v = chipView(state({ code: 'earning', channel: 'AlphaTV' }, { lastPollAt: NOW - STALE_MS - 60000 }), NOW);
-  assert.equal(v.tone, 'warn');
+  assert.equal(v.tone, 'unknown');
   assert.equal(v.text, 'Drops ?');
   assert.match(v.title, /has not updated for 4 min/);
 });
@@ -143,16 +144,16 @@ test('ring gets the progress even when the label is hidden', () => {
   assert.equal(chipView(state({ code: 'idle' }, { active: [] }), NOW).pct, null);
 });
 
-test('earning slowly is amber and says the rate', () => {
+test('earning slowly is green, still earning, and says the rate', () => {
   const v = chipView(state({ code: 'earning', channel: 'AlphaTV', slow: true }, { rate: { watched: 30, counted: 14 } }), NOW);
-  assert.equal(v.tone, 'warn');
+  assert.equal(v.tone, 'ok');
   assert.equal(v.text, '82%');
   assert.match(v.title, /Earning slowly on AlphaTV: 14 of the last 30 watched minutes counted/);
 });
 
 test('before the first poll the chip says it is checking, not "Not earning right now"', () => {
   const v = chipView(state({ code: 'starting' }), NOW);
-  assert.equal(v.tone, 'info');
+  assert.equal(v.tone, 'wait', 'blue: purple is left for rewards to claim');
   assert.doesNotMatch(v.title, /Not earning/);
 });
 

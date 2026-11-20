@@ -151,11 +151,13 @@ test('a drop whose window closed unearned does not hide a later window: blocked,
   assert.equal(s.streams[0].blockedOpens, Date.parse(opens));
 });
 
-test('a drop Twitch has not started is "not counting yet" in the pill and notification too, not "not being tracked"', () => {
+// Until 2026-11-20 this raised a pill and a notification, "Drops not counting yet". Usually there is
+// nothing to do but wait, so now only the panel says it, never "not being tracked" either.
+test('a drop Twitch has not started raises no pill or notification; the panel says not counting yet', async () => {
   const { s } = run(10, channel([hoodie]), () => 0);
-  const w = warning(s, T0 + 10 * MIN);
-  assert.equal(w.short, 'Drops not counting yet');
-  assert.equal(w.title, 'Drops not counting yet');
+  assert.equal(warning(s, T0 + 10 * MIN), null);
+  const { verdictText } = await import('../extension/lib/panel.js');
+  assert.equal(verdictText(s, T0 + 10 * MIN)[0], 'Not counting yet');
 });
 
 test('an offline channel is not said to have no Drops', async () => {

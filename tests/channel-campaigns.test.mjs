@@ -152,7 +152,7 @@ test('today\'s reward drop earned and only its running total rising: wasted, nam
   let s;
   for (let i = 0; i < 4; i++) s = await eveningPoll(s, i, { badge: 72, total: 319 + i });
   assert.equal(s.verdict.wasted?.reason, 'earned', JSON.stringify(s.verdict));
-  assert.match(s.verdict.wasted.message, /GTA DVD Chest is already earned/);
+  assert.match(s.verdict.wasted.message, /GTA DVD Chest is earned for today/);
 });
 
 test('a badge both queries list is shown once', async () => {

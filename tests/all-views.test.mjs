@@ -159,9 +159,11 @@ test('the badge reaching 180 and Twitch still crediting it', async () => {
   const v = views(s, now);
   show('badge earned, still credited', { ...v, notified: fired.map((e) => e.type) });
   assert.deepEqual([v.verdict, v.wasted], ['earning', 'earned'], 'all-views check: was a green "Earning"');
-  assert.match(v.headline[1], /Foxtrot Watch Badge is already earned, but Twitch is still crediting it/);
-  assert.equal(v.toolbar, 'ON #b54708');
-  assert.deepEqual([v.chipFoxtrot.tone, v.chipEcho.tone], ['warn', 'warn']);
+  // Nothing else open can earn (echo_247 has no drops), so done, in grey: no amber with nothing to
+  // act on (colour scheme, 2026-11-20). The badge does not repeat, so no "next one can start".
+  assert.deepEqual(v.headline, ['Already earned on Foxtrot', 'Foxtrot Watch Badge is already earned, and nothing else open can earn right now.']);
+  assert.equal(v.toolbar, ' #667085');
+  assert.deepEqual([v.chipFoxtrot.tone, v.chipFoxtrot.text, v.chipEcho.tone], ['idle', 'Done', 'idle']);
   assert.match(v.badgesTab[0], /Watch time reached/);
 });
 
@@ -170,8 +172,10 @@ test('the badge campaign over: gone from both answers', async () => {
   const v = views(s, now);
   show('badge over', v);
   assert.deepEqual([v.verdict, v.wasted], ['earning', 'earned'], 'all-views check: was a green "Earning"');
-  assert.match(v.headline[1], /GTA DVD Chest is already earned/);
-  assert.equal(v.toolbar, 'ON #b54708');
+  // Today's drop done and nothing else to earn: done for today, with the next start (2026-11-20).
+  assert.equal(v.headline[0], 'Done for today on Foxtrot');
+  assert.match(v.headline[1], /^GTA DVD Chest is earned for today\. The next one can start at /);
+  assert.equal(v.toolbar, ' #667085');
   assert.deepEqual(v.badgesTab, ['No badge drops on this channel.']);
 });
 
@@ -194,19 +198,19 @@ test('the badge leaving Twitch\'s in-progress list at 179, then GTAVI leaving th
   show('badge left at 179', vLeft);
   assert.match(vLeft.badgesTab[0], /Likely earned/, 'not "Watch 1m to earn"');
   assert.equal(vLeft.wasted, 'earned');
-  assert.match(vLeft.headline[1], /GTA DVD Chest is already earned/);
+  assert.match(vLeft.headline[1], /GTA DVD Chest is earned for today/);
 
   const atUnlisted = await run(start, [...rising, ...left, ...unlisted]);
   const vUnlisted = views(atUnlisted.s, atUnlisted.now);
   show('GTAVI unlisted, total still rising', vUnlisted);
   assert.ok(atUnlisted.s.timeline.every((t) => (t.d ?? 0) <= 1), `one minute a minute, got ${atUnlisted.s.timeline.map((t) => t.d).join(',')}`);
-  assert.match(vUnlisted.headline[1], /GTA DVD Chest is already earned/, 'the name, not "Foxtrot\'s drop"');
+  assert.match(vUnlisted.headline[1], /GTA DVD Chest is earned for today/, 'the name, not "Foxtrot\'s drop"');
 
   const end = await run(start, [...rising, ...left, ...unlisted, ...flat]);
   const v = views(end.s, end.now);
   show('nothing rising', { ...v, notified: end.fired.map((e) => e.type) });
   assert.equal(v.states, 'foxtrot:badge_left');
-  assert.deepEqual(v.headline, ['Badge likely earned', "Twitch last read Foxtrot's badge at 179 of 180 minutes, then dropped it from its in-progress list, which is how an earned badge has looked. The badge picker in Foxtrot's chat shows whether you have it."]);
+  assert.deepEqual(v.headline, ['Badge likely earned', "Twitch stopped listing Foxtrot's badge at 179 of 180 minutes, so you have probably earned it. The badge picker in Foxtrot's chat shows whether you have it."]);
   assert.equal(v.warning, null, 'no "Drops not being tracked" notification');
   assert.notEqual(v.toolbar.split(' ')[0], '?');
   assert.equal(v.chipFoxtrot.tone === 'warn', false);
@@ -231,7 +235,8 @@ test('GTAVI dismissed on the channel: still listed, and the next window reads as
   const vPre = views(pre.s, pre.now);
   show('dismissed, window done', vPre);
   assert.equal(vPre.wasted, 'earned', "today's window really is done: that warning is right");
-  assert.match(vPre.headline[1], /GTA DVD Chest is already earned/);
+  assert.equal(vPre.headline[0], 'Done for today on Foxtrot', 'done, not an amber warning: nothing else can earn');
+  assert.match(vPre.headline[1], /GTA DVD Chest is earned for today/);
 
   const { s, now } = await run(Date.parse('2026-11-20T17:47:00Z'), listedThenDismissed([...steps(3, before), ...steps(6, (i) => after(i))]));
   const v = views(s, now);

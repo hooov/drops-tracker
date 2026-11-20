@@ -34,7 +34,7 @@ There is no build step. After changing the code, press **Reload** on the extensi
 
 ## What you see
 
-**Chip in the chat row**, beside your channel points: a progress ring with `82%`, `Hung 5m`, `Stopped`, `Claim` or `Drops ?`. Green is earning, amber needs attention or is slow, red is not counting, purple has just started. In a narrow chat column the label hides and the percentage moves inside the ring. A purple count shows how many earned drops from running campaigns wait to be claimed: inside the ring beside the label, or on the ring's corner in a narrow chat. It never changes the ring's colour.
+**Chip in the chat row**, beside your channel points: a progress ring with `82%`, `Hung 5m`, `Stopped`, `Done`, `Claim` or `Drops ?`. Green is earning, amber means you should do something (the panel says what), red is not counting, a dashed grey ring with `?` means the tracker cannot see Twitch right now, plain grey is nothing to do, blue is checking, and purple is a reward to claim. In a narrow chat column the label hides and the percentage (or `?`) moves inside the ring. A purple count shows how many earned drops from running campaigns wait to be claimed: inside the ring beside the label, or on the ring's corner in a narrow chat. It never changes the ring's colour.
 
 ![The chip in six states: earning at 85%, the ring with 85 inside in a narrow chat, a claim waiting shown as a purple 1 inside the ring, the same as a purple badge on the ring's corner in a narrow chat, Hung 6m in red, and Stopped in amber](docs/screenshots/chip-states.png)
 
@@ -42,14 +42,15 @@ There is no build step. After changing the code, press **Reload** on the extensi
 
 | Badge | Meaning |
 |---|---|
-| `81%` green | Minutes are rising |
+| `81%` green | Minutes are rising, slowly or not |
 | `...` blue | Stream just opened, waiting for the first minute |
 | `!` red | A stream that can earn is open, but no minutes are being added |
-| `!` amber | You were earning and now no open stream can (game change, offline, raid). Clears to no badge after 10 minutes |
-| `51%` amber | Earning slowly, or the minutes are going to a drop already earned or one that cannot finish in time |
+| `!` amber | You were earning and now no open stream can (game change, offline, raid), clearing to no badge after 10 minutes; or the minutes go to a drop you already have while another open tab could earn, so close the credited tab |
+| `51%` amber | The drop being earned cannot finish before its campaign ends |
+| `OFF` amber | Signed out of Twitch in this browser |
 | `CLM` purple | A drop is ready to claim, and nothing is being earned. While earning, a waiting claim does not change the badge |
-| `?` amber | Open streams cannot be checked, so tracking is unknown |
-| `ERR` / `OFF` grey | Cannot read Twitch / signed out. Progress is unknown, not stalled |
+| `?` grey | Cannot read Twitch or check your open streams. Progress is unknown, not stalled |
+| no badge | Nothing to earn, done for today, or a campaign Twitch is not counting yet |
 
 **Warnings:** one system notification and a small dismissible pill on Twitch pages, including in fullscreen. Nothing appears while things are healthy.
 

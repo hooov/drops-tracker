@@ -20,6 +20,9 @@
   --dt-bad-text: var(--color-text-error, #ff8280);
   --dt-warn: var(--color-fill-warn, #ffb31a);
   --dt-idle: var(--color-opac-gl-2, rgba(173, 173, 184, 0.35));
+  /* Checking (blue, so purple is only a reward to claim) and cannot-see (grey, drawn dashed). */
+  --dt-wait: #4f8ff7;
+  --dt-unknown: rgba(173, 173, 184, 0.85);
   --dt-font: var(--font-base, Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif);
   color-scheme: dark;
 }
@@ -131,6 +134,9 @@ button.link { padding: 0; }
 .status[data-tone="bad"] { --tone: var(--dt-bad); }
 .status[data-tone="warn"] { --tone: var(--dt-warn); }
 .status[data-tone="info"] { --tone: var(--dt-brand); }
+.status[data-tone="wait"] { --tone: var(--dt-wait); }
+.status[data-tone="unknown"] { --tone: var(--dt-unknown); }
+.status[data-tone="unknown"] .dot { background: none; border: 2px dashed var(--tone); box-sizing: border-box; }
 .status-line { display: flex; align-items: center; gap: 8px; }
 .status-line .strong { flex: 1; min-width: 0; }
 .status-line .sub { flex: none; font-variant-numeric: tabular-nums; }

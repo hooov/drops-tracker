@@ -3,7 +3,7 @@
 // the current observation each poll, so they cannot outgrow what Twitch currently reports.
 // The states it writes (verdict codes, causes, channel and player states) are declared in
 // states.js; the map of how they move is docs/state-machines.md.
-import { PLAYER_STATES, RATE_MIN_MINUTES, MAX_REWARD_GROUPS } from './states.js';
+import { PLAYER_STATES, RATE_MIN_MINUTES, MAX_REWARD_GROUPS, verdictTone, TONE_COLORS } from './states.js';
 import { span } from './directory.js';
 
 export { RATE_MIN_MINUTES };
@@ -178,7 +178,14 @@ export function rewardsDue(prev, now) {
   return (prev?.rewardInv?.groups || []).some((g) => g.windowEnd != null && g.windowEnd > read && g.windowEnd <= now);
 }
 
-export function wastedCredit(session, active, streams, risen, running, names = new Map()) {
+/** When the session's repeating drop can start again, from the reward inventory: Twitch's own time, else the window's end. */
+function nextStart(session, rewardInv, now) {
+  const g = (rewardInv?.groups || []).find((x) => x.id === session?.dropId && x.repeatTimes);
+  const t = g ? g.nextEligibleAt ?? g.windowEnd : null;
+  return t != null && t > now ? t : null;
+}
+
+export function wastedCredit(session, active, streams, risen, running, names = new Map(), opens = null) {
   // Only a drop seen rising this poll. The session can keep naming a drop after it was earned
   // while the campaign's next drop does the rising, and that is ordinary earning.
   if (!session?.dropId || !risen?.has(session.dropId) || !streams.some((st) => st.login === session.login)) return null;
@@ -199,18 +206,41 @@ export function wastedCredit(session, active, streams, risen, running, names = n
   const channelBadges = (streams.find((st) => st.login === session.login)?.badges || []).flatMap((b) => b.drops || []);
   const badge = streams.flatMap((st) => st.badges || []).flatMap((b) => b.drops || []).find((d) => d.id === session.dropId)
     || channelBadges.find((d) => risen.has(d.id) && d.required > 0 && (d.minutes ?? 0) > d.required);
-  const what = earned
-    ? `${channel}'s ${badge?.name || names.get(session.dropId) || 'drop'} is already earned, but Twitch is still crediting it, so these minutes do nothing.`
-    : `Twitch is crediting ${channel}, but ${drop.name} cannot finish before its campaign ends.`;
-  // Another open tab with a drop it can still finish. Twitch decides which one gets the minutes.
-  let alt = null;
+  const name = earned ? badge?.name || names.get(session.dropId) || 'drop' : drop.name;
+  // The next start belongs to the session's drop. A badge past its requirement named instead of it
+  // does not repeat, so "the next one can start" would be untrue for it.
+  const ownDrop = !badge || badge.id === session.dropId;
+  return wastedView({ reason: earned ? 'earned' : 'too_late', channel, name, opens: opens != null && earned && ownDrop ? opens : null }, session, active, streams);
+}
+
+/**
+ * Another open tab with a drop it can still finish. Twitch decides which one gets the minutes.
+ * Asked every poll, quiet ones included: a closed second tab must not leave the amber behind.
+ */
+function altTab(session, active, streams) {
   for (const st of streams) {
-    if (st.login === session.login || st.channelState !== 'eligible') continue;
+    if (st.login === session?.login || st.channelState !== 'eligible') continue;
     const d = active.find((x) => st.campaignIds?.includes(x.campaignId) && x.remaining > 0 && !x.atRisk);
-    if (d) { alt = { name: st.displayName || st.login, game: d.game || d.campaign }; break; }
+    if (d) return { name: st.displayName || st.login, game: d.game || d.campaign };
   }
-  const fix = alt ? ` ${alt.name} can earn ${alt.game}: close or pause ${channel}.` : '';
-  return { reason: earned ? 'earned' : 'too_late', message: what + fix };
+  return null;
+}
+
+/**
+ * The wasted judgement as shown. Amber only when there is something to do (Tyler, 2026-11-20):
+ * another open tab can earn, or the drop cannot finish in time. Already earned with nothing else
+ * open is done, said plainly in grey, with the next start when Twitch's reward inventory gives one.
+ */
+export function wastedView(w, session, active, streams) {
+  const alt = altTab(session, active, streams);
+  const fix = alt ? ` ${alt.name} can earn ${alt.game}: close or pause ${w.channel}.` : '';
+  const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  let message;
+  if (w.reason === 'too_late') message = `Twitch is crediting ${w.channel}, but ${w.name} cannot finish before its campaign ends.${fix}`;
+  else if (alt) message = `${w.channel}'s ${w.name} is already earned, but Twitch is still crediting it, so these minutes do nothing.${fix}`;
+  else if (w.opens != null) message = `${w.name} is earned for today. The next one can start at ${at(w.opens)}.`;
+  else message = `${w.name} is already earned, and nothing else open can earn right now.`;
+  return { reason: w.reason, channel: w.channel, name: w.name, opens: w.opens ?? null, actionable: !!alt, message };
 }
 
 function classifyPlayer(stream, rec, now) {
@@ -928,12 +958,17 @@ export function update(prev, obs, now) {
       ]), new Map([
         ...Object.entries(s.drops).filter(([, rec]) => rec?.name).map(([id, rec]) => [id.replace(/:total$/, ''), rec.name]),
         ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name])),
-      ]))
-      : keep ? prev.verdict.wasted : null;
+      ]), nextStart(session, s.rewardInv, now))
+      // A quiet poll keeps the judgement but asks again whether another tab can earn. A judgement
+      // saved by 0.1.8 or older has no name to rebuild from and is kept as it was.
+      : keep ? (prev.verdict.wasted.name ? wastedView(prev.verdict.wasted, session, s.active, streams) : prev.verdict.wasted) : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.
-    s.verdict = { code: 'idle', hasStreams: true, limited: true, message: 'Cannot check whether your open streams can earn Drops right now.' };
+    // since: how long a lookup has been failing, from the channels themselves, so warning() can
+    // wait GAP_MS. Clamped by resumeAt, as below: a laptop waking is not three minutes of failure.
+    const since = Math.max(s.resumeAt ?? 0, Math.min(...streams.filter((st) => st.channelState === 'unknown').map((st) => st.stateSince ?? now)));
+    s.verdict = { code: 'idle', hasStreams: true, limited: true, since, message: 'Cannot check whether your open streams can earn Drops right now.' };
   } else if (!candidates.length && streams.some((st) => st.channelState === 'reward')) {
     // Quiet on purpose: no warning, no hang, no reload. A flat reading here was normal while
     // Twitch counted every minute (2026-11-18), so it says nothing about whether it is counting.
@@ -942,10 +977,11 @@ export function update(prev, obs, now) {
     const total = (s.pending || []).find((d) => d.runningTotal && st.campaignIds.includes(d.campaignId));
     const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const message = st.rewardOpens != null
-      ? `${st.displayName}: today's reward drop is earned, as Twitch's reward inventory reports it. The next one can start ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
+      ? `${st.displayName}: Twitch says today's reward is earned. The next one can start ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
       : shown
-        ? `${st.displayName}'s ${shown.name}: ${Math.min(shown.minutes, shown.required)} of ${shown.required} minutes, as Twitch reports it. Twitch's numbers for these have not been seen to rise every minute, so a flat reading is not judged here.`
-        : `${st.displayName}'s ${total?.name || 'reward'} is a reward Twitch counts in its own windows, which could not be read this time, so its progress is unknown here until minutes rise. Twitch's Drops page shows it.`;
+        ? `${st.displayName}'s ${shown.name}: ${Math.min(shown.minutes, shown.required)} of ${shown.required} minutes, as Twitch reports it.`
+        // Why a flat reading here is not judged is in states.js (reward); it is not the user's concern.
+        : `Progress for ${st.displayName}'s ${total?.name || 'reward'} could not be read. Twitch's Drops page shows it.`;
     s.verdict = { code: 'idle', hasStreams: true, reward: true, message };
   } else if (!candidates.length && streams.some((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState))) {
     const open = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
@@ -992,7 +1028,8 @@ export function update(prev, obs, now) {
       code: 'idle',
       hasStreams: true,
       badgeLeft: true,
-      message: `Twitch last read ${name}'s badge${read}, then dropped it from its in-progress list, which is how an earned badge has looked. The badge picker in ${name}'s chat shows whether you have it.`,
+      // The evidence (left the in-progress list one reading short) is in states.js badge_left.
+      message: `Twitch stopped listing ${name}'s badge${read}, so you have probably earned it. The badge picker in ${name}'s chat shows whether you have it.`,
     };
   } else if (!candidates.length) {
     const hasStreams = streams.some((st) => st.login);
@@ -1039,8 +1076,13 @@ export function warning(state, now) {
       return { key: `stalled:${v.since}`, title: 'Drops not counting', short: `Drops not counting for ${min(v.since)} min`, message: v.message };
     case 'idle':
       // A drop that has not started or opens later is being tracked fine: Twitch is not counting
-      // it. Same words as the panel's headline.
-      if (v.limited && (v.unstarted || v.blocked)) return { key: 'limited', title: 'Drops not counting yet', short: 'Drops not counting yet', message: v.message };
+      // it, and there is usually nothing to do but wait. The panel says so; no pill, no
+      // notification (Tyler, 2026-11-20).
+      if (v.limited && (v.unstarted || v.blocked)) return null;
+      // A failed channel lookup waits GAP_MS like a failed poll does: one blip is not news.
+      // Before 2026-11-20 it notified on the first failed lookup. A badge without minutes has
+      // already waited STALL_MS to get here, and has no since.
+      if (v.limited && !v.badge && v.since != null && now - v.since < GAP_MS) return null;
       if (v.limited) return { key: 'limited', title: 'Drops not being tracked', short: 'Drops not being tracked', message: v.message };
       return v.lost ? { key: `lost:${state.lostAt}`, title: 'Stopped earning Drops', short: 'Stopped earning Drops', message: v.message } : null;
     case 'api_changed':
@@ -1094,28 +1136,38 @@ export function events(prev, next, now) {
 
 export function badge(state, prefs = {}) {
   const claim = prefs.claimReminders !== false && state.unclaimed?.some((u) => u.campaignActive);
-  switch (state.verdict.code) {
+  const v = state.verdict;
+  // One colour rule with the chip and panel (states.js verdictTone).
+  const tone = verdictTone(v);
+  const color = TONE_COLORS[tone];
+  switch (v.code) {
     // The toolbar badge shows about 3 characters: HUNG was cut to HUN in Brave (2026-11-13), and
     // STOP is as long. The words go in the icon's tooltip instead.
-    case 'stalled': return { text: '!', color: '#d92d20', title: 'Drops Tracker: Drops not counting' };
-    case 'signed_out': return { text: 'OFF', color: '#667085' };
+    case 'stalled': return { text: '!', color, title: 'Drops Tracker: Drops not counting' };
+    case 'signed_out': return { text: 'OFF', color, title: 'Drops Tracker: log in to twitch.tv' };
     case 'error':
-    case 'api_changed': return { text: 'ERR', color: '#667085' };
+    case 'api_changed': return { text: '?', color, title: 'Drops Tracker: cannot read Twitch' };
     default: break;
   }
   // Tracking having stopped outranks a reward waiting, which can wait.
-  if (state.verdict.lost) return { text: '!', color: '#b54708', title: 'Drops Tracker: stopped earning Drops' };
-  if (state.verdict.limited) return { text: '?', color: '#b54708' };
+  if (v.lost) return { text: '!', color, title: 'Drops Tracker: stopped earning Drops' };
+  if (v.limited && tone === 'unknown') return { text: '?', color };
   // A claim waiting does not colour the badge: amber read as something wrong (2026-11-09). The
   // number keeps showing the next drop; the chip and panel carry the claim.
   // A percentage only for the campaign Twitch names as credited: with the session on a drop not
   // listed (a reward read as a running total), the top drop is not what is rising.
   const cc = state.creditedCampaign;
   const top = state.active[0] && (!cc || state.active[0].campaignId === cc) ? state.active[0] : null;
-  if (state.verdict.code === 'earning' && (top || !claim)) {
-    return { text: top ? `${top.pct}%` : 'ON', color: state.verdict.slow || state.verdict.wasted ? '#b54708' : '#067647' };
+  if (v.code === 'earning' && v.wasted?.reason === 'earned') {
+    // Already earned: "!" when another open tab can earn, nothing when there is nothing to do.
+    if (v.wasted.actionable) return { text: '!', color, title: 'Drops Tracker: close the tab Twitch is crediting' };
+    // A drop still in progress on the credited campaign keeps its percentage, as on the chip.
+    if (top) return { text: `${top.pct}%`, color };
+    if (claim) return { text: 'CLM', color: TONE_COLORS.info };
+    return { text: '', color };
   }
-  if (claim) return { text: 'CLM', color: '#6941c6' };
-  if (state.verdict.code === 'waiting') return { text: '...', color: '#175cd3' };
-  return { text: '', color: '#667085' };
+  if (v.code === 'earning' && (top || !claim)) return { text: top ? `${top.pct}%` : 'ON', color };
+  if (claim) return { text: 'CLM', color: TONE_COLORS.info };
+  if (v.code === 'waiting') return { text: '...', color };
+  return { text: '', color };
 }

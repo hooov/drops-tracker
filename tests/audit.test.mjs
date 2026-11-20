@@ -137,7 +137,8 @@ for (const [label, d, words] of [
     assert.equal(s.verdict.limited, true);
     assert.match(s.verdict.message, words);
     assert.notEqual(s.verdict.code, 'stalled');
-    assert.ok(warning(s, T0 + 6 * MIN));
+    // No pill or notification since 2026-11-20: usually nothing to do but wait; the panel says why.
+    assert.equal(warning(s, T0 + 6 * MIN), null);
   });
 }
 
