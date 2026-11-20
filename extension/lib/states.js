@@ -44,6 +44,9 @@ export const CHANNEL_STATES = {
   no_drops: { label: 'No Drops on this channel' },
   sub_only: { label: 'Drops here only come from subs' },
   badge_unseen: { label: 'Badge timer, no minutes reported' },
+  // Every timed badge here left Twitch's in-progress list within a minute or two of its
+  // requirement, which is how an earned badge looked on 2026-11-20 (tracker.js leftBadges).
+  badge_left: { label: 'Badge likely earned' },
   blocked: { label: 'Next drop cannot count yet' },
   finished: { label: 'Campaign finished' },
   offline: { label: 'Offline' },
@@ -70,7 +73,7 @@ export const VERDICT_CODES = {
   waiting: ['since'], // Something can earn; the first minute has not landed yet.
   earning: ['channel', 'slow', 'wasted'],
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'message'],
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'badgeLeft', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],
@@ -94,6 +97,9 @@ export function verdictTone(v) {
     default: return 'idle';
   }
 }
+
+/** Reward inventory groups read at most (twitch.js): an answer this long may have been cut short. */
+export const MAX_REWARD_GROUPS = 200; // Two campaigns, eight groups, seen on 2026-11-19.
 
 /** Watched minutes before a credit rate means anything: below this, "slow" is not judged. */
 export const RATE_MIN_MINUTES = 10;

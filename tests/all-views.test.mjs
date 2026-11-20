@@ -27,7 +27,7 @@ const json = (body) => ({ status: 200, ok: true, json: async () => body });
  * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
  * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
  */
-function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true }) {
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true }) {
   const answer = structuredClone(inv);
   const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
   b.id = BADGE;
@@ -50,7 +50,8 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
           return isEcho
             ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } }
             : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', stream: { id: '1' } } } };
-        case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho ? { id: ECHO_ID, viewerDropCampaigns: [] } : reward } };
+        // rewardListed false: GTAVI's campaign gone from the channel's list (2026-11-20, 09:55 UTC).
+        case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho || !rewardListed ? { id: isEcho ? ECHO_ID : cc.channelID, viewerDropCampaigns: [] } : reward } };
         case 'ChannelDropsCampaigns': return isEcho || !badgeListed ? { data: { channelDropCampaigns: isEcho ? [] : cc.answer.data.channelDropCampaigns.filter((c) => c.id !== BADGE) } } : cc.answer;
         case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: isEcho ? badgeFx.zeroedSession : session } } };
         default: throw new Error(o.operationName);
@@ -170,4 +171,42 @@ test('the badge campaign over: gone from both answers', async () => {
   assert.match(v.headline[1], /GTA DVD Chest is already earned/);
   assert.equal(v.toolbar, 'ON #b54708');
   assert.deepEqual(v.badgesTab, ['No badge drops on this channel.']);
+});
+
+// 2026-11-20, suzy (Foxtrot here; times moved into the fixtures' campaign window): the badge read
+// 179 of 180 at 08:14 UTC; at the next poll its group was gone from Twitch's in-progress list and
+// the session's GTAVI running total took the minutes (today's DVD drop already 60 of 60). At 09:55
+// GTAVI's campaign left the channel's list. Then nothing rose. The panel said "Cannot track this
+// badge" with a desktop notification, the Badges tab "Watch 1m to earn", and the minute the
+// campaign left counted the running total against the window's 60 as hundreds of minutes earned.
+test('the badge leaving Twitch\'s in-progress list at 179, then GTAVI leaving the channel', async () => {
+  const dvd = { minutes: 60, grants: 2, windowEnd: WINDOW_END };
+  const rising = steps(4, (i) => ({ badge: 176 + i, dvd, total: 444 + i }));
+  const left = steps(4, (i) => ({ badge: null, dvd, total: 448 + i }));
+  const unlisted = steps(3, (i) => ({ badge: null, dvd, total: 452 + i, rewardListed: false }));
+  const flat = steps(16, () => ({ badge: null, dvd, total: 454, rewardListed: false }));
+  const start = Date.parse('2026-11-19T20:11:00Z');
+
+  const atLeft = await run(start, [...rising, ...left]);
+  const vLeft = views(atLeft.s, atLeft.now);
+  show('badge left at 179', vLeft);
+  assert.match(vLeft.badgesTab[0], /Likely earned/, 'not "Watch 1m to earn"');
+  assert.equal(vLeft.wasted, 'earned');
+  assert.match(vLeft.headline[1], /GTA DVD Chest is already earned/);
+
+  const atUnlisted = await run(start, [...rising, ...left, ...unlisted]);
+  const vUnlisted = views(atUnlisted.s, atUnlisted.now);
+  show('GTAVI unlisted, total still rising', vUnlisted);
+  assert.ok(atUnlisted.s.timeline.every((t) => (t.d ?? 0) <= 1), `one minute a minute, got ${atUnlisted.s.timeline.map((t) => t.d).join(',')}`);
+  assert.match(vUnlisted.headline[1], /GTA DVD Chest is already earned/, 'the name, not "Foxtrot\'s drop"');
+
+  const end = await run(start, [...rising, ...left, ...unlisted, ...flat]);
+  const v = views(end.s, end.now);
+  show('nothing rising', { ...v, notified: end.fired.map((e) => e.type) });
+  assert.equal(v.states, 'foxtrot:badge_left');
+  assert.deepEqual(v.headline, ['Badge likely earned', "Twitch last read Foxtrot's badge at 179 of 180 minutes, then dropped it from its in-progress list, which is how an earned badge has looked. The badge picker in Foxtrot's chat shows whether you have it."]);
+  assert.equal(v.warning, null, 'no "Drops not being tracked" notification');
+  assert.notEqual(v.toolbar.split(' ')[0], '?');
+  assert.equal(v.chipFoxtrot.tone === 'warn', false);
+  assert.match(v.badgesTab[0], /Likely earned/);
 });

@@ -326,7 +326,8 @@ test('old or damaged saved state cannot crash a poll', () => {
     assert.ok(s.verdict.code, JSON.stringify(old));
   }
   const migrated = update({ drops: { [POUCH]: 195 } }, obs(196, []), T0);
-  assert.deepEqual(migrated.drops[POUCH], { peak: 196, low: 0, at: T0 });
+  // The name rides along so a warning can still name a drop whose campaign is no longer listed.
+  assert.deepEqual(migrated.drops[POUCH], { peak: 196, low: 0, at: T0, name: 'Pouch of Violet Dust' });
 });
 
 const claimCase = (laterMinutes) => {
