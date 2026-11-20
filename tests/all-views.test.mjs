@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, events, badge, warning } from '../extension/lib/tracker.js';
+import { update, events, badge, warning, rewardsDue } from '../extension/lib/tracker.js';
 import { chipView, channelDrops } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { verdictText } from '../extension/lib/panel.js';
@@ -27,7 +27,7 @@ const json = (body) => ({ status: 200, ok: true, json: async () => body });
  * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
  * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
  */
-function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true }) {
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false }) {
   const answer = structuredClone(inv);
   const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
   b.id = BADGE;
@@ -50,9 +50,10 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
           return isEcho
             ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } }
             : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', stream: { id: '1' } } } };
-        // rewardListed false: GTAVI's campaign gone from the channel's list (2026-11-20, 09:55 UTC).
-        case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho || !rewardListed ? { id: isEcho ? ECHO_ID : cc.channelID, viewerDropCampaigns: [] } : reward } };
-        case 'ChannelDropsCampaigns': return isEcho || !badgeListed ? { data: { channelDropCampaigns: isEcho ? [] : cc.answer.data.channelDropCampaigns.filter((c) => c.id !== BADGE) } } : cc.answer;
+        // dismissed: GTAVI's chat highlight dismissed, so only ChannelDropsCampaigns lists it (2026-11-20).
+        // rewardListed false: gone from both answers.
+        case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho || !rewardListed || dismissed ? { id: isEcho ? ECHO_ID : cc.channelID, viewerDropCampaigns: [] } : reward } };
+        case 'ChannelDropsCampaigns': return { data: { channelDropCampaigns: isEcho ? [] : cc.answer.data.channelDropCampaigns.filter((c) => (badgeListed || c.id !== BADGE) && (rewardListed || c.id === BADGE)).map((c) => (dismissed && c.id !== BADGE ? { ...c, hasViewerDismissedHighlight: true } : c)) } };
         case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: isEcho ? badgeFx.zeroedSession : session } } };
         default: throw new Error(o.operationName);
       }
@@ -61,13 +62,14 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
 }
 
 /** Polls a minute apart; returns the last state and every event raised on the way. */
-async function run(start, steps) {
+async function run(start, steps, { realAsk = false } = {}) {
   let s;
   const fired = [];
   for (const [i, step] of steps.entries()) {
     const t = start + i * MIN;
     const logins = step.echo ? ['foxtrot', 'echo_247'] : ['foxtrot'];
-    const snap = await fetchSnapshot('tok', logins, twitchAt(step), {}, { askRewards: true });
+    // realAsk: the reward inventory only when background.js would ask it, not every poll.
+    const snap = await fetchSnapshot('tok', logins, twitchAt(step), {}, { askRewards: realAsk ? rewardsDue(s, t) : true, now: t });
     const player = (base) => ({ hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: base + i * 60 });
     const streams = [{ tabId: 1, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: player(100) }];
     if (step.echo) streams.push({ tabId: 2, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: { ...player(500), hidden: true } });
@@ -209,4 +211,44 @@ test('the badge leaving Twitch\'s in-progress list at 179, then GTAVI leaving th
   assert.notEqual(v.toolbar.split(' ')[0], '?');
   assert.equal(v.chipFoxtrot.tone === 'warn', false);
   assert.match(v.badgesTab[0], /Likely earned/);
+});
+
+// 2026-11-20, yoon_froggy (Foxtrot here) with suzy_247 (echo_247) open: GTAVI's chat highlight had
+// been dismissed, so Twitch's highlight answer listed nothing for the channel while
+// ChannelDropsCampaigns still listed GTAVI. The reward inventory read today's window 60 of 60 at
+// 17:49:43, the window ended 17:50:15, and Twitch's own panel then counted the next one (2 of 60,
+// window from 17:51:58). The panel said "already earned ... these minutes do nothing", and Open
+// streams "No Drops on this channel" for both tabs.
+const ROLL = Date.parse('2026-11-20T17:50:15Z');
+const NEXT_END = Date.parse('2026-11-21T17:51:58Z');
+const before = (i) => ({ badge: null, badgeListed: false, dvd: { minutes: 60, grants: 2, windowEnd: ROLL }, total: 630 + i, echo: true });
+const after = (i, extra) => ({ badge: null, badgeListed: false, dvd: { minutes: 1 + i, grants: 2, windowEnd: NEXT_END }, total: 633 + i, echo: true, ...extra });
+
+test('GTAVI dismissed on the channel: still listed, and the next window reads as earning', async () => {
+  // Listed until the highlight was dismissed (as at 09:55 that morning), then only in ChannelDropsCampaigns.
+  const listedThenDismissed = (list) => list.map((x, i) => ({ ...x, dismissed: i >= 2 }));
+  const pre = await run(Date.parse('2026-11-20T17:47:00Z'), listedThenDismissed(steps(3, before)));
+  const vPre = views(pre.s, pre.now);
+  show('dismissed, window done', vPre);
+  assert.equal(vPre.wasted, 'earned', "today's window really is done: that warning is right");
+  assert.match(vPre.headline[1], /GTA DVD Chest is already earned/);
+
+  const { s, now } = await run(Date.parse('2026-11-20T17:47:00Z'), listedThenDismissed([...steps(3, before), ...steps(6, (i) => after(i))]));
+  const v = views(s, now);
+  show('dismissed, next window', v);
+  assert.deepEqual([v.verdict, v.wasted, v.warning], ['earning', null, null], 'not "these minutes do nothing"');
+  assert.equal(v.headline[0], 'Earning on Foxtrot');
+  assert.doesNotMatch(v.states, /foxtrot:no_drops/, 'not "No Drops on this channel"');
+  assert.deepEqual(v.dropsFoxtrot.ids.includes('GTA DVD Chest'), true);
+  assert.equal(v.chipFoxtrot.tone, 'ok');
+  assert.deepEqual(v.badgesTab, ['No badge drops on this channel.'], 'right that day: the badge campaign had ended');
+});
+
+test('GTAVI listed, then in neither answer: a window that ended is asked again, and the total is not called earned', async () => {
+  const { s, now } = await run(Date.parse('2026-11-20T17:47:00Z'), [...steps(3, before), ...steps(6, (i) => after(i, { rewardListed: false }))], { realAsk: true });
+  const v = views(s, now);
+  show('unlisted, next window', v);
+  const g = s.rewardInv.groups.find((x) => x.id === DVD);
+  assert.equal(g.windowEnd, NEXT_END, 'the inventory was asked again after 17:50:15, not held for 15 minutes');
+  assert.deepEqual([v.verdict, v.wasted], ['earning', null], 'a running total of 638 is not a finished 60-minute drop');
 });

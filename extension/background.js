@@ -1,5 +1,5 @@
 import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, TwitchError } from './lib/twitch.js';
-import { update, events, badge, warning, REWARD_HOLD_MS } from './lib/tracker.js';
+import { update, events, badge, warning, rewardsDue } from './lib/tracker.js';
 import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
 import { logEntry, addMinute } from './lib/minutelog.js';
@@ -198,8 +198,9 @@ async function observe(prev) {
   const relevant = tabs.filter((t) => t.login || (t.player?.hasVideo && !t.player.paused));
   try {
     const { hashes } = await chrome.storage.local.get('hashes');
-    // The reward inventory at least every REWARD_HOLD_MS, for badges no channel lists.
-    const askRewards = !(prev?.rewardCheck?.at && Date.now() - prev.rewardCheck.at < REWARD_HOLD_MS);
+    // The reward inventory at least every REWARD_HOLD_MS, for badges no channel lists, and once
+    // after a window it read has ended.
+    const askRewards = rewardsDue(prev, Date.now());
     const snap = await fetchSnapshot(cookie.value, relevant.map((t) => t.login).filter(Boolean), fetch, hashes ?? {}, { askRewards });
     await saveWorkingHashes(snap.working);
     return {
