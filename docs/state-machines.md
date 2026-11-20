@@ -41,7 +41,9 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 
 `wasted` (`wastedCredit()`): the session's drop rose this poll but is already earned, or cannot
 finish before its campaign ends, while the credited channel is open here. A quiet poll keeps the
-last judgement so the warning does not flicker.
+last judgement so the warning does not flicker. A session drop the reward inventory says repeats
+is never "earned" from its session minutes (a running total) unless its window is still open at
+its requirement or every repeat is granted (`openWindowUnknown()`).
 
 Colour: `verdictTone()` in states.js, for the panel and the chip. The badge (`badge()`), the pill
 and notification (`warning()`), the chip text (`chipView()` in chip.js) and the panel text
@@ -74,7 +76,8 @@ drop is earned and the next can start later. The reward inventory answer is kept
 `state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
 which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
-leaves out, and at least every `REWARD_HOLD_MS` while any channel is live. `state.unplacedBadges`
+leaves out, at least every `REWARD_HOLD_MS` while any channel is live, and once after a window
+it read has ended (`rewardsDue()`). `state.unplacedBadges`
 (`unplacedBadges()`): its badge campaigns that no open channel lists, each with its first and
 latest minutes; `rising` when they went up. Moved only by a fresh answer, and held when an open
 channel's list could not be read. It changes no channel state or verdict: a rising one is said at

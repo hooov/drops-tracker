@@ -142,6 +142,33 @@ export function creditRate(timeline) {
  * 95 left in its campaign. Twitch credits one channel at a time and nothing documented lets a
  * viewer choose, so the only remedy is stopping the stream it picked, which must be open here.
  */
+/**
+ * The session's drop when the reward inventory says it repeats and its current window is not known
+ * to be done: its session minutes are a running total, so "over the requirement" proves nothing.
+ * Done means a window still open at its requirement, or every repeat granted. Seen 2026-11-20: the
+ * inventory read 60 of 60 at 17:49:43 with the window ending 17:50:15; Twitch then counted the next
+ * window (2 of 60) while the running total 637 read as "already earned" for minutes on end.
+ */
+export function openWindowUnknown(session, rewardInv, now) {
+  const g = (rewardInv?.groups || []).find((x) => x.id === session?.dropId && x.repeatTimes);
+  if (!g) return [];
+  const allGranted = g.grants != null && g.grants >= g.repeatTimes;
+  const doneToday = g.windowEnd != null && now < g.windowEnd && typeof g.minutes === 'number' && g.minutes >= g.required;
+  return allGranted || doneToday ? [] : [g.id];
+}
+
+/**
+ * Whether this poll should ask the reward inventory. At least every REWARD_HOLD_MS, and also once
+ * a window it last read has ended since: the 15-minute hold kept a closed window's 60 of 60 for
+ * 14 minutes after Twitch had started the next one (2026-11-20). One extra call per window.
+ */
+export function rewardsDue(prev, now) {
+  const at = prev?.rewardCheck?.at;
+  if (!at || now - at >= REWARD_HOLD_MS) return true;
+  const read = prev?.rewardInv?.at ?? at;
+  return (prev?.rewardInv?.groups || []).some((g) => g.windowEnd != null && g.windowEnd > read && g.windowEnd <= now);
+}
+
 export function wastedCredit(session, active, streams, risen, running, names = new Map()) {
   // Only a drop seen rising this poll. The session can keep naming a drop after it was earned
   // while the campaign's next drop does the rising, and that is ordinary earning.
@@ -888,6 +915,7 @@ export function update(prev, obs, now) {
         // for its next window, so the session's running total rising on it really is wasted
         // (all-views check, 2026-11-19; an earlier fix had excluded it and turned that green).
         ...s.active.filter((d) => d.unjudged).map((d) => d.id),
+        ...openWindowUnknown(session, s.rewardInv, now),
       ]), new Map([
         ...Object.entries(s.drops).filter(([, rec]) => rec?.name).map(([id, rec]) => [id.replace(/:total$/, ''), rec.name]),
         ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name])),
