@@ -10,7 +10,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 
 | You see | Machine |
 |---|---|
-| Wrong headline in the panel ("Earning", "Not counting", "Stopped earning", "Cannot track") or wrong chip colour | [Verdict](#1-verdict) |
+| Wrong headline in the panel ("Earning", "Not counting", "Stopped earning", "Cannot track", "Badge likely earned") or wrong chip colour | [Verdict](#1-verdict) |
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
@@ -33,7 +33,9 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 - `waiting`: something can earn and the first minute has not landed.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
 - `idle`: nothing open can earn. `lost` (was earning, the tab can no longer), `limited` (cannot
-  tell: lookups failed, a badge timer, or the next drop cannot count yet). Only idle carries these.
+  tell: lookups failed, a badge timer, or the next drop cannot count yet), `badgeLeft` (a channel
+  is `badge_left`: "Badge likely earned", grey, no warning, the last reading said). Only idle
+  carries these.
   `lost` lasts `LOST_SHOWN_MS` (10 min) from `lostAt`, then settles to a plain idle and does not
   come back until something earns again: left amber with nothing to act on, it read as a fault.
 
@@ -77,6 +79,14 @@ leaves out, and at least every `REWARD_HOLD_MS` while any channel is live. `stat
 latest minutes; `rising` when they went up. Moved only by a fresh answer, and held when an open
 channel's list could not be read. It changes no channel state or verdict: a rising one is said at
 the top of the Badges tab, and all are counted in Debug.
+
+`state.leftBadges` (`leftBadges()`): badge groups seen leaving the in-progress list, `{ minutes,
+readAt }` of their last reading. Only a transition counts: listed in the last good answer, absent
+from this poll's fresh one (not one cut short at `MAX_REWARD_GROUPS`); back in the list clears it;
+newest 20 kept. Within `LEFT_NEAR_MINUTES` (2) of the requirement it reads as likely earned: a
+channel badge whose every timed drop is like that makes its channel `badge_left` instead of
+`badge_unseen`, and the Badges tab line says "Likely earned". Further off, the line says it left
+and why is unknown, and the channel stays `badge_unseen`.
 
 ## 5. Player state
 `stream.playerState`, from `classifyPlayer()`: asleep (tab discarded or frozen by the browser),

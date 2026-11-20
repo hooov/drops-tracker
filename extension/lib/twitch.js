@@ -6,6 +6,7 @@
 // - Only Inventory is essential. Losing anything else narrows what can be said, not everything.
 
 import { RESERVED } from './chip.js';
+import { MAX_REWARD_GROUPS } from './states.js';
 
 export const GQL_URL = 'https://gql.twitch.tv/gql';
 export const CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
@@ -33,7 +34,6 @@ export const PINNED = {
   // Answers signed out; the only place a creator badge campaign was found that day.
   ChannelDropsCampaigns: ['bc073ff0bb13797898f83e93dc8009838545dec95ff7fe92243c8fa3a740f7e7'],
 };
-const MAX_REWARD_GROUPS = 200; // Two campaigns, eight groups, seen on 2026-11-19.
 const REWARD_WAIT_MS = 4000;
 
 // Fields of Inventory that failing does not affect tracking. Seen failing constantly.

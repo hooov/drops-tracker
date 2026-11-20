@@ -3,7 +3,7 @@
 // the current observation each poll, so they cannot outgrow what Twitch currently reports.
 // The states it writes (verdict codes, causes, channel and player states) are declared in
 // states.js; the map of how they move is docs/state-machines.md.
-import { PLAYER_STATES, RATE_MIN_MINUTES } from './states.js';
+import { PLAYER_STATES, RATE_MIN_MINUTES, MAX_REWARD_GROUPS } from './states.js';
 import { span } from './directory.js';
 
 export { RATE_MIN_MINUTES };
@@ -26,6 +26,7 @@ const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can s
 // "Stopped earning" is news when it happens; left amber with nothing to do about it, it reads as a
 // fault. After this it settles to a plain idle, and stays there until something can earn again.
 export const LOST_SHOWN_MS = 10 * 60000;
+const LEFT_BADGES_MAX = 20; // Badge groups remembered as having left the in-progress list.
 
 export function emptyState() {
   return {
@@ -208,7 +209,7 @@ function badgeTooLate(stream, now) {
   return worst;
 }
 
-function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set()) {
+function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null) {
   if (!stream.login) return 'not_channel';
   // No entry at all means it was not looked up (past the channel limit), not that it is offline.
   if (!stream.channel || stream.channel.unknown) return 'unknown';
@@ -218,9 +219,12 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   const owned = new Set(rewards.ids);
   let unstarted = false;
   let badgeUnseen = false;
+  let badgeLeft = false;
   let isBlocked = false;
   let reward = false;
   for (const c of campaigns) {
+    // A channel badge every timed drop of which left Twitch's in-progress list at its requirement.
+    const left = !!leftNear && c.channelOwned && c.watchDrops?.length > 0 && c.watchDrops.every((d) => leftNear.has(d.id));
     if (active.some((d) => d.campaignId === c.id && d.remaining > 0 && !d.unjudged)) return 'eligible';
     // A reward drop earned for today waits for its next window: good news, and Twitch's numbers,
     // so the quiet reward state rather than a "not counting yet" warning every day.
@@ -237,14 +241,16 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
     }
     // Read from the session with a drop it reports nothing for: the same as never started.
     if (pending.has(c.id)) {
-      if (c.channelOwned) badgeUnseen = true;
+      if (left) badgeLeft = true;
+      else if (c.channelOwned) badgeUnseen = true;
       else unstarted = true;
       continue;
     }
     if (inventoryIds.has(c.id)) continue;
     const allOwned = c.benefitIds?.length > 0 && c.benefitIds.every((id) => owned.has(id));
     if (allOwned) continue;
-    if (c.channelOwned) badgeUnseen = true;
+    if (left) badgeLeft = true;
+    else if (c.channelOwned) badgeUnseen = true;
     else unstarted = true;
   }
   // Not in the inventory could mean about to start, needs a linked account, or a finished
@@ -254,8 +260,10 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   if (unstarted) return 'unstarted';
   // A timer badge with no session: Twitch is not reporting its minutes. There is no game account
   // to link, and what a session looks like once a badge is earned has not been seen, so this may
-  // mean already earned. Not knowing is still worth saying.
-  return badgeUnseen ? 'badge_unseen' : 'finished';
+  // mean already earned. Not knowing is still worth saying. One that left the in-progress list at
+  // its requirement is badge_left: no warning, the evidence said instead (2026-11-20).
+  if (badgeUnseen) return 'badge_unseen';
+  return badgeLeft ? 'badge_left' : 'finished';
 }
 
 /**
@@ -295,6 +303,31 @@ export function unplacedBadges(prev, groups, placed, now) {
       };
     });
 }
+
+/**
+ * Badge groups seen leaving Twitch's in-progress reward list before reaching their requirement.
+ * On 2026-11-20 a 180-minute badge read 179 at 08:14 UTC; at the next poll its group was gone
+ * (every other group still listed) and the session's minutes moved to another drop: earned, by
+ * every sign but a reading of 180. Only a seen transition counts: in the last good answer, absent
+ * from this poll's fresh one, which is not cut short. A group back in the list drops its entry.
+ * Bound: LEFT_BADGES_MAX, newest kept.
+ */
+export function leftBadges(prev, before, groups, now) {
+  let out = Array.isArray(prev) ? prev : [];
+  if (!Array.isArray(groups) || groups.length >= MAX_REWARD_GROUPS) return out;
+  const listed = new Set(groups.map((g) => `${g.campaignId}/${g.id}`));
+  out = out.filter((x) => !listed.has(`${x.campaignId}/${x.id}`));
+  for (const g of before?.groups || []) {
+    if (!g.badge || g.earned || g.status === 'CLAIMED' || typeof g.minutes !== 'number' || !(g.required > 0)) continue;
+    const key = `${g.campaignId}/${g.id}`;
+    if (listed.has(key) || g.minutes >= g.required || out.some((x) => `${x.campaignId}/${x.id}` === key)) continue;
+    out = [...out, { campaignId: g.campaignId, id: g.id, minutes: g.minutes, required: g.required, readAt: before.at, at: now }];
+  }
+  return out.slice(-LEFT_BADGES_MAX);
+}
+
+/** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
+export const LEFT_NEAR_MINUTES = 2;
 
 function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
   const out = new Map();
@@ -558,7 +591,9 @@ function trackMinutes(previous, campaigns, sessions, firstGoodPoll, sessionOnly,
   const windowed = new Set(campaigns.flatMap((c) => (c.timeBasedDrops || []).filter((d) => d.window).map((d) => d.id)));
   const totals = new Set(campaigns.flatMap((c) => (c.timeBasedDrops || []).filter((d) => d.window || d.runningTotal).map((d) => d.id)));
   for (const x of sessions || []) {
-    const key = totals.has(x.dropId) ? `${x.dropId}:total` : x.dropId;
+    // A running total stays a running total once its campaign leaves the channel's list: under the
+    // drop's own ID it met the window's mark of 60 and counted 393 minutes in one poll (2026-11-20).
+    const key = totals.has(x.dropId) || peaks[`${x.dropId}:total`] ? `${x.dropId}:total` : x.dropId;
     if (windowed.has(x.dropId) && !peaks[key] && typeof x.minutes === 'number') {
       peaks[key] = { peak: x.minutes, low: 0, at: now, session: x.minutes }; // A baseline, never a gain.
       current.add(key);
@@ -673,6 +708,8 @@ export function update(prev, obs, now) {
   // unplaced: hold the marks.
   const blind = (obs.streams || []).some((st) => st.channel?.unknown || st.channel?.badgeLookupFailed);
   s.unplacedBadges = unplacedBadges(prev?.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
+  s.leftBadges = leftBadges(prev?.leftBadges, prev?.rewardInv, obs.rewardGroups, now);
+  const leftNear = new Set(s.leftBadges.filter((x) => x.required - x.minutes <= LEFT_NEAR_MINUTES).map((x) => x.id));
   // Fresh: answered this poll. A held answer is up to REWARD_HOLD_MS old, so a badge read from it
   // would look flat and must not be judged.
   const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups));
@@ -693,6 +730,15 @@ export function update(prev, obs, now) {
   const sessionOnly = new Set([...fromSessions, ...fromRewards].flatMap((c) => c.timeBasedDrops.flatMap((d) => [d.id, `${d.id}:total`])));
   const { peaks, added, risen } = trackMinutes(s.drops, allCampaigns, known, firstGoodPoll, sessionOnly, now);
   s.drops = peaks;
+  // Each mark keeps its drop's name, so a warning can still name a drop whose campaign has left
+  // the channel's list while Twitch credits it ("Foxtrot's drop", 2026-11-20). Bound: the marks.
+  for (const c of allCampaigns) {
+    for (const d of c.timeBasedDrops || []) {
+      const name = d.benefitEdges?.[0]?.benefit?.name || d.name;
+      if (!name) continue;
+      for (const key of [d.id, `${d.id}:total`]) if (peaks[key]) peaks[key].name = name;
+    }
+  }
   const gained = added > 0;
   if (gained) s.lastGainAt = now;
 
@@ -702,7 +748,7 @@ export function update(prev, obs, now) {
     const old = s.tabs[st.tabId];
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
-    const channelState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)));
+    const channelState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -739,7 +785,13 @@ export function update(prev, obs, now) {
       // Highest minutes seen, or null when Twitch has reported none. Sub drops never have any.
       badges: (st.channel?.badges || []).map((b) => ({
         ...b,
-        drops: b.drops.map((d) => ({ ...d, minutes: d.required > 0 ? s.drops[d.id]?.peak ?? null : null })),
+        drops: b.drops.map((d) => {
+          const minutes = d.required > 0 ? s.drops[d.id]?.peak ?? null : null;
+          // Seen leaving Twitch's in-progress list: its last reading, and whether that was close
+          // enough to the requirement to read as earned.
+          const gone = d.required > 0 ? s.leftBadges.find((x) => x.id === d.id && x.campaignId === b.id) : null;
+          return { ...d, minutes, ...(gone ? { left: { minutes: gone.minutes, at: gone.readAt, near: leftNear.has(d.id) } } : {}) };
+        }),
       })),
       badgeLookupFailed: !!st.channel?.badgeLookupFailed,
     };
@@ -836,7 +888,10 @@ export function update(prev, obs, now) {
         // for its next window, so the session's running total rising on it really is wasted
         // (all-views check, 2026-11-19; an earlier fix had excluded it and turned that green).
         ...s.active.filter((d) => d.unjudged).map((d) => d.id),
-      ]), new Map(allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name]))))
+      ]), new Map([
+        ...Object.entries(s.drops).filter(([, rec]) => rec?.name).map(([id, rec]) => [id.replace(/:total$/, ''), rec.name]),
+        ...allCampaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => [d.id, d.benefitEdges?.[0]?.benefit?.name || d.name])),
+      ]))
       : keep ? prev.verdict.wasted : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
   } else if (!candidates.length && unchecked) {
@@ -889,6 +944,19 @@ export function update(prev, obs, now) {
         unstarted: first.channelState === 'unstarted',
         message,
       };
+  } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
+    // Not a warning: one reading short of the requirement, then gone from the list, is how an
+    // earned badge looked (2026-11-20). The evidence is said, so it can be checked on Twitch.
+    const st = streams.find((x) => x.channelState === 'badge_left');
+    const name = st.displayName || st.login;
+    const d = (st.badges || []).flatMap((b) => b.drops || []).find((x) => x.left?.near);
+    const read = d ? ` at ${d.left.minutes} of ${d.required} minutes` : '';
+    s.verdict = {
+      code: 'idle',
+      hasStreams: true,
+      badgeLeft: true,
+      message: `Twitch last read ${name}'s badge${read}, then dropped it from its in-progress list, which is how an earned badge has looked. The badge picker in ${name}'s chat shows whether you have it.`,
+    };
   } else if (!candidates.length) {
     const hasStreams = streams.some((st) => st.login);
     s.verdict = { code: 'idle', hasStreams };

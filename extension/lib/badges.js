@@ -5,6 +5,18 @@ function dropRow(d, campaignEnd, now) {
   if (d.required <= 0) {
     return { ...d, pct: null, line: d.subs > 1 ? `${d.subs} subs or gifts to earn` : 'Subscribe or gift a sub to earn', atRisk: false };
   }
+  // Seen leaving Twitch's in-progress list (tracker.js leftBadges). One reading short of the
+  // requirement is how an earned badge looked on 2026-11-20; further off, why is not known.
+  if (d.left) {
+    return {
+      ...d,
+      pct: Math.floor((Math.min(d.left.minutes, d.required) / d.required) * 100),
+      line: d.left.near
+        ? `Likely earned: left Twitch's in-progress list at ${d.left.minutes} of ${d.required} min`
+        : `Left Twitch's in-progress list at ${d.left.minutes} of ${d.required} min, reason unknown`,
+      atRisk: false,
+    };
+  }
   // Twitch reports no minutes until the session names this drop, so "none reported" is not zero.
   if (d.minutes == null) {
     return { ...d, pct: null, line: `Watch ${span(d.required)} to earn`, atRisk: false };
