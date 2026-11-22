@@ -16,6 +16,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
 | A daily drop done for today missing from Watch Drops, or its clock pill / "Next day at" wrong | [Channel state](#4-channel-state), `state.resting` |
+| A reward drop's card names the list's reward ("GTA DVD Chest") or the wrong day, not the badge Twitch's panel shows | [Channel state](#4-channel-state), storage `dayRewards` |
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
@@ -112,7 +113,9 @@ progress is shown, as for a resting drop. `reward`: a campaign read from
 Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, except a channel's own non-repeating badge read fresh that poll, which is judged and makes its channel `eligible`) or a session running
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
-drop is earned and the next can start later. That drop is also kept as `state.resting`
+drop is earned and the next can start later. A repeating drop is named for the day's reward (name
+and art) when Twitch's channel page has given its day rewards (storage `dayRewards`, from
+`page-hook.js`; `dayIndex()` picks the day as Twitch's panel does), else for the list's reward. That drop is also kept as `state.resting`
 (`restingDrops()`, from `restUntil` set in `rewardCampaigns()`: Twitch's `nextEligibleAt`, else the
 window end), never in `active`. Watch Drops lists it on its own channel only, full with a clock pill
 counting down (`countdown()` in directory.js): beside that channel's other drops, or alone when no other
