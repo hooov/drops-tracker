@@ -167,6 +167,19 @@ test('the badge stopped, the reward inventory failing on every other call', asyn
   assert.deepEqual(fired.map((e) => e.type), ['warning'], 'one desktop notification, no flicker');
 });
 
+// The 19:03 case with the reward inventory failing on alternate polls, ending on a held poll and
+// on a fresh one: the session total keeps rising, so the wasted judgement reruns on held polls.
+test('19:03 UTC with the reward inventory failing on every other call', async () => {
+  for (const n of [6, 7]) {
+    const { s, now, fired } = await run(Date.parse('2026-11-19T19:00:00Z'), steps(n, (i) => ({ badge: 69 + i, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 319 + i, echo: true, rewardFails: i % 2 === 1 })));
+    const v = views(s, now);
+    show(`19:03 flaky, ${n} polls`, { ...v, notified: fired.map((e) => e.type) });
+    assert.deepEqual([v.verdict, v.wasted, v.warning], ['earning', null, null], `${n} polls`);
+    assert.deepEqual([v.chipFoxtrot.tone, v.chipEcho.tone], ['ok', 'ok'], `${n} polls`);
+    assert.deepEqual(fired.map((e) => e.type), [], `${n} polls`);
+  }
+});
+
 // A held reading is up to 15 minutes old: it must not raise a stall by itself while the badge rises.
 test('the badge rising, the reward inventory failing for four calls in a row', async () => {
   const mins = [103, 104, 105, 106, 107, 108, 109, 110, 111];

@@ -149,6 +149,30 @@ test('the channel list failing: unknown with Bones still shown, never "Sub drops
   assert.notEqual(v.verdict, 'stalled');
 });
 
+test('Bones flat with the channel list failing on every other call: still one stall warning', async () => {
+  const failed = { errors: [{ message: 'service error' }], data: null };
+  const mins = [1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4];
+  const { s, now, fired } = await run(mins.map((m, i) => ({ minutes: m, ...(i % 2 === 1 ? { cdc: failed } : {}) })));
+  const v = views(s, now);
+  assert.deepEqual([v.verdict, v.warning], ['stalled', 'Drops not counting']);
+  assert.deepEqual(fired, ['warning'], 'one desktop notification');
+});
+
+test('a live channel with no campaigns (Twitch answers null): "No Drops", not "Cannot check"', async () => {
+  const none = { data: { channelDropCampaigns: null } };
+  const highlight = { data: { channel: { id: fx.channelID, viewerDropCampaigns: null } } };
+  const f = twitchAt({ minutes: 1, cdc: none });
+  const g = async (u, init) => {
+    const res = await f(u, init);
+    const body = await res.json();
+    JSON.parse(init.body).forEach((o, i) => { if (o.operationName === 'DropsHighlightService_AvailableDrops') body[i] = highlight; });
+    return json(body);
+  };
+  const snap = await fetchSnapshot('tok', [fx.login], g, {}, { askRewards: false, now: START });
+  const c = snap.channels[fx.login];
+  assert.deepEqual([!!c.unknown, !!c.badgeLookupFailed, c.campaigns, !!c.subOnly], [false, false, [], false]);
+});
+
 test('the channel list answering with an error beside good data: the good data is read', async () => {
   const partial = { ...structuredClone(fx.channelCampaigns), errors: [{ message: 'service error', path: ['channelDropCampaigns', 0, 'rewardGroups'] }] };
   const { s, now } = await run(steps(4, (i) => ({ minutes: 1 + i, cdc: partial })));

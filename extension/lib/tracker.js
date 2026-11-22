@@ -196,7 +196,10 @@ export function wastedCredit(session, active, streams, risen, running, names = n
   // Minutes rising on another drop of the credited channel are being used, whatever the session
   // names (2026-11-19: it named GTAVI's DVD drop, done for the day, while the channel's badge rose).
   const channelCampaigns = streams.find((st) => st.login === session.login)?.campaignIds || [];
-  if (active.some((d) => d.id !== session.dropId && risen.has(d.id) && channelCampaigns.includes(d.campaignId))) return null;
+  // A held reading (rewardCampaigns) cannot show its rise this poll, so it may be the one rising:
+  // without this, every failed reward-inventory call read "already earned" while the badge rose
+  // (audit, 2026-11-22).
+  if (active.some((d) => d.id !== session.dropId && (risen.has(d.id) || d.held) && channelCampaigns.includes(d.campaignId))) return null;
   const drop = active.find((d) => d.id === session.dropId);
   // Over the requirement, not at it: the minute that reaches it is the one that earns the drop
   // (seen 2026-11-14, 30 of 30 flagged as waste for one poll). A badge credited on reads 362 of 360.
@@ -1012,6 +1015,11 @@ export function update(prev, obs, now) {
       // saved by 0.1.8 or older has no name to rebuild from and is kept as it was.
       : keep ? (prev.verdict.wasted.name ? wastedView(prev.verdict.wasted, session, s.active, streams) : prev.verdict.wasted) : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
+  } else if (!candidates.length && unchecked && prev?.verdict?.code === 'stalled'
+    && streams.some((st) => st.channelState === 'unknown' && prev.streams?.some((p) => p.tabId === st.tabId && p.channelState === 'eligible'))) {
+    // One failed lookup on the stalled tab says nothing new: the stall a fresh reading raised is
+    // kept, not swapped for "Cannot check" every other poll (audit, 2026-11-22). Never raised here.
+    s.verdict = prev.verdict;
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.
     // since: how long a lookup has been failing, from the channels themselves, so warning() can

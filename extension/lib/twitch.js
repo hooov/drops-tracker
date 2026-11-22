@@ -399,7 +399,12 @@ function earnsHere(crit, channelId, gameId, ownBadge = false) {
 function applyChannelCampaigns(channel, item, now, gameId) {
   const c = channel;
   if (c.unknown) return;
-  const list = item?.data?.channelDropCampaigns;
+  const failed = errorsOf(item).length > 0;
+  // null with no error is Twitch's "none": 5 of 6 live channels without drops answered exactly
+  // that (captured signed out, 2026-11-22). A missing key, another shape, or null beside an error
+  // is a failed lookup.
+  const raw = item?.data?.channelDropCampaigns;
+  const list = raw === null && !failed ? [] : raw;
   c.badges ||= [];
   c.campaigns ||= [];
   if (!Array.isArray(list)) {
@@ -407,7 +412,6 @@ function applyChannelCampaigns(channel, item, now, gameId) {
     if (!c.campaigns.length) c.unknown = true;
     return;
   }
-  const failed = errorsOf(item).length > 0;
   if (failed) c.badgeLookupFailed = true;
   let undecided = false;
   const have = new Set([...c.badges, ...c.campaigns].map((x) => x.id));

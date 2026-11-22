@@ -115,10 +115,14 @@ test('odd shapes never throw and never mark the channel unknown', async () => {
   assert.deepEqual(got, [[false, []], [false, []], [false, ['GTA DVD Drops']]]);
   // This answer is the channel's list (audit, 2026-11-22): not reading it, with nothing earnable
   // from the highlight answer, is unknown, not "No Drops".
-  for (const bad of [listed(null), { errors: [{ message: 'service error' }], data: null }]) {
+  for (const bad of [{ data: {} }, listed({}), { errors: [{ message: 'service error' }], data: null }, { errors: [{ message: 'service error' }], data: { channelDropCampaigns: null } }]) {
     const c = await channel(bad);
-    assert.deepEqual([!!c.unknown, c.badgeLookupFailed, c.campaigns], [true, true, []]);
+    assert.deepEqual([!!c.unknown, c.badgeLookupFailed, c.campaigns], [true, true, []], JSON.stringify(bad));
   }
+  // null with no error is Twitch's answer for a live channel with no campaigns (captured
+  // 2026-11-22, 5 of 6 such channels): "No Drops", never "Cannot check".
+  const none = await channel(listed(null));
+  assert.deepEqual([!!none.unknown, !!none.badgeLookupFailed, none.campaigns], [false, false, []]);
 });
 
 test('bounded: at most twenty campaigns on a channel', async () => {
