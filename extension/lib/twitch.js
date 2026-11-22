@@ -364,7 +364,7 @@ export const CREATOR_BADGE_BRAND = 'CREATOR_LED_BADGE_CAMPAIGN';
  * and the reward inventory join (group ID = drop ID, confirmed on that badge) work unchanged.
  * Failing only costs the badges it would add: badgeLookupFailed, never the channel unknown.
  */
-function applyChannelCampaigns(channel, item, now = Date.now()) {
+function applyChannelCampaigns(channel, item, now = Date.now(), gameId = null) {
   const c = channel;
   if (c.unknown) return;
   const list = item?.data?.channelDropCampaigns;
@@ -378,13 +378,24 @@ function applyChannelCampaigns(channel, item, now = Date.now()) {
   for (const x of list) {
     if (!x?.id || have.has(x.id) || !Array.isArray(x.rewardGroups)) continue;
     if (x.brandName !== CREATOR_BADGE_BRAND) {
-      // Only one Twitch says you dismissed: why else the highlight answer leaves a campaign out
-      // (finished, say) is not known, and a guess there could become a false stall. An ended one
-      // is left out too: whether this answer keeps ended campaigns is unmeasured, and one would
-      // turn "No Drops" into "Not counting yet" on a channel that cannot earn (review, 2026-11-20).
-      const ended = Date.parse(x.endAt) <= now;
-      if (x.hasViewerDismissedHighlight === true && !ended) {
-        addDismissedCampaign(c, x);
+      // Two reasons the highlight answer leaves out a campaign this one lists: you dismissed its
+      // highlight (2026-11-20), or for no reason it gives (2026-11-22, a watch campaign in the
+      // stream's own game, listed signed in and out, never dismissed). The second is added only for
+      // its watch groups whose categories hold the game the stream is in now: Twitch credits a
+      // campaign "while they're live in {Category}", and a campaign listed for another game could
+      // otherwise read as a channel that should be earning, a false stall. A finished drop is still
+      // judged by Inventory and the earned rewards, as for any game campaign. An ended one is left
+      // out: whether this answer keeps ended campaigns is unmeasured, and one would turn "No Drops"
+      // into "Not counting yet" on a channel that cannot earn (review, 2026-11-20).
+      if (Date.parse(x.endAt) <= now) continue;
+      if (x.hasViewerDismissedHighlight === true) {
+        addDismissedCampaign(c, x, watchGroupsOf(x), null);
+        have.add(x.id);
+        continue;
+      }
+      const inGame = gameId ? watchGroupsOf(x).filter((g) => (g.progressCriteria.categories || []).some((k) => k?.id === gameId)) : [];
+      if (inGame.length) {
+        addDismissedCampaign(c, x, inGame, x.game?.displayName || x.game?.name || null);
         have.add(x.id);
       }
       continue;
@@ -428,9 +439,12 @@ function applyChannelCampaigns(channel, item, now = Date.now()) {
  * group IDs and reward IDs here are the drop IDs and benefit IDs there (compared that day).
  * game is null in this answer even for GTAVI, so a repeating group stands in for Twitch's
  * isRewardCampaign flag: its session minutes are a running total either way.
+ * Also used for a campaign the highlight answer omits undismissed (applyChannelCampaigns), with
+ * only its watch groups in the stream's game, and that game's name (set there, unlike GTAVI's).
  */
-function addDismissedCampaign(c, x) {
-  const watch = x.rewardGroups.filter((g) => g?.id && g.progressCriteria?.requirementType === 'WATCH' && g.progressCriteria.requirements?.minutesWatched > 0);
+const watchGroupsOf = (x) => x.rewardGroups.filter((g) => g?.id && g.progressCriteria?.requirementType === 'WATCH' && g.progressCriteria.requirements?.minutesWatched > 0);
+
+function addDismissedCampaign(c, x, watch, game) {
   if (!watch.length) {
     // Sub drops only: "Sub only", as the highlight answer would have made it, not "No Drops".
     if (!c.campaigns.length && x.rewardGroups.some((g) => g?.progressCriteria?.requirementType === 'SUB')) c.subOnly = true;
@@ -445,7 +459,7 @@ function addDismissedCampaign(c, x) {
     benefitIds: watch.flatMap(rewardIds),
     channelOwned: false,
     rewardCampaign: watch.some((g) => g.progressCriteria.repeatableConfig?.repeatableTimes > 0),
-    game: null,
+    game,
     endAt: x.endAt,
     image: x.imageURL,
     watchDrops: watch.map((g) => ({
@@ -579,6 +593,9 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
   const { campaigns, rewards } = parseInventory(first[0]);
   const channels = {};
   unique.forEach((login, i) => { channels[login] = parseChannel(login, first[i + 1]); });
+  // The category each stream is in, for campaigns the highlight answer omits. Kept out of the
+  // channel object, which is stored and copied into debug info. Bound: one per looked-up channel.
+  const gameIds = new Map(unique.map((login, i) => [login, first[i + 1]?.data?.user?.broadcastSettings?.game?.id || null]));
 
   // The session query needs a channel ID with a campaign: empty gives null, an unrelated ID
   // gives a zeroed session. So ask per channel and keep the first real one.
@@ -593,7 +610,7 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
       ]), ctx);
       liveChannels.forEach((c, i) => {
         applyCampaigns(c, second[i * 3]);
-        applyChannelCampaigns(c, second[i * 3 + 2], options.now ?? Date.now());
+        applyChannelCampaigns(c, second[i * 3 + 2], options.now ?? Date.now(), gameIds.get(c.login));
         const sessionAnswer = second[i * 3 + 1];
         // The only source of a badge's minutes. Its query failing is not Twitch reporting none.
         if (errorsOf(sessionAnswer).length && c.campaigns.some((x) => x.channelOwned)) c.unknown = true;

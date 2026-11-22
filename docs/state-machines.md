@@ -102,7 +102,8 @@ call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
 which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
 leaves out, at least every `REWARD_HOLD_MS` while any channel is live, and once after a window
 it read has ended (`rewardsDue()`; after a failed ask, at most every `REWARD_RETRY_MS`). A
-dismissed campaign read from `ChannelDropsCampaigns` counts as "offered" like any other, so a
+dismissed campaign read from `ChannelDropsCampaigns` (or an undismissed one the highlight answer
+omits, in the stream's category) counts as "offered" like any other, so a
 channel with one that Inventory leaves out asks the reward inventory every poll, as a listed one
 always did. `state.unplacedBadges`
 (`unplacedBadges()`): its badge campaigns that no open channel lists, each with its first and
