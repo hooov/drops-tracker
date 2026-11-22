@@ -483,7 +483,7 @@ export function dayIndex(g, required, now) {
   return Math.max(0, Math.min(grants, total) - 1);
 }
 
-/** Today's reward of a repeating group from the channel page's day rewards, or null (rewards[n], else rewards[0]). */
+/** Today's reward of a repeating group from the channel page's day rewards (twitch.js parseDayRewards), or null: day n, else the first. */
 function dayReward(dayRewards, campaignId, g, required, now) {
   const entry = (Array.isArray(dayRewards) ? dayRewards : []).find((x) => x.campaignId === campaignId && x.groupId === g.id);
   if (!entry?.days?.length) return null;

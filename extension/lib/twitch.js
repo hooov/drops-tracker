@@ -580,10 +580,14 @@ const MAX_NAME = 100;
 /**
  * Each repeating watch group's reward per day, from the DropChannelCampaignsProgress answer Twitch's
  * channel page received (page-hook.js; the query needs Twitch's integrity token, so the extension
- * never asks it). Twitch's panel shows day n's reward as rewardGroup.rewards[n], else rewards[0]
- * (read from its client, 2026-11-22), while ChannelDropsCampaigns lists only the first (GTAVI:
- * "GTA DVD Chest", default image). Names and art only: the answer's progress (self) is the
- * viewer's and is not kept. null when unreadable. Bound: MAX_DAY_GROUPS groups of MAX_DAYS.
+ * never asks it). Read from Twitch's client, 2026-11-22: its generic card shows day n's reward as
+ * rewardGroup.rewards[n], else rewards[0] (module 756662); its GTA6 card replaces that with
+ * pool.rewards[n] of the group's "ordered daily chest", a reward ID from Twitch's remote config
+ * that the extension cannot see (module 635265). GTAVI's group lists one reward, the chest (POOL,
+ * "GTA DVD Chest", default image, in ChannelDropsCampaigns), so a group whose only reward is a pool
+ * holding one reward per repeat is read as that chest. A pool of another size, whose order is not
+ * known, is not. Names and art only: the answer's progress (self) is the viewer's and is not kept.
+ * null when unreadable. Bound: MAX_DAY_GROUPS groups of MAX_DAYS.
  */
 export function parseDayRewards(item) {
   const list = item?.data?.channelDropCampaignsProgress;
@@ -593,8 +597,11 @@ export function parseDayRewards(item) {
     if (typeof c?.id !== 'string' || !Array.isArray(c.rewardGroups)) continue;
     for (const g of c.rewardGroups) {
       const crit = g?.progressCriteria;
-      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH' || !(crit.repeatableConfig?.repeatableTimes > 1) || !Array.isArray(g.rewards)) continue;
-      const days = g.rewards.slice(0, MAX_DAYS).map((r) => ({ name: typeof r?.name === 'string' ? r.name.slice(0, MAX_NAME) : '', image: httpsOr(r?.thumbnailURL) }));
+      const times = crit?.repeatableConfig?.repeatableTimes;
+      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH' || !(times > 1) || !Array.isArray(g.rewards)) continue;
+      const pool = g.rewards.length === 1 ? g.rewards[0]?.pool?.rewards : null;
+      const source = Array.isArray(pool) && pool.length === times ? pool : g.rewards;
+      const days = source.slice(0, MAX_DAYS).map((r) => ({ name: typeof r?.name === 'string' ? r.name.slice(0, MAX_NAME) : '', image: httpsOr(r?.thumbnailURL) }));
       if (!days.some((d) => d.name)) continue;
       out.push({ campaignId: c.id, groupId: g.id, endAt: dateOrNull(c.endAt), days });
       if (out.length >= MAX_DAY_GROUPS) return out;
