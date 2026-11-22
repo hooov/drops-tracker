@@ -158,6 +158,35 @@ test('Bones flat with the channel list failing on every other call: still one st
   assert.deepEqual(fired, ['warning'], 'one desktop notification');
 });
 
+// Minutes win over the lists (2026-11-22, point 2): Twitch crediting Bones on an open channel whose
+// lists cannot place it (here the stream reports another category) is earning there, and a hang
+// there afterwards still warns.
+const OTHER = { id: '509658', displayName: 'Just Chatting', name: 'Just Chatting' };
+
+test('credited where no list places it: earning there, listed, and the mismatch recorded', async () => {
+  const { s, now, fired } = await run(steps(5, (i) => ({ minutes: 1 + i, game: OTHER, echo: true })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:eligible echo_247:no_drops');
+  assert.deepEqual([v.verdict, v.warning, v.drops, v.dropsEcho], ['earning', null, ['RuneScape Bones'], ['RuneScape Bones']]);
+  assert.deepEqual(fired, []);
+  assert.deepEqual(s.creditUnlisted.map((x) => [x.login, x.dropId, x.campaignId]), [['charlie', '0cc61e0f-e351-11f1-9433-0a58a9feac02', 'a8ce1281-5c82-4fbe-9a18-3e7d02e1e7b6']]);
+});
+
+test('credited where no list places it, then flat: one stall warning, not "No Drops"', async () => {
+  const mins = [1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4];
+  const { s, now, fired } = await run(mins.map((m) => ({ minutes: m, game: OTHER })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:eligible');
+  assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'uncounted', 'Drops not counting']);
+  assert.deepEqual(fired, ['warning']);
+});
+
+test('a session never rising there places nothing: no evidence of credit', async () => {
+  const { s } = await run(steps(5, () => ({ minutes: 4, game: OTHER })));
+  assert.equal(s.streams[0].channelState, 'sub_only');
+  assert.deepEqual(s.creditUnlisted ?? [], []);
+});
+
 test('a live channel with no campaigns (Twitch answers null): "No Drops", not "Cannot check"', async () => {
   const none = { data: { channelDropCampaigns: null } };
   const highlight = { data: { channel: { id: fx.channelID, viewerDropCampaigns: null } } };

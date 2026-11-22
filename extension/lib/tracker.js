@@ -400,6 +400,9 @@ export function leftBadges(prev, before, groups, now) {
 /** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
 
+/** Credited drops the lists did not place, kept for Copy debug info (update, creditUnlisted). */
+export const CREDIT_UNLISTED_MAX = 10;
+
 function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
   const out = new Map();
   if (!groups?.length) return [];
@@ -854,12 +857,37 @@ export function update(prev, obs, now) {
   if (gained) s.lastGainAt = now;
 
   const inventoryIds = new Set(allCampaigns.map((c) => c.id));
+  // Minutes win over the lists (2026-11-22). Every miss so far was a channel's lists leaving out a
+  // campaign Twitch was crediting there (a badge 11-19, a dismissed highlight 11-20, an OSRS drop
+  // 11-22), and the tracker had the proof: the session naming the open channel with its drop
+  // rising. Such a drop's campaign is placed on that channel, and kept there while the session
+  // still names that drop on it and the drop is unfinished, so a hang afterwards still warns.
+  // Only on a rise: a session alone names channels nobody is watching. Bound: one per open tab.
+  const campaignOf = (dropId) => allCampaigns.find((c) => (c.timeBasedDrops || []).some((d) => d.id === dropId))?.id ?? null;
+  const listedOn = (st) => new Set((st.channel?.campaigns || []).map((c) => c.id));
+  const unfinished = (dropId) => active.some((d) => d.id === dropId && d.remaining > 0);
+  const placedHere = new Map();
+  for (const st of obs.streams || []) {
+    if (!st.login || !st.channel || st.channel.unknown || !st.channel.live) continue;
+    const here = known.filter((x) => x.login === st.login);
+    const was = (prev?.placed || []).find((p) => p.tabId === st.tabId && p.login === st.login);
+    const fresh = here.find((x) => risen.has(x.dropId) && unfinished(x.dropId) && campaignOf(x.dropId) && !listedOn(st).has(campaignOf(x.dropId)));
+    const keep = was && here.some((x) => x.dropId === was.dropId) && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
+    const p = fresh ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), since: was?.dropId === fresh.dropId ? was.since : now } : keep;
+    if (p) placedHere.set(st.tabId, p);
+  }
+  s.placed = [...placedHere.values()];
+  // States the placement overrides: the lists' view. reward (credited, quiet), unknown, offline
+  // and not_channel are left as they are.
+  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
   const tabs = {};
   const streams = (obs.streams || []).map((st) => {
     const old = s.tabs[st.tabId];
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
-    const channelState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const place = placedHere.get(st.tabId);
+    const channelState = place && PLACEABLE.has(listedState) ? 'eligible' : listedState;
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -887,7 +915,9 @@ export function update(prev, obs, now) {
       stateSince: tabs[st.tabId].stateSince,
       ableSince: tabs[st.tabId].ableSince,
       // What this channel can earn, so a panel on it lists only those. Bound: what Twitch lists for one channel.
-      campaignIds: (st.channel?.campaigns || []).map((c) => c.id),
+      campaignIds: [...(st.channel?.campaigns || []).map((c) => c.id), ...(place && !listedOn(st).has(place.campaignId) ? [place.campaignId] : [])],
+      // The lists' own view when minutes placed a campaign here, for Copy debug info.
+      ...(place ? { listedState } : {}),
       // The drop a session campaign reports nothing for, so the headline can name it.
       pendingDrop: ['unstarted', 'badge_unseen'].includes(channelState) ? (st.channel?.campaigns || []).map((c) => pending.get(c.id)?.name).find(Boolean) ?? null : null,
       blockedOpens: channelState === 'blocked' ? [...(st.channel?.campaigns || [])].map((c) => blocked.get(c.id)).find(Boolean)?.opens ?? null : null,
@@ -908,6 +938,18 @@ export function update(prev, obs, now) {
     };
   });
   s.tabs = tabs;
+  // Each time the lists missed a credited drop, for Copy debug info: the next list rule to learn.
+  // Bound: CREDIT_UNLISTED_MAX, newest kept.
+  s.creditUnlisted = [...(prev?.creditUnlisted || [])];
+  for (const st of streams) {
+    const p = placedHere.get(st.tabId);
+    if (!p || !st.listedState) continue;
+    const i = s.creditUnlisted.findIndex((x) => x.login === p.login && x.dropId === p.dropId);
+    const entry = { login: p.login, dropId: p.dropId, campaignId: p.campaignId, listedState: st.listedState, first: i >= 0 ? s.creditUnlisted[i].first : now, at: now };
+    if (i >= 0) s.creditUnlisted.splice(i, 1);
+    s.creditUnlisted.push(entry);
+  }
+  s.creditUnlisted = s.creditUnlisted.slice(-CREDIT_UNLISTED_MAX);
 
   // Twitch answers a session for every channel with a campaign, whether it is being watched or
   // not, so the credited one is whichever is rising. Otherwise keep naming the last one that did.

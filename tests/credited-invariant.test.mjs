@@ -37,17 +37,27 @@ async function poll(u, prev, i, game) {
 }
 
 test('catches the b0aty miss: Bones rising on a channel read as "Sub drops only"', async () => {
-  // The tracker's own update, so the miss can be built; then the check run on it.
+  // The category reads as none, so the lists cannot place Bones; since point 2 the minutes do.
   const a = await poll(realUpdate, undefined, 0, null);
   const b = await poll(realUpdate, a.s, 1, null);
-  assert.equal(b.s.streams[0].channelState, 'sub_only', 'the miss being reproduced');
-  const bad = creditedNotListed(a.snap.sessions, b.snap.sessions, b.s);
+  assert.equal(b.s.streams[0].channelState, 'eligible', 'placed by its rising minutes');
+  // The same poll as the tracker read it before point 2: the check must catch it.
+  const miss = structuredClone(b.s);
+  Object.assign(miss.streams[0], { channelState: 'sub_only', campaignIds: [] });
+  const bad = creditedNotListed(a.snap.sessions, b.snap.sessions, miss);
   assert.equal(bad.length, 2, bad.join('; '));
   assert.match(bad[0], /charlie reads sub_only while 0cc61e0f-e351-11f1-9433-0a58a9feac02 rises 1 to 2/);
   assert.match(bad[1], /not in its My Drops/);
-  // And the wrapped update throws on it.
-  const c = await poll(update, undefined, 0, null);
-  await assert.rejects(poll(update, c.s, 1, null), /Credited drop not tracked/);
+});
+
+// Still a miss, and the wrapper throws on it: a drop no list holds at all, not even Inventory, has
+// no minutes the tracker follows, so its rise cannot be seen to place it (known limit).
+test('the wrapper throws on a credited drop no list holds', () => {
+  const sess = (m) => [{ login: 'charlie', displayName: 'Charlie', dropId: 'orphan', minutes: m, required: 60 }];
+  const stream = (i) => ({ tabId: 1, login: 'charlie', channel: { id: '1', login: 'charlie', live: true, campaigns: [], badges: [], subOnly: true }, tab: {}, player: { hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: 100 + i * 60 } });
+  const obs = (i) => ({ campaigns: [], rewards: { ids: [], complete: true }, session: sess(1 + i)[0], sessions: sess(1 + i), streams: [stream(i)] });
+  const s = update(undefined, obs(0), T);
+  assert.throws(() => update(s, obs(1), T + 60000), /Credited drop not tracked: charlie reads sub_only/);
 });
 
 test('quiet when the category is read: Bones tracked', async () => {
