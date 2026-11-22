@@ -4,7 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, warning } from '../extension/lib/tracker.js';
+import { warning } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { verdictTone } from '../extension/lib/states.js';
 import { channelDrops } from '../extension/lib/chip.js';
 

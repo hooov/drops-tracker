@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, events, badge, warning, rewardsDue } from '../extension/lib/tracker.js';
+import { events, badge, warning, rewardsDue } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { chipView, channelDrops } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { verdictText } from '../extension/lib/panel.js';
@@ -50,7 +51,8 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
         case 'VideoPlayerStreamInfoOverlayChannel':
           return isEcho
             ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } }
-            : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', stream: { id: '1' } } } };
+            // Live in GTA VI: the only category GTAVI's groups earn in (same capture), and Twitch credited it there.
+            : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', broadcastSettings: { game: { id: '1867279146', displayName: 'Grand Theft Auto VI' } }, stream: { id: '1' } } } };
         // dismissed: GTAVI's chat highlight dismissed, so only ChannelDropsCampaigns lists it (2026-11-20).
         // rewardListed false: gone from both answers.
         case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho || !rewardListed || dismissed ? { id: isEcho ? ECHO_ID : cc.channelID, viewerDropCampaigns: [] } : reward } };

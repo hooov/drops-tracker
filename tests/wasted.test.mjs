@@ -4,7 +4,8 @@
 // minutes with about 95 left in its campaign. Through the real tracker, not hand-made state.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { update, badge } from '../extension/lib/tracker.js';
+import { badge } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { channelDrops, chipView } from '../extension/lib/chip.js';
 
 const T0 = Date.parse('2026-11-09T14:00:00Z');

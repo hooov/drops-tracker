@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot, PINNED } from '../extension/lib/twitch.js';
-import { update, badge } from '../extension/lib/tracker.js';
+import { badge } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { badgeSections } from '../extension/lib/badges.js';
 import { chipView, channelDrops } from '../extension/lib/chip.js';
 

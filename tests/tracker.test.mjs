@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, events, badge, summarize, warning, TIMELINE_MAX, creditRate, LOST_SHOWN_MS } from '../extension/lib/tracker.js';
+import { events, badge, summarize, warning, TIMELINE_MAX, creditRate, LOST_SHOWN_MS } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { verdictTone } from '../extension/lib/states.js';
 import { timelineCells } from '../extension/lib/minutelog.js';
 

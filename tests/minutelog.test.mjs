@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { update } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { logEntry, addMinute, compareMinutes, LOG_MAX, MIN_TO_COMPARE } from '../extension/lib/minutelog.js';
 
 const T0 = Date.parse('2026-11-06T19:00:30Z');

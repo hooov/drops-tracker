@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, warning, badge } from '../extension/lib/tracker.js';
+import { warning, badge } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { chipView, channelFromPath } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 
