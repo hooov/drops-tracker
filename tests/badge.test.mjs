@@ -212,7 +212,8 @@ test('Badges tab: only the channel being looked at', async () => {
   const streams = [stream('aaa', [one]), stream('bbb', [{ ...one, id: 'y', name: 'Two' }])];
   assert.deepEqual(badgeSections(streams, 'bbb', T0).map((x) => x.title), ['bbb']);
   assert.deepEqual(badgeSections(streams, null, T0).map((x) => x.title), ['aaa', 'bbb'], 'popup over a non-channel page');
-  assert.match(badgeSections(streams, 'ccc', T0)[0].note, /own page open/);
+  // Not "needs its own page open": it is said on that page while its first check runs (2026-11-22).
+  assert.match(badgeSections(streams, 'ccc', T0)[0].note, /not been checked yet/);
   assert.match(badgeSections([], null, T0)[0].note, /Open a channel/);
 });
 

@@ -78,8 +78,8 @@ export function debugStreams(state) {
 // Named one by one so anything added to storage later stays out until someone decides otherwise.
 const STATE_FIELDS = [
   'lastPollAt', 'lastOkAt', 'lastGainAt', 'resumeAt', 'closedAt', 'closedName', 'earnerTabs', 'tracking',
-  'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'pending', 'resting', 'unclaimed', 'tabs', 'drops',
-  'rewardCheck', 'rewardInv', 'creditedCampaign', 'unplacedBadges', 'placed', 'creditUnlisted',
+  'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'pending', 'resting', 'upcoming', 'unclaimed', 'tabs', 'drops',
+  'rewardCheck', 'rewardInv', 'creditedCampaign', 'unplacedBadges', 'placed', 'creditUnlisted', 'rateLogin', 'rateFrom',
 ];
 
 /** What Copy debug info hands over. Built from named fields only, so a token can never ride along. */

@@ -78,7 +78,9 @@ export function badgeSections(streams, login, now, unplaced) {
   if (login) {
     const stream = open.find((s) => s.login === login);
     if (stream) return [...lead, section(stream, now)];
-    return [...lead, { title: null, note: "No data for this channel yet. It needs its own page open in this browser.", campaigns: [] }];
+    // Said on the channel's own page while its first check runs (audit, 2026-11-22: "needs its own
+    // page open" read as broken there). Also true of a tab past the tab limit, never checked.
+    return [...lead, { title: null, note: 'This channel has not been checked yet.', campaigns: [] }];
   }
   const withBadges = open.filter((s) => s.badges?.length);
   if (withBadges.length) return [...lead, ...withBadges.map((s) => section(s, now))];

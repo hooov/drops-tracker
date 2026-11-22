@@ -71,7 +71,7 @@ export const canEarn = (stream) => stream?.channelState === 'eligible';
 export const VERDICT_CODES = {
   starting: [], // Before the first poll.
   waiting: ['since'], // Something can earn; the first minute has not landed yet.
-  earning: ['channel', 'slow', 'wasted'],
+  earning: ['channel', 'slow', 'wasted', 'rate'], // rate: with slow, the credited channel's own count.
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
   idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'badgeLeft', 'since', 'message'],
   signed_out: ['message'],

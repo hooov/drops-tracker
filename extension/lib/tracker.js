@@ -22,6 +22,9 @@ export const STREAM_SOFT_LIMIT = 2; // Reported per-IP limit; only this browser'
 const REWARDS_MAX = 2000;
 const DROPS_MAX = 100;
 const DIP_POLLS = 3; // A lower reading must last this many polls before it is believed.
+// And this long: a channel just opened asks for a check at once, and three quick checks reading a
+// stale lower number would be believed, then the real number read as credited minutes (2026-11-22).
+const DIP_MS = 2 * 60000;
 const FRESH_READING_MS = 5000;
 const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can still arrive after leaving.
 // "Stopped earning" is news when it happens; left amber with nothing to do about it, it reads as a
@@ -280,7 +283,9 @@ function badgeTooLate(stream, now) {
   return worst;
 }
 
-function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null) {
+// notStarted: when given, collects the game campaigns read as not started from nothing (not a
+// session reporting nothing, which state.pending lists), so My Drops can list their drops.
+function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null) {
   if (!stream.login) return 'not_channel';
   // No entry at all means it was not looked up (past the channel limit), not that it is offline.
   if (!stream.channel || stream.channel.unknown) return 'unknown';
@@ -322,7 +327,10 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
     if (allOwned) continue;
     if (left) badgeLeft = true;
     else if (c.channelOwned) badgeUnseen = true;
-    else unstarted = true;
+    else {
+      unstarted = true;
+      if (!c.rewardCampaign) notStarted?.push(c);
+    }
   }
   // Not in the inventory could mean about to start, needs a linked account, or a finished
   // campaign Twitch still lists. None of those is evidence of a hang, so it never reads as one.
@@ -399,6 +407,9 @@ export function leftBadges(prev, before, groups, now) {
 
 /** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
+
+/** Not-started drops listed across open channels (update, upcoming): 20 tabs could each list 20 campaigns. */
+export const UPCOMING_MAX = 60;
 
 /** Credited drops the lists did not place, kept for Copy debug info (update, creditUnlisted). */
 export const CREDIT_UNLISTED_MAX = 10;
@@ -681,12 +692,16 @@ function trackMinutes(previous, campaigns, sessions, firstGoodPoll, sessionOnly,
       rec.low = 0;
     } else if (minutes < rec.peak) {
       rec.low += 1;
-      if (rec.low >= DIP_POLLS) {
+      // A state saved mid-dip by an older version has no lowAt: its clock starts now.
+      if (rec.low === 1 || rec.lowAt == null) rec.lowAt = now;
+      if (rec.low >= DIP_POLLS && now - rec.lowAt >= DIP_MS) {
         rec.peak = minutes;
         rec.low = 0;
+        delete rec.lowAt;
       }
     } else {
       rec.low = 0;
+      delete rec.lowAt;
     }
   };
   for (const c of campaigns) {
@@ -902,13 +917,29 @@ export function update(prev, obs, now) {
   // and not_channel are left as they are.
   const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
   const tabs = {};
+  // Drops of campaigns Twitch has not started on an open channel, listed with no minutes (as
+  // pending is) so its My Drops is not empty before the first minute (audit, 2026-11-22). Never
+  // in active: minutes left there would make the channel eligible and its first minute a hang.
+  const upcoming = new Map();
   const streams = (obs.streams || []).map((st) => {
     const old = s.tabs[st.tabId];
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
-    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const notStarted = [];
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted);
     const place = placedHere.get(st.tabId);
     const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
+    if (channelState === 'unstarted') {
+      for (const c of notStarted) {
+        if (now >= dateOr(c.endAt, Infinity)) continue;
+        for (const d of c.watchDrops || []) {
+          if (upcoming.size >= UPCOMING_MAX || upcoming.has(d.id) || !(d.required > 0)) continue;
+          if (now < dateOr(d.startAt, -Infinity) || now >= dateOr(d.endAt, Infinity)) continue;
+          const end = dateOr(d.endAt, dateOr(c.endAt, Infinity));
+          upcoming.set(d.id, { id: d.id, name: d.name, campaignId: c.id, campaign: c.name, game: c.game || '', image: d.image || c.image || null, minutes: null, required: d.required, endsAt: Number.isFinite(end) ? end : null });
+        }
+      }
+    }
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -959,6 +990,9 @@ export function update(prev, obs, now) {
     };
   });
   s.tabs = tabs;
+  // A drop the session already lists as reporting nothing stays in pending only.
+  const inPending = new Set((s.pending || []).map((d) => d.id));
+  s.upcoming = [...upcoming.values()].filter((d) => !inPending.has(d.id));
   // Each time the lists missed a credited drop, for Copy debug info: the next list rule to learn.
   // Bound: CREDIT_UNLISTED_MAX, newest kept.
   s.creditUnlisted = [...(prev?.creditUnlisted || [])];
@@ -1007,6 +1041,14 @@ export function update(prev, obs, now) {
   // Timeline: one entry per wall-clock minute.
   const bucket = Math.floor(now / 60000);
   const candidates = streams.filter((st) => st.channelState === 'eligible');
+  // The tabs a headline about one tab should pick from: those in front, newest state first, or all
+  // of them when none is. In front only on a player that answered hidden: false; a tab not read is
+  // not known to be in front. Returns the same array when nothing is in front.
+  const front = new Set((obs.streams || []).filter((st) => st.player && st.player.hidden === false).map((st) => st.tabId));
+  const frontFirst = (list) => {
+    const shown = list.filter((st) => front.has(st.tabId)).sort((a, b) => (b.stateSince ?? 0) - (a.stateSince ?? 0));
+    return shown.length ? shown : list;
+  };
   // Able to earn only on readings held from an earlier answer: its minutes this poll are not
   // known, so it counts neither as watched-without-credit nor as evidence of a stall.
   const heldOnly = (st) => {
@@ -1024,6 +1066,17 @@ export function update(prev, obs, now) {
   }
   if (s.timeline.length > TIMELINE_MAX) s.timeline.splice(0, s.timeline.length - TIMELINE_MAX);
   s.rate = creditRate(s.timeline);
+  // "Earning slowly" is about the channel Twitch credits now. Minutes from before it last changed
+  // were another channel's (audit, 2026-11-22: 11 of 30 on a channel just opened, from the last
+  // one's hang, about 18 minutes to clear). No credited channel known (a failed session) changes
+  // nothing. The strip's count (s.rate) still covers every minute it draws. Bound: two scalars.
+  const ratedLogin = session?.login || null;
+  if (ratedLogin && ratedLogin !== s.rateLogin) {
+    // First sight, as after an update: nothing to cut yet.
+    s.rateFrom = s.rateLogin ? bucket : null;
+    s.rateLogin = ratedLogin;
+  }
+  const ownRate = s.rateFrom != null ? creditRate(s.timeline.filter((t) => t.m >= s.rateFrom)) : s.rate;
 
   // Which tabs could earn, to tell a tab that went away from a channel that changed. A raid or a
   // channel going offline keeps the tab, so that still warns. Leaving is deliberate, so it does not.
@@ -1053,7 +1106,7 @@ export function update(prev, obs, now) {
   const wasTracking = prev?.tracking === true || ['earning', 'stalled'].includes(prev?.verdict?.code) || prev?.lostAt != null;
   s.lostAt = null;
   if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null) {
-    const slow = s.rate.watched >= RATE_MIN_MINUTES && s.rate.counted / s.rate.watched < SLOW_BELOW;
+    const slow = ownRate.watched >= RATE_MIN_MINUTES && ownRate.counted / ownRate.watched < SLOW_BELOW;
     // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
     // rather than flickering the warning off and on.
     // Kept only while the same channel is still credited and its tab still open: after the user
@@ -1077,7 +1130,8 @@ export function update(prev, obs, now) {
       // A quiet poll keeps the judgement but asks again whether another tab can earn. A judgement
       // saved by 0.1.8 or older has no name to rebuild from and is kept as it was.
       : keep ? (prev.verdict.wasted.name ? wastedView(prev.verdict.wasted, session, s.active, streams) : prev.verdict.wasted) : null;
-    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
+    // rate: the minutes "slowly" was judged on, for the chip's "N of the last N".
+    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted, ...(slow ? { rate: ownRate } : {}) };
   } else if (!candidates.length && unchecked && prev?.verdict?.code === 'stalled'
     && streams.some((st) => st.channelState === 'unknown' && prev.streams?.some((p) => p.tabId === st.tabId && p.channelState === 'eligible'))) {
     // One failed lookup on the stalled tab says nothing new: the stall a fresh reading raised is
@@ -1092,7 +1146,7 @@ export function update(prev, obs, now) {
   } else if (!candidates.length && streams.some((st) => st.channelState === 'reward')) {
     // Quiet on purpose: no warning, no hang, no reload. A flat reading here was normal while
     // Twitch counted every minute (2026-11-18), so it says nothing about whether it is counting.
-    const st = streams.find((x) => x.channelState === 'reward');
+    const [st] = frontFirst(streams.filter((x) => x.channelState === 'reward'));
     const shown = s.active.find((d) => d.unjudged && st.campaignIds.includes(d.campaignId));
     const total = (s.pending || []).find((d) => d.runningTotal && st.campaignIds.includes(d.campaignId));
     const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -1104,8 +1158,13 @@ export function update(prev, obs, now) {
         : `Progress for ${st.displayName}'s ${total?.name || 'reward'} could not be read. Twitch's Drops page shows it.`;
     s.verdict = { code: 'idle', hasStreams: true, reward: true, message };
   } else if (!candidates.length && streams.some((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState))) {
-    const open = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
-    const since = Math.max(s.resumeAt ?? 0, Math.min(...open.map((st) => st.stateSince)));
+    // The tab in front is the one being looked at: a channel just opened gets its own grace and its
+    // own name, not those of a background tab Twitch had not started for minutes (audit,
+    // 2026-11-22: echo_247's "may need your game account linked" on every channel opened after it).
+    const all = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
+    const open = frontFirst(all);
+    const inFront = open !== all;
+    const since = Math.max(s.resumeAt ?? 0, inFront ? open[0].stateSince : Math.min(...open.map((st) => st.stateSince)));
     const first = open[0];
     const late = first.channelState === 'badge_unseen' ? badgeTooLate(first, now) : null;
     const message = {
@@ -1140,7 +1199,7 @@ export function update(prev, obs, now) {
   } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
     // Not a warning: one reading short of the requirement, then gone from the list, is how an
     // earned badge looked (2026-11-20). The evidence is said, so it can be checked on Twitch.
-    const st = streams.find((x) => x.channelState === 'badge_left');
+    const [st] = frontFirst(streams.filter((x) => x.channelState === 'badge_left'));
     const name = st.displayName || st.login;
     const d = (st.badges || []).flatMap((b) => b.drops || []).find((x) => x.left?.near);
     const read = d ? ` at ${d.left.minutes} of ${d.required} minutes` : '';
@@ -1227,7 +1286,10 @@ export function events(prev, next, now) {
   const out = [];
   const w = warning(next, now);
   if (w && w.key !== prev?.notifiedWarning) out.push({ type: 'warning', title: w.title, message: w.message });
-  next.notifiedWarning = w ? w.key : null;
+  // Waiting says nothing either way: a tab opened in front waits out its grace while a background
+  // badge's warning (key limited) is still true, and forgetting it then notified it twice
+  // (2026-11-22). A stall or a stop has a key of its own each time, so this hides no new one.
+  next.notifiedWarning = w ? w.key : next.verdict?.code === 'waiting' ? prev?.notifiedWarning ?? null : null;
   const seen = new Set(prev?.notifiedClaims || []);
   for (const u of next.unclaimed) {
     // Twitch's inventory shows "Connect", not "Claim", until the game account is connected

@@ -18,6 +18,20 @@ export function channelFromPath(pathname) {
 }
 
 /**
+ * Whether a channel page should ask for a check now rather than wait for the minute's poll:
+ * 'new' when the last poll did not see this channel (just opened, or a channel change inside
+ * Twitch's page), 'shown' when it saw it as a background tab and it is now in front (the headline
+ * picks the tab in front, tracker.js frontFirst), null otherwise. content.js asks once per reason
+ * and channel; a page the poll never sees (tab 21 and up) must not ask again and again.
+ */
+export function checkNeeded(state, login, visible) {
+  if (!state || !login || !Array.isArray(state.streams)) return null;
+  const here = state.streams.find((s) => s.login === login);
+  if (!here) return 'new';
+  return visible && here.hidden ? 'shown' : null;
+}
+
+/**
  * The drops worth showing on this channel, in the tracker's order. `from` names another tab when
  * those drops are earned there instead. login is null when no channel is in view (the toolbar popup
  * over another site). All Drops still lists every campaign with its progress.
@@ -52,7 +66,11 @@ export function channelDrops(state, login, { pending = false } = {}) {
   // A channel whose only drop is done for today: shown only when no other tab's progress is, since
   // under "Watch Drops on <other tab>" it would read as that tab's, and hiding the progress the
   // verdict talks about is worse (review, 2026-11-22).
-  if (resting.length) return { drops: resting, from: null };
+  // A campaign Twitch has not started on this channel: its drops with no minutes (tracker.js
+  // upcoming), the same opt-in, and like a resting drop only when no other tab's progress is shown,
+  // which the headline may be about (audit, 2026-11-22: an empty list read as broken).
+  const notYet = pending && here ? (state.upcoming || []).filter((d) => here.campaignIds.includes(d.campaignId)) : [];
+  if (resting.length || notYet.length) return { drops: [...resting, ...notYet], from: null };
   // Credited on a tab here that has nothing left to list, such as a channel badge already earned
   // that Twitch kept counting (seen 2026-11-09). Listing every drop in progress would suggest
   // those are what is rising; the verdict says what is.
@@ -156,7 +174,9 @@ function runningView(v, tone, rate, label, pct, progress, credited) {
       return { tone, text: label || 'Drops', pct, title };
     }
     if (v.slow) {
-      return { tone, text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${rate.counted} of the last ${rate.watched} watched minutes counted.`.trim() };
+      // The count "slowly" was judged on: this channel's minutes only (tracker.js ownRate).
+      const r = v.rate || rate;
+      return { tone, text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${r.counted} of the last ${r.watched} watched minutes counted.`.trim() };
     }
     return { tone, text: label || 'Drops', pct, title: `${progress} Earning${where}.`.trim() };
   }

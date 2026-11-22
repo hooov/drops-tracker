@@ -2,7 +2,7 @@
 
 A Chromium (MV3) extension that tells you whether Twitch is really adding Drops watch-minutes right now, and warns you when it is not.
 
-Twitch's own progress bars only update when the page loads, and watch-time sometimes stops being credited while the stream keeps playing fine. This extension asks Twitch's server once a minute instead of trusting the page, and treats rising minutes as the only proof of earning.
+Twitch's own progress bars only update when the page loads, and watch-time sometimes stops being credited while the stream keeps playing fine. This extension asks Twitch's server once a minute, and right away when you open a channel, instead of trusting the page, and treats rising minutes as the only proof of earning.
 
 It never claims a drop, never simulates watching, and never opens a stream itself. Two helpers do touch your tabs, both on by default and both can be switched off in Settings: it reloads open Drops pages, which never update by themselves, and reloads a stream tab whose minutes have stopped.
 
