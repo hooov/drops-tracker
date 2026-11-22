@@ -192,6 +192,7 @@ export function verdictText(state, now) {
       // shown under it (2026-11-13), which read as the extension failing.
       if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked || v.unstarted ? 'Not counting yet' : 'Cannot check streams', v.message];
       if (v.badgeLeft) return ['Badge likely earned', v.message];
+      if (v.dropLeft) return ['Drop likely earned', v.message];
       // Twitch's numbers shown, nothing judged: see the reward channel state in states.js.
       if (v.reward) return ['Reward campaign', v.message];
       if (state.closedName) return ['Not earning', `You left ${state.closedName}, so nothing open can earn right now.`];
