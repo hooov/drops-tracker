@@ -14,6 +14,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
+| A daily drop done for today missing from Watch Drops, or its clock pill / "Next day at" wrong | [Channel state](#4-channel-state), `state.resting` |
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
@@ -88,7 +89,14 @@ in Watch Drops on its channel without a bar and never in `active`). `reward`: a 
 Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, except a channel's own non-repeating badge read fresh that poll, which is judged and makes its channel `eligible`) or a session running
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
-drop is earned and the next can start later. The reward inventory answer is kept as
+drop is earned and the next can start later. That drop is also kept as `state.resting`
+(`restingDrops()`, from `restUntil` set in `rewardCampaigns()`: Twitch's `nextEligibleAt`, else the
+window end), never in `active`. Watch Drops lists it on its own channel only, full with a clock pill
+counting down (`countdown()` in directory.js): beside that channel's other drops, or alone when no other
+tab's progress is listed (never under "Watch Drops on <other tab>"). The popup off a channel shows the
+session channel's. It leaves the list once
+the time passes, every repeat is granted, or the time falls after the campaign end. Between that time and
+the next poll the pill reads "Open now". The reward inventory answer is kept as
 `state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
 which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory

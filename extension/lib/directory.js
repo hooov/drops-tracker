@@ -14,6 +14,19 @@ export function span(minutes) {
 
 export const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
+/**
+ * Time left until `at`, for the timer on a drop done for today. Seconds only in the last hour, so it
+ * visibly ticks when it matters: "1d 4h", "3h 59m", "34:12", then "Open now" until the next poll
+ * picks the new day up.
+ */
+export function countdown(at, now) {
+  const s = Math.ceil((at - now) / 1000);
+  if (!(s > 0)) return 'Open now';
+  if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export function isFresh(dir, now) {
   if (!dir?.triedAt) return false;
   return now - dir.triedAt < (dir.error ? RETRY_MS : FRESH_MS);

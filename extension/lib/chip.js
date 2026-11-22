@@ -35,7 +35,11 @@ export function channelDrops(state, login, { pending = false } = {}) {
   // A drop Twitch reports no minutes for yet (minutes: null), on the channel being looked at only,
   // as Twitch's own panel lists it. Opt-in: the chip's percentage needs a drop with minutes.
   const unseen = pending && here ? (state.pending || []).filter((d) => here.campaignIds.includes(d.campaignId)) : [];
-  if (here && (on([here]).length || unseen.length)) return { drops: [...on([here]), ...unseen], from: null };
+  // Done for today, with a timer to the next day (tracker.js restingDrops). Same opt-in: it is not
+  // progress, so the chip's percentage never comes from it.
+  const restOn = (list) => (pending ? (state.resting || []).filter((d) => list.some((s) => s.campaignIds.includes(d.campaignId))) : []);
+  const resting = here ? restOn([here]) : [];
+  if (here && (on([here]).length || unseen.length)) return { drops: [...on([here]), ...unseen, ...resting], from: null };
   // Watching one channel while another tab earns is a common setup, and hiding that would hide
   // the progress the verdict is talking about.
   const earners = streams.filter((s) => s.channelState === 'eligible');
@@ -45,11 +49,21 @@ export function channelDrops(state, login, { pending = false } = {}) {
   const elsewhere = credited.length ? credited : earners;
   const drops = on(elsewhere);
   if (drops.length) return { drops, from: elsewhere.length === 1 && elsewhere[0].login !== login ? elsewhere[0].displayName : null };
+  // A channel whose only drop is done for today: shown only when no other tab's progress is, since
+  // under "Watch Drops on <other tab>" it would read as that tab's, and hiding the progress the
+  // verdict talks about is worse (review, 2026-11-22).
+  if (resting.length) return { drops: resting, from: null };
   // Credited on a tab here that has nothing left to list, such as a channel badge already earned
   // that Twitch kept counting (seen 2026-11-09). Listing every drop in progress would suggest
   // those are what is rising; the verdict says what is.
   const sessionLogin = state.session?.login;
-  if (sessionLogin && streams.some((s) => s.login === sessionLogin)) return { drops: [], from: null };
+  const sessionTab = sessionLogin ? streams.find((s) => s.login === sessionLogin) : null;
+  if (sessionTab) {
+    // Its daily drop done for today is still worth showing, with its timer, off a channel only
+    // (the toolbar popup): on another channel it would read as that channel's.
+    const rest = here ? [] : restOn([sessionTab]);
+    return { drops: rest, from: rest.length && sessionTab.login !== login ? sessionTab.displayName || sessionTab.login : null };
+  }
   // Minutes rising with no tab here that can earn: a stream outside this browser. Listed only when
   // not looking at a channel; on a channel that cannot earn, other games' drops read as this
   // channel's (Tyler, 2026-11-09: Marvel Rivals and World of Tanks listed on a WoW channel).

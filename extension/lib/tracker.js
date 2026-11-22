@@ -40,6 +40,7 @@ export function emptyState() {
     timeline: [],
     notifiedClaims: [],
     active: [],
+    resting: [],
     unclaimed: [],
     streams: [],
     session: null,
@@ -435,6 +436,8 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = f
               window: true, // Its minutes are the window's; the session's are a running total.
               // Today's earned: the next one can start when Twitch says.
               startAt: today ? new Date(opens).toISOString() : d.startAt,
+              // Kept for My Drops, which shows it done with a timer to the next day (restingDrops).
+              ...(today ? { restUntil: opens } : {}),
               self: { currentMinutesWatched: today || !open ? 0 : g.minutes, isClaimed: done, hasPreconditionsMet: g.preconditionsMet },
             };
           }
@@ -568,6 +571,38 @@ function pendingDrops(fromSessions, now) {
         required: d.requiredMinutesWatched,
         endsAt: Number.isFinite(end) ? end : null,
         runningTotal: d.runningTotal === true,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Repeating reward drops done for today, with when the next day opens. Summarize leaves them out
+ * (their next start is ahead), so without this the drop vanished from My Drops once earned for
+ * the day, while Twitch's own panel keeps it as "Day complete" with "Day opens in 4h" (2026-11-22).
+ * Kept apart from the active list, where it would count as progress. Bound: the watch drops of
+ * the open channels' reward campaigns.
+ */
+function restingDrops(fromRewards, now) {
+  const out = [];
+  for (const c of fromRewards) {
+    if (!isLive(c, now)) continue;
+    for (const d of c.timeBasedDrops) {
+      // Every repeat granted is done for good, not resting; a time already past is open again.
+      if (d.restUntil == null || d.self.isClaimed || !(now < d.restUntil)) continue;
+      const end = dateOr(d.endAt, dateOr(c.endAt, Infinity));
+      // A next day after the campaign ends never comes.
+      if (d.restUntil >= end) continue;
+      out.push({
+        id: d.id,
+        name: d.name,
+        campaignId: c.id,
+        campaign: c.name,
+        game: c.game?.name || '',
+        image: d.benefitEdges?.[0]?.benefit?.imageAssetURL || c.imageURL || null,
+        required: d.requiredMinutesWatched,
+        opensAt: d.restUntil,
       });
     }
   }
@@ -785,6 +820,7 @@ export function update(prev, obs, now) {
   // Session campaigns too: a drop of theirs whose window has not opened is "opens <date>".
   const blocked = blockedCampaigns(allCampaigns, now);
   s.pending = pendingDrops(fromSessions, now);
+  s.resting = restingDrops(fromRewards, now);
   const pending = new Map();
   for (const d of s.pending) if (!pending.has(d.campaignId)) pending.set(d.campaignId, d);
   const known = obs.sessions || (obs.session ? [obs.session] : []);

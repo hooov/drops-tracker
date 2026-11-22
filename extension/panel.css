@@ -160,6 +160,10 @@ button.link { padding: 0; }
 .bar-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .bar-row .bar { flex: 1; margin-top: 0; }
 .bar-min { flex: none; font-variant-numeric: tabular-nums; }
+/* A drop done for today: a timer to the next day in the minutes' place. Neutral, not a tone colour:
+   grey is "nothing to do" and purple only a claim (states.js). */
+.timer-pill { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--dt-btn); color: var(--dt-text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timer-pill .clock { flex: none; }
 
 /* Rows */
 .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }

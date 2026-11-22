@@ -25,6 +25,30 @@ const poll = (s, campaigns, channels, i) => update(
 );
 const names = (r) => r.drops.map((d) => d.campaignId);
 
+// A daily drop done for today (state.resting, tracker.js restingDrops) beside another tab earning.
+// Found in review, 2026-11-22: listing it alone on its channel hid the other tab's rising drop.
+test('a drop done for today never hides another tab\'s progress, and is never shown as another channel\'s', () => {
+  const rest = { id: 'dvd', name: 'GTA DVD Chest', campaignId: 'gta', required: 60, opensAt: T0 + 4 * 3600000 };
+  const earning = { id: 'exile-drop', name: 'exile reward', campaignId: 'exile', minutes: 100, required: 240, remaining: 140, pct: 41 };
+  const tab = (login, campaignIds, channelState, credited = false) => ({ login, displayName: login, campaignIds, channelState, credited });
+  const s = {
+    verdict: { code: 'earning' },
+    session: { login: 'delta' },
+    active: [earning],
+    resting: [rest],
+    pending: [],
+    streams: [tab('foxtrot', ['gta'], 'reward'), tab('delta', ['exile'], 'eligible', true)],
+  };
+  assert.deepEqual([names(channelDrops(s, 'foxtrot', { pending: true })), channelDrops(s, 'foxtrot', { pending: true }).from], [['exile'], 'delta'], 'the earning tab, as before');
+  assert.deepEqual(names(channelDrops(s, 'delta', { pending: true })), ['exile'], 'not under delta either');
+
+  const quiet = { ...s, verdict: { code: 'idle' }, active: [], session: { login: 'foxtrot' }, streams: [tab('foxtrot', ['gta'], 'reward', true), tab('delta', ['exile'], 'no_drops')] };
+  assert.deepEqual(channelDrops(quiet, 'foxtrot', { pending: true }), { drops: [rest], from: null }, 'nothing else: its own channel shows it');
+  assert.deepEqual(channelDrops(quiet, 'delta', { pending: true }), { drops: [], from: null }, 'never on another channel');
+  assert.deepEqual(channelDrops(quiet, null, { pending: true }), { drops: [rest], from: 'foxtrot' }, 'the toolbar popup names its channel');
+  assert.deepEqual(channelDrops(quiet, 'foxtrot'), { drops: [], from: null }, 'never for the chip');
+});
+
 test('a channel lists only the drops it can earn', () => {
   const s = poll(undefined, [camp('exile', 175), camp('rivals', 30)], [chan('delta', 'exile')], 0);
   assert.deepEqual(names(channelDrops(s, 'delta')), ['exile']);
