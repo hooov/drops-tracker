@@ -403,6 +403,9 @@ export const LEFT_NEAR_MINUTES = 2;
 /** Credited drops the lists did not place, kept for Copy debug info (update, creditUnlisted). */
 export const CREDIT_UNLISTED_MAX = 10;
 
+/** How long a drop placed on a channel by its minutes stays there with no further rise (update). */
+export const PLACED_KEEP_MS = 30 * 60000;
+
 function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
   const out = new Map();
   if (!groups?.length) return [];
@@ -865,15 +868,26 @@ export function update(prev, obs, now) {
   // Only on a rise: a session alone names channels nobody is watching. Bound: one per open tab.
   const campaignOf = (dropId) => allCampaigns.find((c) => (c.timeBasedDrops || []).some((d) => d.id === dropId))?.id ?? null;
   const listedOn = (st) => new Set((st.channel?.campaigns || []).map((c) => c.id));
+  // A reward running total or window reading placed here reads `reward`, shown and quiet, never
+  // `eligible`: judging those was the 2026-11-18 false Hung and reload.
   const unfinished = (dropId) => active.some((d) => d.id === dropId && d.remaining > 0);
+  const judged = (dropId) => active.some((d) => d.id === dropId && d.remaining > 0 && !d.unjudged);
   const placedHere = new Map();
   for (const st of obs.streams || []) {
-    if (!st.login || !st.channel || st.channel.unknown || !st.channel.live) continue;
-    const here = known.filter((x) => x.login === st.login);
     const was = (prev?.placed || []).find((p) => p.tabId === st.tabId && p.login === st.login);
+    // A poll that says nothing (lookup failed, no session) keeps it unjudged: a hung drop never
+    // rises again to restore it. It ends when the credit moves (a session names the drop on
+    // another channel), the drop finishes, the lists hold it, the tab goes, or PLACED_KEEP_MS pass
+    // with no rise (a stream that changed game must not read as hung for long).
+    if (!st.login || !st.channel || st.channel.unknown || !st.channel.live) {
+      if (was && st.channel?.unknown && now - was.lastRise < PLACED_KEEP_MS) placedHere.set(st.tabId, was);
+      continue;
+    }
+    const here = known.filter((x) => x.login === st.login);
     const fresh = here.find((x) => risen.has(x.dropId) && unfinished(x.dropId) && campaignOf(x.dropId) && !listedOn(st).has(campaignOf(x.dropId)));
-    const keep = was && here.some((x) => x.dropId === was.dropId) && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
-    const p = fresh ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), since: was?.dropId === fresh.dropId ? was.since : now } : keep;
+    const moved = was && known.some((x) => x.dropId === was.dropId && x.login !== st.login);
+    const keep = was && !moved && now - was.lastRise < PLACED_KEEP_MS && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
+    const p = fresh ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), since: was?.dropId === fresh.dropId ? was.since : now, lastRise: now } : keep;
     if (p) placedHere.set(st.tabId, p);
   }
   s.placed = [...placedHere.values()];
@@ -887,7 +901,7 @@ export function update(prev, obs, now) {
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
     const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
     const place = placedHere.get(st.tabId);
-    const channelState = place && PLACEABLE.has(listedState) ? 'eligible' : listedState;
+    const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,

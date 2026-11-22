@@ -28,7 +28,7 @@ const json = (body) => ({ status: 200, ok: true, json: async () => body });
  * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
  * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
  */
-function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false, rewardFails = false }) {
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false, rewardFails = false, sessionOnEcho = false }) {
   const answer = structuredClone(inv);
   const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
   b.id = BADGE;
@@ -40,7 +40,7 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
   g.grantCount = dvd.grants;
   g.currentWindow = { startedAt: new Date(dvd.windowEnd - 86400000).toISOString(), expiresAt: new Date(dvd.windowEnd).toISOString() };
   if (dvd.next != null) g.nextEligibleAt = new Date(dvd.next).toISOString(); // Twitch's own "next eligible".
-  const session = { channel: { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
+  const session = { channel: sessionOnEcho ? { displayName: 'echo_247', id: ECHO_ID, name: 'echo_247' } : { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
   return async (_url, init) => {
     const ops = JSON.parse(init.body);
     return json(ops.map((o) => {
@@ -178,6 +178,20 @@ test('19:03 UTC with the reward inventory failing on every other call', async ()
     assert.deepEqual([v.chipFoxtrot.tone, v.chipEcho.tone], ['ok', 'ok'], `${n} polls`);
     assert.deepEqual(fired.map((e) => e.type), [], `${n} polls`);
   }
+});
+
+// Minutes win over the lists only for judged readings: GTAVI's window minutes rising with the
+// session naming a tab that does not list GTAVI must not make that tab a hang candidate (the
+// 2026-11-18 false Hung came from judging these).
+test('a reward reading credited on a tab that does not list it is never placed there', async () => {
+  const dvd = (m) => ({ minutes: m, grants: 1, windowEnd: WINDOW_END + 86400000 });
+  const rising = steps(4, (i) => ({ badge: null, badgeListed: false, dvd: dvd(20 + i), total: 20 + i, echo: true, sessionOnEcho: true }));
+  const flat = steps(10, () => ({ badge: null, badgeListed: false, dvd: dvd(23), total: 23, echo: true, sessionOnEcho: true }));
+  const { s, fired } = await run(Date.parse('2026-11-19T18:05:00Z'), [...rising, ...flat]);
+  // Credited there, so shown there, but as Twitch's numbers: reward, not a hang candidate.
+  assert.equal(s.streams.find((t) => t.login === 'echo_247').channelState, 'reward');
+  assert.notEqual(s.verdict.code, 'stalled');
+  assert.deepEqual(fired.map((e) => e.type), []);
 });
 
 // A held reading is up to 15 minutes old: it must not raise a stall by itself while the badge rises.

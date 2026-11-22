@@ -83,9 +83,11 @@ Anything that must follow one hang across that (Auto-reload) uses its own identi
 `stream.channelState`, from `classifyChannel()`. `CHANNEL_STATES` in states.js; only `eligible` can
 earn (`canEarn()`). Minutes override it: a tab whose session-named drop rose this poll, on a
 campaign its lists do not hold, is `eligible` with that campaign in `campaignIds` and its
-lists' own state in `listedState` (`state.placed`, kept while a session still names that drop
-there and it is unfinished; `reward`, `unknown`, `offline` and `not_channel` are left alone;
-each case is logged in `state.creditUnlisted`, last 10). Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
+lists' own state in `listedState` (`reward` instead of `eligible` for a never-judged reading).
+`state.placed` is kept through polls that say nothing and ends when the credit moves, the drop
+finishes, the lists hold it, the tab goes, or `PLACED_KEEP_MS` pass with no rise. Tabs already
+`reward`, `unknown`, `offline` or `not_channel` are left alone. Each case is logged in
+`state.creditUnlisted`, last 10. Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
 it is eligible or its drop is a reward running total (`creditedCampaign` in state is that drop's
 campaign, which the badge, chip and finish times compare against), `pendingDrop` only for `unstarted`/`badge_unseen` when a campaign built from the
 session has a drop Twitch reports no minutes for (`pendingDrops()`, kept as `state.pending`, listed

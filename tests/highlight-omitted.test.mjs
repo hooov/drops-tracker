@@ -169,6 +169,9 @@ test('credited where no list places it: earning there, listed, and the mismatch 
   assert.equal(v.states, 'charlie:eligible echo_247:no_drops');
   assert.deepEqual([v.verdict, v.warning, v.drops, v.dropsEcho], ['earning', null, ['RuneScape Bones'], ['RuneScape Bones']]);
   assert.deepEqual(fired, []);
+  assert.equal(v.headline, 'Earning on Charlie');
+  // 5 of 60 minutes.
+  assert.deepEqual([v.chip.pct, v.chip.tone, v.chipEcho.pct, v.chipEcho.tone, v.toolbar], [8, 'ok', 8, 'ok', '8% #067647']);
   assert.deepEqual(s.creditUnlisted.map((x) => [x.login, x.dropId, x.campaignId]), [['charlie', '0cc61e0f-e351-11f1-9433-0a58a9feac02', 'a8ce1281-5c82-4fbe-9a18-3e7d02e1e7b6']]);
 });
 
@@ -179,6 +182,22 @@ test('credited where no list places it, then flat: one stall warning, not "No Dr
   assert.equal(v.states, 'charlie:eligible');
   assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'uncounted', 'Drops not counting']);
   assert.deepEqual(fired, ['warning']);
+});
+
+test('placed, then flat with the channel list failing on every other call: still one stall warning', async () => {
+  const failed = { errors: [{ message: 'service error' }], data: null };
+  const mins = [1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4];
+  const { s, now, fired } = await run(mins.map((m, i) => ({ minutes: m, game: OTHER, ...(i >= 4 && i % 2 === 0 ? { cdc: failed } : {}) })));
+  const v = views(s, now);
+  assert.deepEqual([v.verdict, v.warning], ['stalled', 'Drops not counting']);
+  assert.deepEqual(fired, ['warning']);
+});
+
+test('placed, then flat past PLACED_KEEP_MS: back to what the lists say', async () => {
+  const mins = [1, 2, 3, 4, ...Array(34).fill(4)];
+  const { s } = await run(mins.map((m) => ({ minutes: m, game: OTHER })));
+  assert.equal(s.streams[0].channelState, 'sub_only');
+  assert.deepEqual(s.placed, []);
 });
 
 test('a session never rising there places nothing: no evidence of credit', async () => {
