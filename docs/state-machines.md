@@ -20,6 +20,9 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
 | PersistedQueryNotFound, or tracking stops after a Twitch deploy | [Query hashes](#9-query-hashes) |
 | Minute strip or "N of the last N counted" looks wrong | [Minutes and rate](#10-minutes-and-rate) |
+| A channel just opened shows nothing, another channel's drops, or another tab's "Not counting yet" | [Verdict](#1-verdict) (which tab), [Minutes and rate](#10-minutes-and-rate) (polls) |
+| "Earning slowly" on a channel that counts every minute | [Minutes and rate](#10-minutes-and-rate) |
+| A channel's Watch Drops empty before its first minute | [Channel state](#4-channel-state), `state.upcoming` |
 
 ## 1. Verdict
 `state.verdict`, written once per poll by `update()` in `lib/tracker.js`. Codes and the fields each
@@ -30,7 +33,8 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
   `tracking`, `lostAt`, `streams` and `session` keep the previous poll's values: unknown is never stalled.
 - `earning`: minutes rose within the limit (`STALL_MS`, `DEAD_PLAYER_MS` when every player is
   visibly dead, `NO_STREAM_MS` with no eligible tab). Flags: `slow` (rate under `SLOW_BELOW` over
-  `RATE_MIN_MINUTES`), `wasted` (see below), `channel` (Twitch's session name).
+  `RATE_MIN_MINUTES`, counted only since the credited channel last changed, carried as `rate`; see
+  section 10), `wasted` (see below), `channel` (Twitch's session name).
 - `waiting`: something can earn and the first minute has not landed.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
 - `idle`: nothing open can earn. `lost` (was earning, the tab can no longer), `limited` (cannot
@@ -39,6 +43,12 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
   carries these.
   `lost` lasts `LOST_SHOWN_MS` (10 min) from `lostAt`, then settles to a plain idle and does not
   come back until something earns again: left amber with nothing to act on, it read as a fault.
+- Which tab an idle headline names (not counting yet, reward, badge likely earned): the tab in
+  front (`frontFirst()`: a player that answered `hidden: false`, newest `stateSince` first), else
+  the first in tab order. For not counting yet the grace (`STALL_MS`, shown as `waiting`) is that
+  tab's own. Before 2026-11-22 a background tab past its grace put its "may need your game
+  account linked" on every channel opened after it. The warning key is the same whichever tab is
+  named, so switching tabs does not notify again.
 
 `wasted` (`wastedCredit()`): the session's drop rose this poll but is already earned, or cannot
 finish before its campaign ends, while the credited channel is open here. A quiet poll keeps the
@@ -92,7 +102,10 @@ finishes, the lists hold it, the tab goes, the stream's category (`channel.gameI
 it is eligible or its drop is a reward running total (`creditedCampaign` in state is that drop's
 campaign, which the badge, chip and finish times compare against), `pendingDrop` only for `unstarted`/`badge_unseen` when a campaign built from the
 session has a drop Twitch reports no minutes for (`pendingDrops()`, kept as `state.pending`, listed
-in Watch Drops on its channel without a bar and never in `active`). `reward`: a campaign read from
+in Watch Drops on its channel without a bar and never in `active`). An `unstarted` channel's game
+campaigns that no session names (not badges, not reward campaigns, not owned, not ended) are kept
+as `state.upcoming` (at most `UPCOMING_MAX`), listed the same way, but only when no other tab's
+progress is shown, as for a resting drop. `reward`: a campaign read from
 Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, except a channel's own non-repeating badge read fresh that poll, which is judged and makes its channel `eligible`) or a session running
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
@@ -158,13 +171,23 @@ tried as working, then pinned in twitch.js, then learned from twitch.tv's own re
 
 ## 10. Minutes and rate
 `state.drops[id]` `{ peak, low, at, session }` (`trackMinutes()`): a lower reading must last
-`DIP_POLLS` polls before it is believed; a gap longer than `GAP_MS` re-baselines. `state.timeline`
+`DIP_POLLS` polls and `DIP_MS` (`lowAt`) before it is believed, so extra polls (a page asking for a
+check, below) cannot shorten it; a gap longer than `GAP_MS` re-baselines. `state.timeline`
 `{ m, g, w, d }` per wall-clock minute, at most `TIMELINE_MAX`. `creditRate()` sums `d`;
-`timelineCells()` (minutelog.js) draws late credit on the minute it belonged to.
+`timelineCells()` (minutelog.js) draws late credit on the minute it belonged to. `state.rate` covers
+the whole strip and is what its caption says; `verdict.slow` is judged on the minutes since the
+credited channel (`rateLogin`) last changed (`rateFrom`, a minute number), so a channel just opened
+is not "slow" from the last one's hang. A poll with no credited channel known changes neither.
+
+Polls: the alarm once a minute, plus a check asked for at once by a page whose channel the last
+poll did not see, or that comes to the front after being seen behind (`checkNeeded()` in chip.js,
+once per reason and channel per page), spaced `SOON_GAP_MS` (10 s) apart by the worker with one
+timer. Opening the panel and the toolbar popup also poll.
 
 ## Known rough edges (not bugs today, worth knowing before changing nearby code)
 - Three notions of "out of date": the chip's own (`STALE_MS`, "Drops ?"), the panel's (shown as a
-  read error), and content.js forcing a poll after `STALE_POLL_MS`.
+  read error), and content.js forcing a poll after `STALE_POLL_MS` (a separate path from
+  `checkNeeded()`).
 - `lost` and `limited` are exclusive today, but `warning()` checks limited first and the badge,
   chip and panel check lost first.
 - `closedAt` does not expire without a gain, so "You left X" stays while nothing open can earn.
