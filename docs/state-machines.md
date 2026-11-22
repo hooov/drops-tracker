@@ -48,7 +48,8 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
   the first in tab order. For not counting yet the grace (`STALL_MS`, shown as `waiting`) is that
   tab's own. Before 2026-11-22 a background tab past its grace put its "may need your game
   account linked" on every channel opened after it. The warning key is the same whichever tab is
-  named, so switching tabs does not notify again.
+  named, and `events()` keeps the notified key through a `waiting` verdict, so a tab opened in
+  front of a warning badge tab does not bring its notification back.
 
 `wasted` (`wastedCredit()`): the session's drop rose this poll but is already earned, or cannot
 finish before its campaign ends, while the credited channel is open here. A quiet poll keeps the

@@ -109,6 +109,25 @@ test('the session naming the new channel with no minutes still reads as its firs
   }
 });
 
+test('a page checked before its video mounts already counts as the tab in front', () => {
+  // readPlayer() in background.js answers { hasVideo: false, hidden: document.hidden } with no <video>.
+  const seen = run(9, (i) => {
+    const f = i >= 6 ? [{ ...stream(2, fox, 0, false), player: i === 6 ? { hasVideo: false, hidden: false } : stream(2, fox, (i - 6) * 60, false).player }] : [];
+    return { streams: [stream(1, echo, 100 + i * 60, true), ...f] };
+  });
+  for (const p of seen.slice(6)) assert.equal(p.s.verdict.code, 'waiting', `${(p.now - T0) / MIN}: ${p.s.verdict.message}`);
+});
+
+test('a new tab in front does not make a badge warning fire twice', () => {
+  // A badge with no minutes warns ("Drops not being tracked", key limited). A tab opened in front
+  // and then closed again must not bring the same notification back.
+  const badgeCamp = { ...camp('camp-badge', [{ id: 'badge-1', name: 'Badge', required: 60 }]), channelOwned: true, game: null };
+  const india = channel('20000015', 'india', 'India', [badgeCamp]);
+  const seen = run(14, (i) => ({ streams: [stream(1, india, 100 + i * 60, false), ...(i >= 6 && i < 10 ? [stream(2, fox, 10 + (i - 6) * 60, false)] : [])] }));
+  const warnings = seen.flatMap((p) => p.events.filter((e) => e.type === 'warning'));
+  assert.equal(warnings.length, 1, JSON.stringify(warnings));
+});
+
 test('switching which tab is in front does not notify again', () => {
   // The same two unstarted tabs, the front one swapping every poll, past both graces.
   const seen = run(16, (i) => ({ streams: [stream(1, echo, 100 + i * 60, i % 2 === 0), stream(2, fox, 100 + i * 60, i % 2 === 1)] }));

@@ -236,8 +236,13 @@ try {
     return logins.includes('bravo') && !logins.includes('charlie');
   }, undefined, { timeout: 25000 });
   assert.deepEqual((await tabLogins()).sort(), ['alphatv', 'bravo']);
+  // A page opened fresh asks on its first tick, before or after its video mounts.
+  const fresh = await ctx.newPage();
+  await fresh.goto('https://www.twitch.tv/delta');
+  await until(popup, async () => ((await chrome.storage.local.get('state')).state.streams || []).some((t) => t.login === 'delta'), undefined, { timeout: 25000 });
+  await fresh.close();
   await sw.evaluate(() => chrome.alarms.create('poll', { periodInMinutes: 1 }));
-  step('a channel changed inside Twitch\'s page is checked within seconds, without waiting for the minute');
+  step('a channel changed inside Twitch\'s page, or opened fresh, is checked within seconds, without waiting for the minute');
 
   await advance(1, 1);
   await alpha.waitForTimeout(600);

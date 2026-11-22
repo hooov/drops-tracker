@@ -1286,7 +1286,10 @@ export function events(prev, next, now) {
   const out = [];
   const w = warning(next, now);
   if (w && w.key !== prev?.notifiedWarning) out.push({ type: 'warning', title: w.title, message: w.message });
-  next.notifiedWarning = w ? w.key : null;
+  // Waiting says nothing either way: a tab opened in front waits out its grace while a background
+  // badge's warning (key limited) is still true, and forgetting it then notified it twice
+  // (2026-11-22). A stall or a stop has a key of its own each time, so this hides no new one.
+  next.notifiedWarning = w ? w.key : next.verdict?.code === 'waiting' ? prev?.notifiedWarning ?? null : null;
   const seen = new Set(prev?.notifiedClaims || []);
   for (const u of next.unclaimed) {
     // Twitch's inventory shows "Connect", not "Claim", until the game account is connected
