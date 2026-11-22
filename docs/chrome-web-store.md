@@ -33,7 +33,7 @@ Bump `version` in `extension/manifest.json` before every upload after the first:
 ```
 Twitch's Drops progress only updates when you reload the page, and sometimes Twitch quietly stops counting your watch-time while the stream keeps playing normally. You find out an hour later.
 
-Drops Tracker asks Twitch once a minute how many minutes you actually have, and treats rising minutes as the only proof that you are earning.
+Drops Tracker asks Twitch once a minute, and right away when you open a channel, how many minutes you actually have, and treats rising minutes as the only proof that you are earning.
 
 WHAT YOU SEE
 - A small chip in the chat row, beside your channel points, with your progress and a count of drops ready to claim
@@ -80,7 +80,7 @@ Tracks your Twitch Drops: shows whether Twitch is actually crediting your Drops 
 
 | Permission | Justification |
 |---|---|
-| alarms | Checks Drops progress with Twitch once a minute. An alarm keeps that check running while the service worker is asleep. |
+| alarms | Checks Drops progress with Twitch once a minute, and once more when a channel page opens. An alarm keeps that check running while the service worker is asleep. |
 | cookies | Reads the user's own Twitch sign-in cookie (auth-token) on twitch.tv to request their Drops progress from Twitch, the same way twitch.tv does. It is read for each request, sent only to gql.twitch.tv, and never stored or sent anywhere else. |
 | notifications | Shows a desktop notification when Drops minutes stop rising, because the toolbar badge cannot be seen while a stream is fullscreen, and when a drop is ready to claim (can be switched off). |
 | scripting | Reads the video player's state (playing, paused, frozen, muted) in open Twitch tabs to explain why minutes stopped, shows a small warning on the Twitch page, and adds the progress chip to Twitch tabs that were already open when the extension was installed or updated. Only on twitch.tv. |
