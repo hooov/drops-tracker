@@ -311,6 +311,9 @@ async function installTwitch(sw, data) {
             const list = self.__gone?.includes(login) ? null : D.available[login] ?? null;
             return { data: { channel: { id: v.channelID, viewerDropCampaigns: list } } };
           }
+          // Answered, nothing more: a failed answer reads unknown ("Cannot check"), not "No Drops".
+          case 'ChannelDropsCampaigns':
+            return { data: { channelDropCampaigns: [] } };
           default: {
             const login = Object.keys(D.channels).find((k) => D.channels[k].id === v.channelID);
             const s = D.session[login];

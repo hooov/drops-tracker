@@ -93,6 +93,17 @@ test('a dismissed badge keeps the badge path', async () => {
   assert.equal(c.badges.length, 1);
 });
 
+// Audit 2026-11-22: a badge is this channel's own, from this channel's answer. One whose groups
+// name no place was listed before earnsHere and must stay listed (none captured; a miss is worse).
+test('a badge whose groups name no place stays listed', async () => {
+  const g = group({ progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 180 }, channels: null, categories: [] } });
+  const c = await channel(listed([camp({ brandName: 'CREATOR_LED_BADGE_CAMPAIGN', rewardGroups: [g] })]));
+  assert.deepEqual([c.badges.length, c.campaigns.map((x) => [x.id, x.channelOwned])], [1, [['c1', true]]]);
+  // One naming another channel is not this channel's.
+  const other = group({ progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 180 }, channels: [{ id: '2' }], categories: [] } });
+  assert.deepEqual((await channel(listed([camp({ brandName: 'CREATOR_LED_BADGE_CAMPAIGN', rewardGroups: [other] })]))).badges, []);
+});
+
 test('odd shapes never throw and never mark the channel unknown', async () => {
   const shapes = [
     listed([camp({ rewardGroups: null })]),
@@ -102,9 +113,11 @@ test('odd shapes never throw and never mark the channel unknown', async () => {
   const got = [];
   for (const s of shapes) { const c = await channel(s); got.push([!!c.unknown, c.campaigns.map((x) => x.watchDrops.map((d) => d.name).join())]); }
   assert.deepEqual(got, [[false, []], [false, []], [false, ['GTA DVD Drops']]]);
+  // This answer is the channel's list (audit, 2026-11-22): not reading it, with nothing earnable
+  // from the highlight answer, is unknown, not "No Drops".
   for (const bad of [listed(null), { errors: [{ message: 'service error' }], data: null }]) {
     const c = await channel(bad);
-    assert.deepEqual([!!c.unknown, c.badgeLookupFailed, c.campaigns], [false, true, []]);
+    assert.deepEqual([!!c.unknown, c.badgeLookupFailed, c.campaigns], [true, true, []]);
   }
 });
 

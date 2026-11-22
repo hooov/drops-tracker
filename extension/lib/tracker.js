@@ -115,6 +115,7 @@ export function summarize(campaigns, now) {
       active.push({
         ...base,
         ...(d.unjudged ? { unjudged: true } : {}), // Twitch's numbers, never judged (rewardCampaigns).
+        ...(d.held ? { held: true } : {}), // A held reward-inventory reading (rewardCampaigns).
         minutes,
         required,
         remaining,
@@ -423,7 +424,12 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = f
             // A channel's own badge is judged like any drop when this poll read it: its minutes
             // here rose one a minute (2026-11-19, 69 to 106 of 180), and leaving it unjudged hid a
             // 10-minute stall behind "today's reward drop is earned". Repeating rewards stay unjudged.
-            unjudged: !(c.channelOwned && !g.repeatTimes && fresh),
+            // A held reading (this poll's call failed, which is about half of them) stays judged so
+            // the channel keeps its state and hang clock, marked held: it cannot raise a stall by
+            // itself. Unjudged, it turned the channel "reward" every other poll and reset the clock,
+            // so a real stall never warned (audit, 2026-11-22).
+            unjudged: !(c.channelOwned && !g.repeatTimes),
+            ...(c.channelOwned && !g.repeatTimes && !fresh ? { held: true } : {}),
           };
           if (g.repeatTimes) {
             const done = g.grants != null && g.grants >= g.repeatTimes;
@@ -935,13 +941,20 @@ export function update(prev, obs, now) {
   // Timeline: one entry per wall-clock minute.
   const bucket = Math.floor(now / 60000);
   const candidates = streams.filter((st) => st.channelState === 'eligible');
+  // Able to earn only on readings held from an earlier answer: its minutes this poll are not
+  // known, so it counts neither as watched-without-credit nor as evidence of a stall.
+  const heldOnly = (st) => {
+    const ds = s.active.filter((d) => st.campaignIds?.includes(d.campaignId) && d.remaining > 0 && !d.unjudged);
+    return ds.length > 0 && ds.every((d) => d.held);
+  };
+  const watching = candidates.some((st) => !heldOnly(st));
   const last = s.timeline[s.timeline.length - 1];
   if (last && last.m === bucket) {
     last.g = last.g || gained;
-    last.w = last.w || candidates.length > 0;
+    last.w = last.w || watching;
     last.d = (last.d ?? 0) + added;
   } else {
-    s.timeline.push({ m: bucket, g: gained, w: candidates.length > 0, d: added });
+    s.timeline.push({ m: bucket, g: gained, w: watching, d: added });
   }
   if (s.timeline.length > TIMELINE_MAX) s.timeline.splice(0, s.timeline.length - TIMELINE_MAX);
   s.rate = creditRate(s.timeline);
@@ -1089,7 +1102,9 @@ export function update(prev, obs, now) {
     const able = candidates.filter((c) => c.ableSince != null);
     const clock = Math.min(...(able.length ? able.map((c) => c.ableSince) : candidates.map((c) => c.since)));
     const since = Math.max(s.lastGainAt ?? 0, s.resumeAt ?? 0, clock);
-    if (now - since < limit) {
+    // Held readings alone never raise a stall, but keep one a fresh reading raised.
+    const stale = candidates.every(heldOnly) && prev?.verdict?.code !== 'stalled';
+    if (now - since < limit || stale) {
       s.verdict = { code: 'waiting', since };
     } else {
       s.verdict = { code: 'stalled', since, ...diagnose(candidates, streams, s.active, s.unclaimed) };

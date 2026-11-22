@@ -362,14 +362,21 @@ export const CREATOR_BADGE_BRAND = 'CREATOR_LED_BADGE_CAMPAIGN';
  * lists `channels` with `categories: []`. Each list, when it has entries, has to include this
  * stream: its channel, and the category it is live in now (VideoPlayerStreamInfoOverlayChannel's
  * broadcastSettings.game; Twitch credits "while they're live in {Category}"). A group naming
- * neither is not placed here: nothing says it can earn on this channel.
+ * neither is placed here only on a channel's own badge (ownBadge), which this channel's answer
+ * lists as its own: it was listed before this rule, and a missed badge is the failure nobody
+ * sees (audit, 2026-11-22). Any other such group: nothing says it can earn here.
+ * gameId: the category's ID, null when Twitch says the stream has none, undefined when its answer
+ * could not say (the field gone). Returns null, undecided, when only the category could decide.
  */
-function earnsHere(crit, channelId, gameId) {
+function earnsHere(crit, channelId, gameId, ownBadge = false) {
   const has = (list, id) => list.some((k) => k?.id === id);
   const channels = Array.isArray(crit?.channels) && crit.channels.length ? crit.channels : null;
   const categories = Array.isArray(crit?.categories) && crit.categories.length ? crit.categories : null;
-  if (!channels && !categories) return false;
-  return (!channels || has(channels, channelId)) && (!categories || (!!gameId && has(categories, gameId)));
+  if (!channels && !categories) return ownBadge && !!crit;
+  if (channels && !has(channels, channelId)) return false;
+  if (!categories) return true;
+  if (gameId === undefined) return null;
+  return gameId !== null && has(categories, gameId);
 }
 
 /**
@@ -382,30 +389,43 @@ function earnsHere(crit, channelId, gameId) {
  * Badges are picked by brandName, not by game: GTAVI's campaign has game null here too. Added in
  * the shapes applyCampaigns gives, so the Badges tab and the reward inventory join (group ID =
  * drop ID, confirmed on that badge) work unchanged.
- * Failing only costs the campaigns it would add: badgeLookupFailed, never the channel unknown.
+ * Because this is the list, not reading it is not "nothing here": when it fails, answers with an
+ * error (good data beside it is still read), or a group could not be placed for want of the
+ * stream's category, and nothing earnable was found, the channel is unknown. Read as the highlight
+ * answer alone, the OSRS channel above went back to "Sub drops only" with its drop rising (audit,
+ * 2026-11-22). With something earnable found it stays readable, marked badgeLookupFailed.
  */
-function applyChannelCampaigns(channel, item, now = Date.now(), gameId = null) {
+// No default for gameId: a default would turn undefined (category unreadable) into null (none).
+function applyChannelCampaigns(channel, item, now, gameId) {
   const c = channel;
   if (c.unknown) return;
   const list = item?.data?.channelDropCampaigns;
-  if (errorsOf(item).length || !Array.isArray(list)) {
-    c.badgeLookupFailed = true;
-    return;
-  }
   c.badges ||= [];
   c.campaigns ||= [];
+  if (!Array.isArray(list)) {
+    c.badgeLookupFailed = true;
+    if (!c.campaigns.length) c.unknown = true;
+    return;
+  }
+  const failed = errorsOf(item).length > 0;
+  if (failed) c.badgeLookupFailed = true;
+  let undecided = false;
   const have = new Set([...c.badges, ...c.campaigns].map((x) => x.id));
   for (const x of list) {
     if (!x?.id || have.has(x.id) || !Array.isArray(x.rewardGroups)) continue;
-    const here = x.rewardGroups.filter((g) => g?.id && earnsHere(g.progressCriteria, c.id, gameId));
+    const badge = x.brandName === CREATOR_BADGE_BRAND;
+    const ended = Date.parse(x.endAt) <= now;
+    const placed = x.rewardGroups.filter((g) => g?.id).map((g) => [g, earnsHere(g.progressCriteria, c.id, gameId, badge)]);
+    if (!badge && !ended && placed.some(([g, at]) => at === null && g.progressCriteria?.requirementType === 'WATCH')) undecided = true;
+    const here = placed.filter(([, at]) => at === true).map(([g]) => g);
     if (!here.length) continue;
-    if (x.brandName !== CREATOR_BADGE_BRAND) {
+    if (!badge) {
       // A campaign listed for another game, or one whose groups name no place, could otherwise
       // read as a channel that should be earning: a false stall. A finished drop is still judged
       // by Inventory and the earned rewards, as for any game campaign. An ended one is left out:
       // whether this answer keeps ended campaigns is unmeasured, and one would turn "No Drops"
       // into "Not counting yet" on a channel that cannot earn (review, 2026-11-20).
-      if (Date.parse(x.endAt) <= now) continue;
+      if (ended) continue;
       addListedCampaign(c, x, here, x.game?.displayName || x.game?.name || null);
       have.add(x.id);
       continue;
@@ -438,6 +458,7 @@ function applyChannelCampaigns(channel, item, now = Date.now(), gameId = null) {
       watchDrops: watch.map((d) => ({ id: d.id, name: d.name, image: d.image, required: d.required, startAt: x.startAt, endAt: x.endAt, benefitIds: [] })),
     });
   }
+  if ((failed || undecided) && !c.campaigns.length) c.unknown = true;
 }
 
 /**
@@ -599,9 +620,17 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
   const { campaigns, rewards } = parseInventory(first[0]);
   const channels = {};
   unique.forEach((login, i) => { channels[login] = parseChannel(login, first[i + 1]); });
-  // The category each stream is in, for campaigns the highlight answer omits. Kept out of the
-  // channel object, which is stored and copied into debug info. Bound: one per looked-up channel.
-  const gameIds = new Map(unique.map((login, i) => [login, first[i + 1]?.data?.user?.broadcastSettings?.game?.id || null]));
+  // The category each stream is in, for earnsHere. Kept out of the channel object, which is stored
+  // and copied into debug info. Bound: one per looked-up channel. null: Twitch says none (game
+  // null). undefined: the answer cannot say (broadcastSettings or its game field gone, or not an
+  // ID), which must not read as "no category": that is "Sub drops only" with a drop rising.
+  const gameOf = (u) => {
+    const bs = u?.broadcastSettings;
+    if (!bs || typeof bs !== 'object' || !('game' in bs)) return undefined;
+    if (bs.game === null) return null;
+    return typeof bs.game?.id === 'string' && bs.game.id ? bs.game.id : undefined;
+  };
+  const gameIds = new Map(unique.map((login, i) => [login, gameOf(first[i + 1]?.data?.user)]));
 
   // The session query needs a channel ID with a campaign: empty gives null, an unrelated ID
   // gives a zeroed session. So ask per channel and keep the first real one.

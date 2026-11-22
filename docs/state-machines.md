@@ -99,7 +99,10 @@ the time passes, every repeat is granted, or the time falls after the campaign e
 the next poll the pill reads "Open now". The reward inventory answer is kept as
 `state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
-which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
+which hides nothing and is never a hang. A held answer keeps a channel's own badge judged and its
+tab `eligible` with its `ableSince`, but its drops are `held`: a poll whose only earnable drops
+are held stays `waiting` (or keeps a `stalled` a fresh reading raised) and is not counted as
+watched (audit, 2026-11-22: unjudged, the tab flipped to `reward` and the clock reset). It is asked when a channel offers a campaign Inventory
 leaves out, at least every `REWARD_HOLD_MS` while any channel is live, and once after a window
 it read has ended (`rewardsDue()`; after a failed ask, at most every `REWARD_RETRY_MS`). A
 campaign read from `ChannelDropsCampaigns` (any one whose groups earn on this channel, dismissed

@@ -28,7 +28,7 @@ const json = (body) => ({ status: 200, ok: true, json: async () => body });
  * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
  * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
  */
-function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false }) {
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false, rewardFails = false }) {
   const answer = structuredClone(inv);
   const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
   b.id = BADGE;
@@ -46,7 +46,7 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
     return json(ops.map((o) => {
       const isEcho = o.variables?.channel === 'echo_247' || o.variables?.channelID === ECHO_ID;
       switch (o.operationName) {
-        case 'ViewerRewardDropInventory': return answer;
+        case 'ViewerRewardDropInventory': return rewardFails ? { errors: [{ message: 'service error' }], data: null } : answer;
         case 'Inventory': return { data: { currentUser: { inventory: { dropCampaignsInProgress: [], gameEventDrops: [] } } } };
         case 'VideoPlayerStreamInfoOverlayChannel':
           return isEcho
@@ -154,6 +154,25 @@ test('the badge stopped, no second tab', async () => {
   assert.equal(v.toolbar, '! #d92d20');
   assert.deepEqual([v.chipFoxtrot.tone, v.chipFoxtrot.pct], ['bad', 58]);
   assert.deepEqual(fired.map((e) => e.type), ['warning']);
+});
+
+// Audit 2026-11-22: the reward inventory fails on about half of real calls (tracker.js). A held
+// reading between good ones reset the hang clock, so the same stall never warned.
+test('the badge stopped, the reward inventory failing on every other call', async () => {
+  const flat = [103, 104, 105, 106, ...Array(16).fill(106)];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), flat.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3), rewardFails: i % 2 === 1 })));
+  const v = views(s, now);
+  show('badge stalled, flaky reward inventory', { ...v, notified: fired.map((e) => e.type) });
+  assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'uncounted', 'Drops not counting']);
+  assert.deepEqual(fired.map((e) => e.type), ['warning'], 'one desktop notification, no flicker');
+});
+
+// A held reading is up to 15 minutes old: it must not raise a stall by itself while the badge rises.
+test('the badge rising, the reward inventory failing for four calls in a row', async () => {
+  const mins = [103, 104, 105, 106, 107, 108, 109, 110, 111];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), mins.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3), rewardFails: i >= 3 && i <= 7 })));
+  assert.equal(s.verdict.code, 'earning');
+  assert.deepEqual(fired.map((e) => e.type), [], 'no warning from held readings');
 });
 
 test('the badge reaching 180 and Twitch still crediting it', async () => {

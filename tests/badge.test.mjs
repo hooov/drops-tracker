@@ -23,6 +23,9 @@ const twitch = (minutes, inventory = []) => async (_url, init) => json(JSON.pars
       return { data: { user: v.channel === 'charlie' ? fx.mixedChannel : fx.subOnlyChannel } };
     case 'DropsHighlightService_AvailableDrops':
       return { data: { channel: v.channelID === fx.mixed.id ? fx.mixed : fx.subOnly } };
+    // Answered, nothing more (this capture predates the query). A failed answer reads unknown.
+    case 'ChannelDropsCampaigns':
+      return { data: { channelDropCampaigns: [] } };
     default: {
       const m = minutes.charlie;
       const real = v.channelID === fx.mixed.id && m != null;

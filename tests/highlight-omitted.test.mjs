@@ -28,9 +28,10 @@ const BONES_REWARD = 'daa5f04b-e34f-11f1-976b-0a58a9feac02';
  * owned: its reward among the earned ones (assumed ID match, see the fixture). noSession: the
  * session answers null. cdc: a ChannelDropsCampaigns answer in place of the captured one.
  */
-function twitchAt({ minutes, echo, game, claimed = false, gone = false, owned = gone, noSession = false, cdc = fx.channelCampaigns }) {
+function twitchAt({ minutes, echo, game, claimed = false, gone = false, owned = gone, noSession = false, cdc = fx.channelCampaigns, noBroadcastSettings = false }) {
   const overlay = structuredClone(fx.overlay);
   if (game !== undefined) overlay.data.user.broadcastSettings.game = game;
+  if (noBroadcastSettings) delete overlay.data.user.broadcastSettings;
   const campaign = structuredClone(fx.inventory);
   campaign.timeBasedDrops[0].self.currentMinutesWatched = minutes;
   if (claimed) Object.assign(campaign.timeBasedDrops[0].self, { isClaimed: true, dropInstanceID: 'USERID#a8ce1281#0cc61e0f' });
@@ -137,9 +138,36 @@ test('RuneScape Bones earned: done, never a stall', async () => {
   }
 });
 
+// Audit 2026-11-22: ChannelDropsCampaigns is the list, so its failing, or the stream's category
+// being unreadable, must not read as the highlight answer's "Sub drops only" while Bones rises.
+test('the channel list failing: unknown with Bones still shown, never "Sub drops only"', async () => {
+  const failed = { errors: [{ message: 'service error' }], data: null };
+  const { s, now } = await run(steps(4, (i) => ({ minutes: 1 + i, cdc: failed })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:unknown');
+  assert.deepEqual(v.drops, ['RuneScape Bones']);
+  assert.notEqual(v.verdict, 'stalled');
+});
+
+test('the channel list answering with an error beside good data: the good data is read', async () => {
+  const partial = { ...structuredClone(fx.channelCampaigns), errors: [{ message: 'service error', path: ['channelDropCampaigns', 0, 'rewardGroups'] }] };
+  const { s, now } = await run(steps(4, (i) => ({ minutes: 1 + i, cdc: partial })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:eligible');
+  assert.deepEqual([v.verdict, v.drops], ['earning', ['RuneScape Bones']]);
+});
+
+test('the stream category unreadable (broadcastSettings gone): unknown, never "Sub drops only"', async () => {
+  const { s, now } = await run(steps(4, (i) => ({ minutes: 1 + i, game: undefined, noBroadcastSettings: true })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:unknown');
+  assert.deepEqual(v.drops, ['RuneScape Bones']);
+});
+
 // "Get rewards ... while they're live in {Category}" (the sub campaign's earn instructions, same
 // capture): the group's categories are where it can earn, so a stream in another one cannot.
-test('the stream in another category, or none read: the omitted campaign is not added', async () => {
+// game null is Twitch saying the stream has no category, unlike a field gone (test above).
+test('the stream in another category, or in none: the omitted campaign is not added', async () => {
   for (const game of [{ id: '509658', displayName: 'Just Chatting', name: 'Just Chatting' }, null]) {
     const snap = await fetchSnapshot('tok', [fx.login], twitchAt({ minutes: 1, game }), {}, { askRewards: false, now: START });
     assert.deepEqual(snap.channels[fx.login].campaigns.map((x) => x.id), [], String(game?.name));
