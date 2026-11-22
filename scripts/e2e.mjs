@@ -871,6 +871,34 @@ try {
   assert.equal(pendingCard.bars, 0, 'no minutes reported, so no bar');
   const reachedText = await alpha.evaluate(() => [...document.getElementById('drops-tracker-panel').shadowRoot.querySelectorAll('#drops .card')].find((c) => /Already Reached/.test(c.textContent)).textContent);
   assert.match(reachedText, /Watch time reached/, 'a drop at its requirement does not say "Watch 0m to earn"');
+  // A daily drop done for today: full, with a timer to the next day in the minutes' place, ticking
+  // (Twitch's panel: "Day complete", "Day opens in 4h"; 2026-11-22).
+  // The time from the channel page's clock: the popup's runs ahead with the fake polls.
+  const pageNow = await alpha.evaluate(() => Date.now());
+  await popup.evaluate(async (opensAt) => {
+    const { state } = await chrome.storage.local.get('state');
+    const campaignId = state.streams.find((t) => t.login === 'alphatv').campaignIds[0];
+    const rest = { id: 'e2e-rest', name: 'Done For Today', campaignId, campaign: 'x', game: 'x', image: null, required: 60, opensAt };
+    await chrome.storage.local.set({ state: { ...state, resting: [rest] } });
+  }, pageNow + 90000);
+  await alpha.waitForFunction(() => /Done For Today/.test(document.getElementById('drops-tracker-panel').shadowRoot.getElementById('drops').textContent));
+  const restCard = () => alpha.evaluate(() => {
+    const card = [...document.getElementById('drops-tracker-panel').shadowRoot.querySelectorAll('#drops .card')].find((c) => /Done For Today/.test(c.textContent));
+    const pill = card.querySelector('.timer-pill');
+    return { text: card.textContent, fill: card.querySelector('.bar i')?.style.width, left: pill?.querySelector('.timer-left')?.textContent, clock: !!pill?.querySelector('svg'), minutes: card.querySelectorAll('.bar-min').length };
+  });
+  const rest1 = await restCard();
+  assert.match(rest1.text, /Day complete, 60\/60\. Next day at \d{1,2}:\d{2}/);
+  assert.equal(rest1.fill, '100%', 'a full bar');
+  assert.equal(rest1.minutes, 0, 'the timer takes the minutes\' place');
+  assert.ok(rest1.clock, 'with a clock');
+  assert.match(rest1.left, /^1:[0-3]\d$/, `about 1:30 left, got ${rest1.left}`);
+  await until(alpha, (l) => {
+    const pill = document.getElementById('drops-tracker-panel').shadowRoot.querySelector('#drops .timer-pill .timer-left');
+    return pill && pill.textContent !== l;
+  }, rest1.left);
+  await alpha.locator('#drops-tracker-panel').screenshot({ path: join(out, '29-day-timer.png') });
+  step('a drop done for today stays listed, full, with a ticking timer to the next day');
   await alpha.keyboard.press('Escape');
   step('a drop with no minutes reported is listed with the full requirement and no bar; one at its requirement says so');
   await popup.bringToFront();

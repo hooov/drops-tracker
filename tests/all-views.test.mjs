@@ -38,6 +38,7 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
   g.currentMinutesWatched = dvd.minutes;
   g.grantCount = dvd.grants;
   g.currentWindow = { startedAt: new Date(dvd.windowEnd - 86400000).toISOString(), expiresAt: new Date(dvd.windowEnd).toISOString() };
+  if (dvd.next != null) g.nextEligibleAt = new Date(dvd.next).toISOString(); // Twitch's own "next eligible".
   const session = { channel: { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
   return async (_url, init) => {
     const ops = JSON.parse(init.body);
@@ -256,4 +257,39 @@ test('GTAVI listed, then in neither answer: a window that ended is asked again, 
   const g = s.rewardInv.groups.find((x) => x.id === DVD);
   assert.equal(g.windowEnd, NEXT_END, 'the inventory was asked again after 17:50:15, not held for 15 minutes');
   assert.deepEqual([v.verdict, v.wasted], ['earning', null], 'a running total of 638 is not a finished 60-minute drop');
+});
+
+// Twitch's Watch Drops panel keeps a daily drop done for today as "Day complete" with "Day opens in
+// 4h" (Tyler's screenshot, 2026-11-22). Before, the extension dropped it from My Drops entirely.
+test('GTAVI done for today: My Drops keeps it with when the next day opens, and nothing else counts it', async () => {
+  const day = (over = {}) => steps(6, (i) => ({ badge: 69 + i, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END, ...over }, total: 319 + i, echo: true }));
+  const { s, now } = await run(Date.parse('2026-11-19T19:00:00Z'), day());
+  const mine = channelDrops(s, 'foxtrot', { pending: true }).drops;
+  const dvd = mine.find((d) => d.id === DVD);
+  assert.ok(dvd, 'listed on its channel');
+  assert.equal(dvd.opensAt, WINDOW_END, 'no "next eligible" from Twitch: the window end');
+  assert.equal(dvd.required, 60);
+  assert.ok(mine.some((d) => d.name === 'Foxtrot Watch Badge'), 'the badge still listed beside it');
+  assert.ok(!s.active.some((d) => d.id === DVD), 'not progress');
+  assert.ok(!channelDrops(s, 'foxtrot').drops.some((d) => d.id === DVD), "not for the chip, whose percentage stays the badge's");
+  assert.equal(chipView(s, now, 'foxtrot').pct, 41);
+
+  const next = WINDOW_END - 2 * 3600000;
+  const own = await run(Date.parse('2026-11-19T19:00:00Z'), day({ next }));
+  assert.equal(own.s.resting.find((d) => d.id === DVD)?.opensAt, next, "Twitch's own time wins");
+});
+
+test('GTAVI done for today: gone from the timer once the day opens, or once every day is granted', async () => {
+  const after = await run(WINDOW_END + MIN, steps(3, (i) => ({ badge: 100 + i, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 400 + i })));
+  assert.deepEqual(after.s.resting, [], 'window over: open again, not resting');
+  const all = await run(Date.parse('2026-11-19T19:00:00Z'), steps(3, (i) => ({ badge: 69 + i, dvd: { minutes: 60, grants: 6, windowEnd: WINDOW_END }, total: 319 + i })));
+  assert.deepEqual(all.s.resting, [], 'all 6 granted: done for good');
+  // GTAVI's campaign ends 2026-12-01T07:59:59Z: a next day after that never comes.
+  const last = await run(Date.parse('2026-11-30T21:00:00Z'), steps(3, (i) => ({ badge: null, dvd: { minutes: 60, grants: 5, windowEnd: Date.parse('2026-12-01T20:00:00Z') }, total: 900 + i })));
+  assert.deepEqual(last.s.resting, [], 'next day after the campaign ends');
+  const before = await run(Date.parse('2026-11-30T05:00:00Z'), steps(3, (i) => ({ badge: null, dvd: { minutes: 60, grants: 5, windowEnd: Date.parse('2026-11-30T20:00:00Z') }, total: 900 + i })));
+  assert.equal(before.s.resting.length, 1, 'the same campaign a day earlier: resting');
+  const alone = await run(Date.parse('2026-11-19T19:00:00Z'), steps(3, (i) => ({ badge: null, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 319 + i })));
+  const popup = channelDrops(alone.s, null, { pending: true });
+  assert.deepEqual([popup.drops.map((d) => d.id), popup.from], [[DVD], 'Foxtrot'], 'the toolbar popup shows it too, named by channel');
 });

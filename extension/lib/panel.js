@@ -2,7 +2,7 @@
 // follow Twitch's own "Drops & More" panel; see panel.css.
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
 import { STALE_MS, channelDrops } from './chip.js';
-import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day } from './directory.js';
+import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
 import { badgeSections } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
@@ -10,7 +10,8 @@ import { STALL_CAUSES, PLAYER_STATES, CHANNEL_STATES, verdictTone, canEarn, RATE
 
 const CLOSE_ICON = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
 const RELOAD_ICON = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M16 3v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
-const CHEVRON_ICON = '<svg class="chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M8 5l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+const CLOCK_ICON = '<svg class="clock" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.6V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHEVRON_ICON ='<svg class="chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M8 5l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
 
 const TEMPLATE = `
   <div class="panel">
@@ -623,6 +624,11 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const cc = state.creditedCampaign ?? credited;
     const timed = (d) => state.verdict.code === 'earning' && !state.verdict.wasted && (!cc || d.campaignId === cc);
     const rows = list.map((d) => {
+      // Done for today (tracker.js restingDrops): full, with a timer to the next day beside the bar.
+      if (d.opensAt != null) {
+        const when = d.opensAt - now < 86400000 ? clock(d.opensAt) : `${day(d.opensAt)}, ${clock(d.opensAt)}`;
+        return { ...d, minutes: d.required, pct: 100, line: `Day complete, ${d.required}/${d.required}. Next day at ${when}` };
+      }
       // No minutes reported: the whole requirement, no bar and no finish time (as the Badges tab).
       // A sibling can tick with the drop the session names (facts), so the full time is an upper bound.
       if (d.minutes == null) return { ...d, line: d.runningTotal ? `Needs ${span(d.required)}, progress not readable here` : `Watch up to ${span(d.required)} to earn` };
@@ -634,7 +640,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       const eta = timed(d) && !d.unjudged ? `, about ${clock(now + (d.remaining / ratio) * 60000)}` : '';
       return { ...d, line: d.atRisk && d.endsAt ? `Watch ${left} to earn, ends ${day(d.endsAt)}` : `Watch ${left} to earn${eta}` };
     });
-    setList($('drops'), JSON.stringify(rows.map((r) => [r.id, r.minutes, r.line, r.image])), () => rows.map((d) => {
+    // opensAt too: the pill keeps its target from the build, and Twitch's time can move within a minute.
+    setList($('drops'), JSON.stringify(rows.map((r) => [r.id, r.minutes, r.line, r.image, r.opensAt])), () => rows.map((d) => {
       const card = el('div', 'card');
       const top = el('div', 'card-top');
       if (d.image) {
@@ -663,10 +670,26 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       bar.append(fill);
       // The exact minutes at a glance; they used to show only on hover.
       const barRow = el('div', 'bar-row');
-      barRow.append(bar, el('span', 'sub bar-min', `${Math.min(d.minutes, d.required)}/${d.required}`));
+      if (d.opensAt != null) {
+        // The timer takes the minutes' place (they move to the line above). Its text is set below
+        // on every render, so the card is not rebuilt each second.
+        const pill = el('span', 'timer-pill');
+        pill.dataset.opens = String(d.opensAt);
+        pill.title = `Next day opens at ${clock(d.opensAt)}`;
+        pill.innerHTML = CLOCK_ICON;
+        pill.append(el('span', 'timer-left'));
+        barRow.append(bar, pill);
+      } else {
+        barRow.append(bar, el('span', 'sub bar-min', `${Math.min(d.minutes, d.required)}/${d.required}`));
+      }
       card.append(top, barRow);
       return card;
     }));
+    for (const pill of $('drops').querySelectorAll('.timer-pill')) {
+      const left = countdown(Number(pill.dataset.opens), now);
+      const text = pill.querySelector('.timer-left');
+      if (text.textContent !== left) text.textContent = left;
+    }
   }
 
   function renderStreams(state) {

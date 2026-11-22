@@ -2,7 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseDirectory, TwitchError } from '../extension/lib/twitch.js';
-import { directoryRows, directoryError, failedDirectory, isFresh, FRESH_MS, RETRY_MS } from '../extension/lib/directory.js';
+import { directoryRows, directoryError, failedDirectory, isFresh, FRESH_MS, RETRY_MS, countdown } from '../extension/lib/directory.js';
+
+test('countdown: days and hours, hours and minutes, then seconds in the last hour, then open', () => {
+  const at = Date.parse('2026-11-22T20:00:00Z');
+  const before = (s) => at - s * 1000;
+  assert.equal(countdown(at, before(26 * 3600 + 5)), '1d 2h');
+  assert.equal(countdown(at, before(3 * 3600 + 59 * 60 + 30)), '3h 59m');
+  assert.equal(countdown(at, before(3600)), '1h 0m');
+  assert.equal(countdown(at, before(3599)), '59:59');
+  assert.equal(countdown(at, before(34 * 60 + 12)), '34:12');
+  assert.equal(countdown(at, before(0.4)), '0:01', 'a part second still to go is not open yet');
+  assert.equal(countdown(at, at), 'Open now');
+  assert.equal(countdown(at, at + 5000), 'Open now', 'until the next poll picks the new day up');
+  assert.equal(countdown(NaN, at), 'Open now', 'never "NaN:NaN"');
+});
 
 const real = JSON.parse(readFileSync(new URL('./fixtures/dashboard-2026-11-06.json', import.meta.url)));
 const NOW = Date.parse('2026-11-06T12:00:00Z');
