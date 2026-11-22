@@ -283,7 +283,9 @@ function badgeTooLate(stream, now) {
   return worst;
 }
 
-function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null) {
+// notStarted: when given, collects the game campaigns read as not started from nothing (not a
+// session reporting nothing, which state.pending lists), so My Drops can list their drops.
+function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null) {
   if (!stream.login) return 'not_channel';
   // No entry at all means it was not looked up (past the channel limit), not that it is offline.
   if (!stream.channel || stream.channel.unknown) return 'unknown';
@@ -325,7 +327,10 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
     if (allOwned) continue;
     if (left) badgeLeft = true;
     else if (c.channelOwned) badgeUnseen = true;
-    else unstarted = true;
+    else {
+      unstarted = true;
+      if (!c.rewardCampaign) notStarted?.push(c);
+    }
   }
   // Not in the inventory could mean about to start, needs a linked account, or a finished
   // campaign Twitch still lists. None of those is evidence of a hang, so it never reads as one.
@@ -402,6 +407,9 @@ export function leftBadges(prev, before, groups, now) {
 
 /** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
+
+/** Not-started drops listed across open channels (update, upcoming): 20 tabs could each list 20 campaigns. */
+export const UPCOMING_MAX = 60;
 
 /** Credited drops the lists did not place, kept for Copy debug info (update, creditUnlisted). */
 export const CREDIT_UNLISTED_MAX = 10;
@@ -909,13 +917,29 @@ export function update(prev, obs, now) {
   // and not_channel are left as they are.
   const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
   const tabs = {};
+  // Drops of campaigns Twitch has not started on an open channel, listed with no minutes (as
+  // pending is) so its My Drops is not empty before the first minute (audit, 2026-11-22). Never
+  // in active: minutes left there would make the channel eligible and its first minute a hang.
+  const upcoming = new Map();
   const streams = (obs.streams || []).map((st) => {
     const old = s.tabs[st.tabId];
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
-    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const notStarted = [];
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted);
     const place = placedHere.get(st.tabId);
     const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
+    if (channelState === 'unstarted') {
+      for (const c of notStarted) {
+        if (now >= dateOr(c.endAt, Infinity)) continue;
+        for (const d of c.watchDrops || []) {
+          if (upcoming.size >= UPCOMING_MAX || upcoming.has(d.id) || !(d.required > 0)) continue;
+          if (now < dateOr(d.startAt, -Infinity) || now >= dateOr(d.endAt, Infinity)) continue;
+          const end = dateOr(d.endAt, dateOr(c.endAt, Infinity));
+          upcoming.set(d.id, { id: d.id, name: d.name, campaignId: c.id, campaign: c.name, game: c.game || '', image: d.image || c.image || null, minutes: null, required: d.required, endsAt: Number.isFinite(end) ? end : null });
+        }
+      }
+    }
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -966,6 +990,9 @@ export function update(prev, obs, now) {
     };
   });
   s.tabs = tabs;
+  // A drop the session already lists as reporting nothing stays in pending only.
+  const inPending = new Set((s.pending || []).map((d) => d.id));
+  s.upcoming = [...upcoming.values()].filter((d) => !inPending.has(d.id));
   // Each time the lists missed a credited drop, for Copy debug info: the next list rule to learn.
   // Bound: CREDIT_UNLISTED_MAX, newest kept.
   s.creditUnlisted = [...(prev?.creditUnlisted || [])];

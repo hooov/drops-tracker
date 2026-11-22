@@ -66,7 +66,11 @@ export function channelDrops(state, login, { pending = false } = {}) {
   // A channel whose only drop is done for today: shown only when no other tab's progress is, since
   // under "Watch Drops on <other tab>" it would read as that tab's, and hiding the progress the
   // verdict talks about is worse (review, 2026-11-22).
-  if (resting.length) return { drops: resting, from: null };
+  // A campaign Twitch has not started on this channel: its drops with no minutes (tracker.js
+  // upcoming), the same opt-in, and like a resting drop only when no other tab's progress is shown,
+  // which the headline may be about (audit, 2026-11-22: an empty list read as broken).
+  const notYet = pending && here ? (state.upcoming || []).filter((d) => here.campaignIds.includes(d.campaignId)) : [];
+  if (resting.length || notYet.length) return { drops: [...resting, ...notYet], from: null };
   // Credited on a tab here that has nothing left to list, such as a channel badge already earned
   // that Twitch kept counting (seen 2026-11-09). Listing every drop in progress would suggest
   // those are what is rising; the verdict says what is.
