@@ -5,7 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, events } from '../extension/lib/tracker.js';
+import { events } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { badgeSections } from '../extension/lib/badges.js';
 import { debugRows, debugBundle } from '../extension/lib/debug.js';
 

@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, warning, badge, summarize } from '../extension/lib/tracker.js';
+import { warning, badge, summarize } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { chipView, channelFromPath } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { directoryRows } from '../extension/lib/directory.js';

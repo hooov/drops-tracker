@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, events, badge, warning, rewardsDue } from '../extension/lib/tracker.js';
+import { events, badge, warning, rewardsDue } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { chipView, channelDrops } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { verdictText } from '../extension/lib/panel.js';
@@ -27,7 +28,7 @@ const json = (body) => ({ status: 200, ok: true, json: async () => body });
  * inventory. dvd: { minutes, grants, windowEnd }. total: the session's GTAVI running total.
  * echo: a second tab open. badgeGroup: overrides for the badge group's self (earned, status).
  */
-function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false }) {
+function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badgeListed = true, rewardListed = true, dismissed = false, rewardFails = false, sessionOnEcho = false }) {
   const answer = structuredClone(inv);
   const [b, gta] = answer.data.currentUser.inventory.viewerRewardDropCampaignsInProgress;
   b.id = BADGE;
@@ -39,18 +40,19 @@ function twitchAt({ badge: badgeMinutes, dvd, total, echo, badgeGroup = {}, badg
   g.grantCount = dvd.grants;
   g.currentWindow = { startedAt: new Date(dvd.windowEnd - 86400000).toISOString(), expiresAt: new Date(dvd.windowEnd).toISOString() };
   if (dvd.next != null) g.nextEligibleAt = new Date(dvd.next).toISOString(); // Twitch's own "next eligible".
-  const session = { channel: { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
+  const session = { channel: sessionOnEcho ? { displayName: 'echo_247', id: ECHO_ID, name: 'echo_247' } : { displayName: 'Foxtrot', id: cc.channelID, name: 'foxtrot' }, currentMinutesWatched: total, dropID: DVD, game: null, requiredMinutesWatched: 60 };
   return async (_url, init) => {
     const ops = JSON.parse(init.body);
     return json(ops.map((o) => {
       const isEcho = o.variables?.channel === 'echo_247' || o.variables?.channelID === ECHO_ID;
       switch (o.operationName) {
-        case 'ViewerRewardDropInventory': return answer;
+        case 'ViewerRewardDropInventory': return rewardFails ? { errors: [{ message: 'service error' }], data: null } : answer;
         case 'Inventory': return { data: { currentUser: { inventory: { dropCampaignsInProgress: [], gameEventDrops: [] } } } };
         case 'VideoPlayerStreamInfoOverlayChannel':
           return isEcho
             ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } }
-            : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', stream: { id: '1' } } } };
+            // Live in GTA VI: the only category GTAVI's groups earn in (same capture), and Twitch credited it there.
+            : { data: { user: { id: cc.channelID, login: 'foxtrot', displayName: 'Foxtrot', broadcastSettings: { game: { id: '1867279146', displayName: 'Grand Theft Auto VI' } }, stream: { id: '1' } } } };
         // dismissed: GTAVI's chat highlight dismissed, so only ChannelDropsCampaigns lists it (2026-11-20).
         // rewardListed false: gone from both answers.
         case 'DropsHighlightService_AvailableDrops': return { data: { channel: isEcho || !rewardListed || dismissed ? { id: isEcho ? ECHO_ID : cc.channelID, viewerDropCampaigns: [] } : reward } };
@@ -152,6 +154,52 @@ test('the badge stopped, no second tab', async () => {
   assert.equal(v.toolbar, '! #d92d20');
   assert.deepEqual([v.chipFoxtrot.tone, v.chipFoxtrot.pct], ['bad', 58]);
   assert.deepEqual(fired.map((e) => e.type), ['warning']);
+});
+
+// Audit 2026-11-22: the reward inventory fails on about half of real calls (tracker.js). A held
+// reading between good ones reset the hang clock, so the same stall never warned.
+test('the badge stopped, the reward inventory failing on every other call', async () => {
+  const flat = [103, 104, 105, 106, ...Array(16).fill(106)];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), flat.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3), rewardFails: i % 2 === 1 })));
+  const v = views(s, now);
+  show('badge stalled, flaky reward inventory', { ...v, notified: fired.map((e) => e.type) });
+  assert.deepEqual([v.verdict, v.cause, v.warning], ['stalled', 'uncounted', 'Drops not counting']);
+  assert.deepEqual(fired.map((e) => e.type), ['warning'], 'one desktop notification, no flicker');
+});
+
+// The 19:03 case with the reward inventory failing on alternate polls, ending on a held poll and
+// on a fresh one: the session total keeps rising, so the wasted judgement reruns on held polls.
+test('19:03 UTC with the reward inventory failing on every other call', async () => {
+  for (const n of [6, 7]) {
+    const { s, now, fired } = await run(Date.parse('2026-11-19T19:00:00Z'), steps(n, (i) => ({ badge: 69 + i, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 319 + i, echo: true, rewardFails: i % 2 === 1 })));
+    const v = views(s, now);
+    show(`19:03 flaky, ${n} polls`, { ...v, notified: fired.map((e) => e.type) });
+    assert.deepEqual([v.verdict, v.wasted, v.warning], ['earning', null, null], `${n} polls`);
+    assert.deepEqual([v.chipFoxtrot.tone, v.chipEcho.tone], ['ok', 'ok'], `${n} polls`);
+    assert.deepEqual(fired.map((e) => e.type), [], `${n} polls`);
+  }
+});
+
+// Minutes win over the lists only for judged readings: GTAVI's window minutes rising with the
+// session naming a tab that does not list GTAVI must not make that tab a hang candidate (the
+// 2026-11-18 false Hung came from judging these).
+test('a reward reading credited on a tab that does not list it is never placed there', async () => {
+  const dvd = (m) => ({ minutes: m, grants: 1, windowEnd: WINDOW_END + 86400000 });
+  const rising = steps(4, (i) => ({ badge: null, badgeListed: false, dvd: dvd(20 + i), total: 20 + i, echo: true, sessionOnEcho: true }));
+  const flat = steps(10, () => ({ badge: null, badgeListed: false, dvd: dvd(23), total: 23, echo: true, sessionOnEcho: true }));
+  const { s, fired } = await run(Date.parse('2026-11-19T18:05:00Z'), [...rising, ...flat]);
+  // Credited there, so shown there, but as Twitch's numbers: reward, not a hang candidate.
+  assert.equal(s.streams.find((t) => t.login === 'echo_247').channelState, 'reward');
+  assert.notEqual(s.verdict.code, 'stalled');
+  assert.deepEqual(fired.map((e) => e.type), []);
+});
+
+// A held reading is up to 15 minutes old: it must not raise a stall by itself while the badge rises.
+test('the badge rising, the reward inventory failing for four calls in a row', async () => {
+  const mins = [103, 104, 105, 106, 107, 108, 109, 110, 111];
+  const { s, now, fired } = await run(Date.parse('2026-11-19T19:50:00Z'), mins.map((m, i) => ({ badge: m, dvd: { minutes: 60, grants: 2, windowEnd: WINDOW_END }, total: 353 + Math.min(i, 3), rewardFails: i >= 3 && i <= 7 })));
+  assert.equal(s.verdict.code, 'earning');
+  assert.deepEqual(fired.map((e) => e.type), [], 'no warning from held readings');
 });
 
 test('the badge reaching 180 and Twitch still crediting it', async () => {

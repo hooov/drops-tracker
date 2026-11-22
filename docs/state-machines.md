@@ -81,7 +81,14 @@ Anything that must follow one hang across that (Auto-reload) uses its own identi
 
 ## 4. Channel state
 `stream.channelState`, from `classifyChannel()`. `CHANNEL_STATES` in states.js; only `eligible` can
-earn (`canEarn()`). Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
+earn (`canEarn()`). Minutes override it: a tab whose session-named drop rose this poll, on a
+campaign its lists do not hold, is `eligible` with that campaign in `campaignIds` and its
+lists' own state in `listedState` (`reward` instead of `eligible` for a never-judged reading).
+`state.placed` is kept through polls that say nothing and ends when the credit moves, the drop
+finishes, the lists hold it, the tab goes, the stream's category (`channel.gameId`) changes, or
+`PLACED_KEEP_MS` pass with no rise. Tabs already
+`reward`, `unknown`, `offline` or `not_channel` are left alone. Each case is logged in
+`state.creditUnlisted`, last 10. Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
 it is eligible or its drop is a reward running total (`creditedCampaign` in state is that drop's
 campaign, which the badge, chip and finish times compare against), `pendingDrop` only for `unstarted`/`badge_unseen` when a campaign built from the
 session has a drop Twitch reports no minutes for (`pendingDrops()`, kept as `state.pending`, listed
@@ -99,10 +106,14 @@ the time passes, every repeat is granted, or the time falls after the campaign e
 the next poll the pill reads "Open now". The reward inventory answer is kept as
 `state.rewardInv` (`{ at, groups }`, held `REWARD_HOLD_MS` after a failed call) and the last
 call's outcome as `state.rewardCheck`. A failed lookup is `unknown`,
-which hides nothing and is never a hang. It is asked when a channel offers a campaign Inventory
+which hides nothing and is never a hang. A held answer keeps a channel's own badge judged and its
+tab `eligible` with its `ableSince`, but its drops are `held`: a poll whose only earnable drops
+are held stays `waiting` (or keeps a `stalled` a fresh reading raised) and is not counted as
+watched (audit, 2026-11-22: unjudged, the tab flipped to `reward` and the clock reset). It is asked when a channel offers a campaign Inventory
 leaves out, at least every `REWARD_HOLD_MS` while any channel is live, and once after a window
 it read has ended (`rewardsDue()`; after a failed ask, at most every `REWARD_RETRY_MS`). A
-dismissed campaign read from `ChannelDropsCampaigns` counts as "offered" like any other, so a
+campaign read from `ChannelDropsCampaigns` (any one whose groups earn on this channel, dismissed
+or not; `earnsHere()` in twitch.js) counts as "offered" like any other, so a
 channel with one that Inventory leaves out asks the reward inventory every poll, as a listed one
 always did. `state.unplacedBadges`
 (`unplacedBadges()`): its badge campaigns that no open channel lists, each with its first and

@@ -1,0 +1,171 @@
+{
+  "_comment": "Captured signed out on 2026-11-22 ~17:30 UTC from popout chat (no video), for a channel streaming Old School RuneScape. DropsHighlightService_AvailableDrops lists only the sub-only campaign (1f04121b); ChannelDropsCampaigns also lists the watch campaign a8ce1281 (RuneScape Bones, 60 min), not dismissed. overlay, highlight and channelCampaigns are Twitch's answers with the channel ID, login, display name, title, profile art, stream ID and viewer count replaced by placeholders, and the highlight's localizedContent cut to earnInstructions; campaign IDs, group IDs, dates, requirements and art are real. inventory and session are NOT raw captures: they are rebuilt from the user's signed-in debug bundle (0.1.9, 17:19 UTC), which had RuneScape Bones at 1 of 60 from Inventory and the session naming this channel with dropID 0cc61e0f, in the shape of gql-2026-11-06.json. Assumed, not seen: Inventory's benefit ID for the drop equals the ChannelDropsCampaigns reward ID (daa5f04b), as it did for GTAVI on 2026-11-20.",
+  "channelID": "20000012",
+  "login": "charlie",
+  "overlay": {
+    "data": {
+      "user": {
+        "id": "20000012",
+        "profileURL": "https://www.twitch.tv/charlie",
+        "displayName": "Charlie",
+        "login": "charlie",
+        "profileImageURL": "https://static-cdn.jtvnw.net/jtv_user_pictures/placeholder-150x150.png",
+        "broadcastSettings": {
+          "id": "20000012",
+          "title": "placeholder title",
+          "game": { "id": "459931", "displayName": "Old School RuneScape", "name": "Old School RuneScape", "slug": "old-school-runescape", "__typename": "Game" },
+          "__typename": "BroadcastSettings"
+        },
+        "stream": { "id": "30000012", "viewersCount": 1000, "tags": [], "__typename": "Stream" },
+        "__typename": "User"
+      }
+    },
+    "extensions": { "operationName": "VideoPlayerStreamInfoOverlayChannel" }
+  },
+  "highlight": {
+    "data": {
+      "channel": {
+        "id": "20000012",
+        "viewerDropCampaigns": [
+          {
+            "id": "1f04121b-9c6b-4ae8-bdd5-9833c96a64ae",
+            "name": "OSRS Hardcore Worlds",
+            "game": { "id": "459931", "name": "Old School RuneScape", "__typename": "Game" },
+            "detailsURL": "https://www.twitch.tv/drops/campaigns",
+            "endAt": "2026-11-30T23:59:59.999Z",
+            "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/f1d68ca7-00f6-49a4-a1d0-02b44948e5ec.png",
+            "eventBasedDrops": [],
+            "timeBasedDrops": [
+              {
+                "id": "cb6a58a2-e350-11f1-90f7-0a58a9feac02",
+                "name": "RuneScape GnomePlush",
+                "startAt": "2026-11-18T13:04:32Z",
+                "endAt": "2026-11-30T23:59:59.999Z",
+                "benefitEdges": [
+                  {
+                    "benefit": {
+                      "id": "b497eb8f-e34f-11f1-bff9-0a58a9feac02",
+                      "name": "RuneScape GnomePlush",
+                      "game": { "name": "Old School RuneScape", "id": "459931", "__typename": "Game" },
+                      "imageAssetURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/61485d82-616b-44c0-9130-a38736009910.png",
+                      "__typename": "DropBenefit"
+                    },
+                    "entitlementLimit": 1,
+                    "__typename": "DropBenefitEdge"
+                  }
+                ],
+                "requiredMinutesWatched": 0,
+                "requiredSubs": 1,
+                "__typename": "TimeBasedDrop"
+              }
+            ],
+            "summary": { "includesMWRequirement": false, "includesSubRequirement": true, "isSitewide": false, "isRewardCampaign": false, "isPermanentlyDismissible": false, "__typename": "DropCampaignSummary" },
+            "localizedContent": { "earnInstructions": "Get rewards by purchasing or gifting subscriptions to {Channel} while they're live in <x:bold>{Category}</x:bold>", "__typename": "DropCommunityHighlightCampaignLocalizedContent" },
+            "__typename": "DropCampaign"
+          }
+        ],
+        "__typename": "Channel"
+      }
+    },
+    "extensions": { "operationName": "DropsHighlightService_AvailableDrops" }
+  },
+  "channelCampaigns": {
+    "data": {
+      "channelDropCampaigns": [
+        {
+          "id": "1f04121b-9c6b-4ae8-bdd5-9833c96a64ae",
+          "name": "OSRS Hardcore Worlds",
+          "brandName": "",
+          "detailsURL": "https://www.twitch.tv/drops/campaigns",
+          "startAt": "2026-11-18T13:04:32Z",
+          "endAt": "2026-11-30T23:59:59.999Z",
+          "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/f1d68ca7-00f6-49a4-a1d0-02b44948e5ec.png",
+          "hasViewerDismissedHighlight": false,
+          "isPermanentlyDismissible": false,
+          "game": { "id": "459931", "name": "Old School RuneScape", "__typename": "Game" },
+          "rewardGroups": [
+            {
+              "id": "cb6a58a2-e350-11f1-90f7-0a58a9feac02",
+              "name": "RuneScape GnomePlush",
+              "progressCriteria": {
+                "requirementType": "SUB",
+                "requirements": { "minutesWatched": null, "subs": 1, "turboSubs": null, "__typename": "DropsUnlockRequirement" },
+                "isRepeatable": false,
+                "isAutoProgressable": true,
+                "repeatableConfig": null,
+                "channels": null,
+                "categories": [{ "id": "459931", "displayName": "Old School RuneScape", "__typename": "Game" }],
+                "__typename": "DropsProgressCriteria"
+              },
+              "rewards": [{ "id": "b497eb8f-e34f-11f1-bff9-0a58a9feac02", "name": "RuneScape GnomePlush", "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/61485d82-616b-44c0-9130-a38736009910.png", "distributionType": "BADGE", "__typename": "DropsReward" }],
+              "__typename": "DropsRewardGroup"
+            }
+          ],
+          "__typename": "DropsCampaign"
+        },
+        {
+          "id": "a8ce1281-5c82-4fbe-9a18-3e7d02e1e7b6",
+          "name": "OSRS Hardcore Worlds",
+          "brandName": "",
+          "detailsURL": "https://www.twitch.tv/drops/campaigns",
+          "startAt": "2026-11-18T13:06:33Z",
+          "endAt": "2026-11-30T23:59:59.999Z",
+          "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/facbef0f-30a9-4652-be8e-3706e72b1fb7.png",
+          "hasViewerDismissedHighlight": false,
+          "isPermanentlyDismissible": false,
+          "game": { "id": "459931", "name": "Old School RuneScape", "__typename": "Game" },
+          "rewardGroups": [
+            {
+              "id": "0cc61e0f-e351-11f1-9433-0a58a9feac02",
+              "name": "RuneScape Bones",
+              "progressCriteria": {
+                "requirementType": "WATCH",
+                "requirements": { "minutesWatched": 60, "subs": null, "turboSubs": null, "__typename": "DropsUnlockRequirement" },
+                "isRepeatable": false,
+                "isAutoProgressable": true,
+                "repeatableConfig": null,
+                "channels": null,
+                "categories": [{ "id": "459931", "displayName": "Old School RuneScape", "__typename": "Game" }],
+                "__typename": "DropsProgressCriteria"
+              },
+              "rewards": [{ "id": "daa5f04b-e34f-11f1-976b-0a58a9feac02", "name": "RuneScape Bones", "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/3f8997fa-c97e-4f13-8d6c-1fd689a84d9f.png", "distributionType": "BADGE", "__typename": "DropsReward" }],
+              "__typename": "DropsRewardGroup"
+            }
+          ],
+          "__typename": "DropsCampaign"
+        }
+      ]
+    },
+    "extensions": { "operationName": "ChannelDropsCampaigns" }
+  },
+  "inventory": {
+    "id": "a8ce1281-5c82-4fbe-9a18-3e7d02e1e7b6",
+    "name": "OSRS Hardcore Worlds",
+    "accountLinkURL": "",
+    "startAt": "2026-11-18T13:06:33Z",
+    "endAt": "2026-11-30T23:59:59.999Z",
+    "game": { "id": "459931", "name": "Old School RuneScape", "slug": "old-school-runescape" },
+    "self": { "isAccountConnected": true },
+    "status": "ACTIVE",
+    "timeBasedDrops": [
+      {
+        "benefitEdges": [{ "benefit": { "id": "daa5f04b-e34f-11f1-976b-0a58a9feac02", "name": "RuneScape Bones" }, "entitlementLimit": 1 }],
+        "startAt": "2026-11-18T13:06:33Z",
+        "endAt": "2026-11-30T23:59:59.999Z",
+        "id": "0cc61e0f-e351-11f1-9433-0a58a9feac02",
+        "name": "RuneScape Bones",
+        "preconditionDrops": null,
+        "requiredMinutesWatched": 60,
+        "requiredSubs": 0,
+        "self": { "currentMinutesWatched": 1, "currentSubs": 0, "dropInstanceID": null, "hasPreconditionsMet": true, "isClaimed": false }
+      }
+    ]
+  },
+  "session": {
+    "channel": { "displayName": "Charlie", "id": "20000012", "name": "charlie" },
+    "currentMinutesWatched": 1,
+    "dropID": "0cc61e0f-e351-11f1-9433-0a58a9feac02",
+    "game": { "displayName": "Old School RuneScape", "id": "459931" },
+    "requiredMinutesWatched": 60
+  }
+}

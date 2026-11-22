@@ -79,7 +79,7 @@ export function debugStreams(state) {
 const STATE_FIELDS = [
   'lastPollAt', 'lastOkAt', 'lastGainAt', 'resumeAt', 'closedAt', 'closedName', 'earnerTabs', 'tracking',
   'lostAt', 'verdict', 'rate', 'timeline', 'streams', 'session', 'active', 'pending', 'resting', 'unclaimed', 'tabs', 'drops',
-  'rewardCheck', 'rewardInv', 'creditedCampaign', 'unplacedBadges',
+  'rewardCheck', 'rewardInv', 'creditedCampaign', 'unplacedBadges', 'placed', 'creditUnlisted',
 ];
 
 /** What Copy debug info hands over. Built from named fields only, so a token can never ride along. */

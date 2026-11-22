@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot, PINNED } from '../extension/lib/twitch.js';
-import { update, badge } from '../extension/lib/tracker.js';
+import { badge, warning } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { badgeSections } from '../extension/lib/badges.js';
 import { chipView, channelDrops } from '../extension/lib/chip.js';
 
@@ -236,5 +237,9 @@ test('a failed reward inventory call never reads as the badge stalling', async (
   let q;
   for (const [i, m] of [103, 104, 105, 106].entries()) q = await twoTabPoll(q, i, m, { total: 353 + i });
   for (let i = 4; i < 12; i++) q = await twoTabPoll(q, i, 106, { total: 356, rewardFails: true });
-  assert.notEqual(q.streams.find((t) => t.login === 'foxtrot').channelState, 'eligible', 'a held reading is not judged');
+  // Not "not eligible": leaving the channel unjudged on held polls reset its hang clock, so a real
+  // stall between failed calls never warned (audit, 2026-11-22). Held readings keep the state and
+  // clock but cannot raise a stall by themselves.
+  assert.notEqual(q.verdict.code, 'stalled', JSON.stringify(q.verdict));
+  assert.equal(warning(q, Date.parse('2026-11-19T19:00:00Z') + 11 * MIN), null);
 });

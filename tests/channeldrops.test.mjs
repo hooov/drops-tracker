@@ -1,7 +1,7 @@
 // Which drops show on a channel, through the real tracker rather than hand-made state.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { update } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { channelDrops, chipView } from '../extension/lib/chip.js';
 
 const T0 = Date.parse('2026-11-07T01:00:00Z');

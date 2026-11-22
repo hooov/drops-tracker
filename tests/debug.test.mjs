@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { debugRows, debugStreams, debugBundle } from '../extension/lib/debug.js';
 
 const T0 = Date.parse('2026-11-06T19:00:00Z');

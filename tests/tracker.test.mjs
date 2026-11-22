@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { update, events, badge, summarize, warning, TIMELINE_MAX, creditRate, LOST_SHOWN_MS } from '../extension/lib/tracker.js';
+import { events, badge, summarize, warning, TIMELINE_MAX, creditRate, LOST_SHOWN_MS } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { verdictTone } from '../extension/lib/states.js';
 import { timelineCells } from '../extension/lib/minutelog.js';
 
@@ -160,7 +161,7 @@ test('the same channel open in two playing tabs says so', () => {
   const mins = [195, 196, 196, 196, 196, 196];
   const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), stream(2, alpha, 200 + i * 60)]);
   assert.equal(s.verdict.cause, 'second_stream');
-  assert.match(s.verdict.message, /AlphaTV is playing in two tabs/);
+  assert.match(s.verdict.message, /AlphaTV stopped earning while playing in two tabs\. Close one of them\./);
 });
 
 test('a second playing tab that is not a channel is described, never "null"', () => {
@@ -170,7 +171,7 @@ test('a second playing tab that is not a channel is described, never "null"', ()
   const s = run(mins, (i) => [stream(1, alpha, 100 + i * 60), { ...front, player: { ...front.player, currentTime: 200 + i * 60 } }]);
   assert.equal(s.verdict.cause, 'second_stream');
   assert.doesNotMatch(s.verdict.message, /null|undefined/);
-  assert.match(s.verdict.message, /Another Twitch tab is also playing video/);
+  assert.match(s.verdict.message, /another Twitch tab is playing video\. Close or pause that tab\./);
   assert.match(s.verdict.message, /Close or pause that tab/);
 });
 

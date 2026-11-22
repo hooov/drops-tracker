@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
-import { update, warning, badge } from '../extension/lib/tracker.js';
+import { warning, badge } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { chipView, channelFromPath } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 
@@ -22,6 +23,9 @@ const twitch = (minutes, inventory = []) => async (_url, init) => json(JSON.pars
       return { data: { user: v.channel === 'charlie' ? fx.mixedChannel : fx.subOnlyChannel } };
     case 'DropsHighlightService_AvailableDrops':
       return { data: { channel: v.channelID === fx.mixed.id ? fx.mixed : fx.subOnly } };
+    // Answered, nothing more (this capture predates the query). A failed answer reads unknown.
+    case 'ChannelDropsCampaigns':
+      return { data: { channelDropCampaigns: [] } };
     default: {
       const m = minutes.charlie;
       const real = v.channelID === fx.mixed.id && m != null;

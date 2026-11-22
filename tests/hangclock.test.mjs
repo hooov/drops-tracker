@@ -2,7 +2,7 @@
 // time. Real case, 2026-11-07: Delta paused 23:33 to 00:19, then reloaded 2s after it resumed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { update } from '../extension/lib/tracker.js';
+import { update } from './invariants.mjs';
 import { autoReloadStep, normalize } from '../extension/lib/settings.js';
 
 const T0 = Date.parse('2026-11-06T23:00:30Z');

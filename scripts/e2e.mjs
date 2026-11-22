@@ -914,10 +914,15 @@ try {
     camp.id = '2599eac2-414e-4165-8dfb-9184ea99f927';
     camp.rewardGroups[0].id = 'afe7886c-e437-11f1-8716-0a58a9feac02';
     camp.rewardGroups[0].self.currentMinutesWatched = 45;
+    // The captured badge's groups name its own channel; served here for AlphaTV, so they name AlphaTV.
+    const ccHere = structuredClone(cc.answer);
+    for (const x of ccHere.data.channelDropCampaigns) {
+      for (const g of x.rewardGroups) if (g.progressCriteria?.channels) g.progressCriteria.channels = [{ id: '10000001' }];
+    }
     self.__transform = (answer, ops) => answer.map((a, i) => {
       switch (ops[i].operationName) {
         case 'DropsHighlightService_AvailableDrops': return { data: { channel: { viewerDropCampaigns: [] } } };
-        case 'ChannelDropsCampaigns': return ops[i].variables.channelID === '10000001' ? cc.answer : { data: { channelDropCampaigns: [] } };
+        case 'ChannelDropsCampaigns': return ops[i].variables.channelID === '10000001' ? ccHere : { data: { channelDropCampaigns: [] } };
         case 'ViewerRewardDropInventory': return badgeInv;
         default: return a;
       }

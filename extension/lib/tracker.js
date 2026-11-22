@@ -115,6 +115,7 @@ export function summarize(campaigns, now) {
       active.push({
         ...base,
         ...(d.unjudged ? { unjudged: true } : {}), // Twitch's numbers, never judged (rewardCampaigns).
+        ...(d.held ? { held: true } : {}), // A held reward-inventory reading (rewardCampaigns).
         minutes,
         required,
         remaining,
@@ -195,7 +196,10 @@ export function wastedCredit(session, active, streams, risen, running, names = n
   // Minutes rising on another drop of the credited channel are being used, whatever the session
   // names (2026-11-19: it named GTAVI's DVD drop, done for the day, while the channel's badge rose).
   const channelCampaigns = streams.find((st) => st.login === session.login)?.campaignIds || [];
-  if (active.some((d) => d.id !== session.dropId && risen.has(d.id) && channelCampaigns.includes(d.campaignId))) return null;
+  // A held reading (rewardCampaigns) cannot show its rise this poll, so it may be the one rising:
+  // without this, every failed reward-inventory call read "already earned" while the badge rose
+  // (audit, 2026-11-22).
+  if (active.some((d) => d.id !== session.dropId && (risen.has(d.id) || d.held) && channelCampaigns.includes(d.campaignId))) return null;
   const drop = active.find((d) => d.id === session.dropId);
   // Over the requirement, not at it: the minute that reaches it is the one that earns the drop
   // (seen 2026-11-14, 30 of 30 flagged as waste for one poll). A badge credited on reads 362 of 360.
@@ -396,6 +400,12 @@ export function leftBadges(prev, before, groups, now) {
 /** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
 
+/** Credited drops the lists did not place, kept for Copy debug info (update, creditUnlisted). */
+export const CREDIT_UNLISTED_MAX = 10;
+
+/** How long a drop placed on a channel by its minutes stays there with no further rise (update). */
+export const PLACED_KEEP_MS = 30 * 60000;
+
 function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
   const out = new Map();
   if (!groups?.length) return [];
@@ -423,7 +433,12 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = f
             // A channel's own badge is judged like any drop when this poll read it: its minutes
             // here rose one a minute (2026-11-19, 69 to 106 of 180), and leaving it unjudged hid a
             // 10-minute stall behind "today's reward drop is earned". Repeating rewards stay unjudged.
-            unjudged: !(c.channelOwned && !g.repeatTimes && fresh),
+            // A held reading (this poll's call failed, which is about half of them) stays judged so
+            // the channel keeps its state and hang clock, marked held: it cannot raise a stall by
+            // itself. Unjudged, it turned the channel "reward" every other poll and reset the clock,
+            // so a real stall never warned (audit, 2026-11-22).
+            unjudged: !(c.channelOwned && !g.repeatTimes),
+            ...(c.channelOwned && !g.repeatTimes && !fresh ? { held: true } : {}),
           };
           if (g.repeatTimes) {
             const done = g.grants != null && g.grants >= g.repeatTimes;
@@ -750,21 +765,21 @@ function diagnose(candidates, streams, active, unclaimed) {
   // stopped counting entirely, and closing it brought minutes back within about 2 min. Reloading
   // the earning tab would not remove the cause, so this is not a reloadable cause.
   // (docs/twitch-drops-facts.md, "Measured live"). It conflicts with one 2026-11-06 run where two
-  // streams still earned, so the message says what was seen rather than that two always fail.
+  // streams still earned, so the message says what is happening, not that the second one is the
+  // cause. Kept to two short sentences (Tyler, 2026-11-22: the "in testing" one was noise).
   const other = streams.find((s) => s.playerState === 'playing' && s.tabId !== playing.tabId);
   if (other) {
-    const tested = 'A second stream stopped Drops in testing until it was closed.';
     // A playing tab that is not a channel, such as the front page's autoplay, has no name.
     const message = other.login && other.login === playing.login
-      ? `${named(playing)} is playing in two tabs, and Twitch is not adding minutes. ${tested} Close one of them.`
+      ? `${named(playing)} stopped earning while playing in two tabs. Close one of them.`
       : named(other)
-        ? `${named(other)} is also playing, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause ${named(other)}.`
-        : `Another Twitch tab is also playing video, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause that tab.`;
+        ? `${named(playing)} stopped earning while ${named(other)} is also playing. Close or pause ${named(other)}.`
+        : `${named(playing)} stopped earning while another Twitch tab is playing video. Close or pause that tab.`;
     return { cause: 'second_stream', message, tabId: playing.tabId, otherTabId: other.tabId };
   }
   return {
     cause: 'uncounted',
-    message: `${named(playing)} is playing, but Twitch is not adding minutes. It can recover by itself; reload the tab if it stays stuck.`,
+    message: `${named(playing)} stopped earning. Reload the tab if it stays stuck.`,
     tabId: playing.tabId,
   };
 }
@@ -845,12 +860,55 @@ export function update(prev, obs, now) {
   if (gained) s.lastGainAt = now;
 
   const inventoryIds = new Set(allCampaigns.map((c) => c.id));
+  // Minutes win over the lists (2026-11-22). Every miss so far was a channel's lists leaving out a
+  // campaign Twitch was crediting there (a badge 11-19, a dismissed highlight 11-20, an OSRS drop
+  // 11-22), and the tracker had the proof: the session naming the open channel with its drop
+  // rising. Such a drop's campaign is placed on that channel, and kept there while the session
+  // still names that drop on it and the drop is unfinished, so a hang afterwards still warns.
+  // Only on a rise: a session alone names channels nobody is watching. Bound: one per open tab.
+  const campaignOf = (dropId) => allCampaigns.find((c) => (c.timeBasedDrops || []).some((d) => d.id === dropId))?.id ?? null;
+  const listedOn = (st) => new Set((st.channel?.campaigns || []).map((c) => c.id));
+  // A reward running total or window reading placed here reads `reward`, shown and quiet, never
+  // `eligible`: judging those was the 2026-11-18 false Hung and reload.
+  const unfinished = (dropId) => active.some((d) => d.id === dropId && d.remaining > 0);
+  const judged = (dropId) => active.some((d) => d.id === dropId && d.remaining > 0 && !d.unjudged);
+  const placedHere = new Map();
+  for (const st of obs.streams || []) {
+    const was = (prev?.placed || []).find((p) => p.tabId === st.tabId && p.login === st.login);
+    // A poll that says nothing (lookup failed, no session) keeps it unjudged: a hung drop never
+    // rises again to restore it. It ends when the credit moves (a session names the drop on
+    // another channel), the drop finishes, the lists hold it, the tab goes, or PLACED_KEEP_MS pass
+    // with no rise (a stream that changed game must not read as hung for long).
+    if (!st.login || !st.channel || st.channel.unknown || !st.channel.live) {
+      if (was && st.channel?.unknown && now - was.lastRise < PLACED_KEEP_MS) placedHere.set(st.tabId, was);
+      continue;
+    }
+    const here = known.filter((x) => x.login === st.login);
+    const fresh = here.find((x) => risen.has(x.dropId) && unfinished(x.dropId) && campaignOf(x.dropId) && !listedOn(st).has(campaignOf(x.dropId)));
+    const moved = was && known.some((x) => x.dropId === was.dropId && x.login !== st.login);
+    // Twitch credits "while they're live in {Category}": a new category ends it at once, as a
+    // listed campaign leaving the channel would ("may have changed game", no hang, no reload).
+    // An unreadable category (undefined) says nothing and keeps it.
+    const game = st.channel.gameId;
+    const changedGame = was && game !== undefined && was.gameId !== undefined && game !== was.gameId;
+    const keep = was && !moved && !changedGame && now - was.lastRise < PLACED_KEEP_MS && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
+    const p = fresh
+      ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), gameId: game, since: was?.dropId === fresh.dropId && !changedGame ? was.since : now, lastRise: now }
+      : keep && keep.gameId === undefined && game !== undefined ? { ...keep, gameId: game } : keep;
+    if (p) placedHere.set(st.tabId, p);
+  }
+  s.placed = [...placedHere.values()];
+  // States the placement overrides: the lists' view. reward (credited, quiet), unknown, offline
+  // and not_channel are left as they are.
+  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
   const tabs = {};
   const streams = (obs.streams || []).map((st) => {
     const old = s.tabs[st.tabId];
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
-    const channelState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear);
+    const place = placedHere.get(st.tabId);
+    const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -878,7 +936,9 @@ export function update(prev, obs, now) {
       stateSince: tabs[st.tabId].stateSince,
       ableSince: tabs[st.tabId].ableSince,
       // What this channel can earn, so a panel on it lists only those. Bound: what Twitch lists for one channel.
-      campaignIds: (st.channel?.campaigns || []).map((c) => c.id),
+      campaignIds: [...(st.channel?.campaigns || []).map((c) => c.id), ...(place && !listedOn(st).has(place.campaignId) ? [place.campaignId] : [])],
+      // The lists' own view when minutes placed a campaign here, for Copy debug info.
+      ...(place ? { listedState } : {}),
       // The drop a session campaign reports nothing for, so the headline can name it.
       pendingDrop: ['unstarted', 'badge_unseen'].includes(channelState) ? (st.channel?.campaigns || []).map((c) => pending.get(c.id)?.name).find(Boolean) ?? null : null,
       blockedOpens: channelState === 'blocked' ? [...(st.channel?.campaigns || [])].map((c) => blocked.get(c.id)).find(Boolean)?.opens ?? null : null,
@@ -899,6 +959,18 @@ export function update(prev, obs, now) {
     };
   });
   s.tabs = tabs;
+  // Each time the lists missed a credited drop, for Copy debug info: the next list rule to learn.
+  // Bound: CREDIT_UNLISTED_MAX, newest kept.
+  s.creditUnlisted = [...(prev?.creditUnlisted || [])];
+  for (const st of streams) {
+    const p = placedHere.get(st.tabId);
+    if (!p || !st.listedState) continue;
+    const i = s.creditUnlisted.findIndex((x) => x.login === p.login && x.dropId === p.dropId);
+    const entry = { login: p.login, dropId: p.dropId, campaignId: p.campaignId, listedState: st.listedState, first: i >= 0 ? s.creditUnlisted[i].first : now, at: now };
+    if (i >= 0) s.creditUnlisted.splice(i, 1);
+    s.creditUnlisted.push(entry);
+  }
+  s.creditUnlisted = s.creditUnlisted.slice(-CREDIT_UNLISTED_MAX);
 
   // Twitch answers a session for every channel with a campaign, whether it is being watched or
   // not, so the credited one is whichever is rising. Otherwise keep naming the last one that did.
@@ -935,13 +1007,20 @@ export function update(prev, obs, now) {
   // Timeline: one entry per wall-clock minute.
   const bucket = Math.floor(now / 60000);
   const candidates = streams.filter((st) => st.channelState === 'eligible');
+  // Able to earn only on readings held from an earlier answer: its minutes this poll are not
+  // known, so it counts neither as watched-without-credit nor as evidence of a stall.
+  const heldOnly = (st) => {
+    const ds = s.active.filter((d) => st.campaignIds?.includes(d.campaignId) && d.remaining > 0 && !d.unjudged);
+    return ds.length > 0 && ds.every((d) => d.held);
+  };
+  const watching = candidates.some((st) => !heldOnly(st));
   const last = s.timeline[s.timeline.length - 1];
   if (last && last.m === bucket) {
     last.g = last.g || gained;
-    last.w = last.w || candidates.length > 0;
+    last.w = last.w || watching;
     last.d = (last.d ?? 0) + added;
   } else {
-    s.timeline.push({ m: bucket, g: gained, w: candidates.length > 0, d: added });
+    s.timeline.push({ m: bucket, g: gained, w: watching, d: added });
   }
   if (s.timeline.length > TIMELINE_MAX) s.timeline.splice(0, s.timeline.length - TIMELINE_MAX);
   s.rate = creditRate(s.timeline);
@@ -999,6 +1078,11 @@ export function update(prev, obs, now) {
       // saved by 0.1.8 or older has no name to rebuild from and is kept as it was.
       : keep ? (prev.verdict.wasted.name ? wastedView(prev.verdict.wasted, session, s.active, streams) : prev.verdict.wasted) : null;
     s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
+  } else if (!candidates.length && unchecked && prev?.verdict?.code === 'stalled'
+    && streams.some((st) => st.channelState === 'unknown' && prev.streams?.some((p) => p.tabId === st.tabId && p.channelState === 'eligible'))) {
+    // One failed lookup on the stalled tab says nothing new: the stall a fresh reading raised is
+    // kept, not swapped for "Cannot check" every other poll (audit, 2026-11-22). Never raised here.
+    s.verdict = prev.verdict;
   } else if (!candidates.length && unchecked) {
     // Could be earning-capable or not. Saying either would be a guess.
     // since: how long a lookup has been failing, from the channels themselves, so warning() can
@@ -1089,7 +1173,9 @@ export function update(prev, obs, now) {
     const able = candidates.filter((c) => c.ableSince != null);
     const clock = Math.min(...(able.length ? able.map((c) => c.ableSince) : candidates.map((c) => c.since)));
     const since = Math.max(s.lastGainAt ?? 0, s.resumeAt ?? 0, clock);
-    if (now - since < limit) {
+    // Held readings alone never raise a stall, but keep one a fresh reading raised.
+    const stale = candidates.every(heldOnly) && prev?.verdict?.code !== 'stalled';
+    if (now - since < limit || stale) {
       s.verdict = { code: 'waiting', since };
     } else {
       s.verdict = { code: 'stalled', since, ...diagnose(candidates, streams, s.active, s.unclaimed) };
