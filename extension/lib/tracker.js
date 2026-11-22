@@ -418,21 +418,44 @@ export const LEFT_NEAR_MINUTES = 2;
  * Inventory drops seen leaving every list within LEFT_NEAR_MINUTES of their requirement: likely
  * earned. Seen 2026-11-22 (Tyler, granted): RuneScape Bones, a BADGE reward with no claim step, read
  * 59 of 60, and at the next poll Inventory no longer listed it and nothing else did, with nothing
- * said. Only Inventory's own answer counts: a drop built from the session or the reward inventory
- * exists only while its tab is open and its lookups answer, so its lapsing is not Twitch's. A drop
- * Inventory still lists (claimed, say) has not left. near: the last good poll's close Inventory
- * drops (state.nearDone). listed: this poll's active, unclaimed, pending and resting IDs. An entry
- * ends when Inventory lists the drop again or its window ends. Bound: LEFT_DROPS_MAX, newest kept.
+ * said. Only Inventory's own answer starts it: a drop built from the session or the reward
+ * inventory exists only while its tab is open and its lookups answer, so its lapsing is not
+ * Twitch's. What raw Inventory then held was not captured, so a drop it lists as claimed counts as
+ * gone; one it lists unclaimed has not. near: close Inventory drops from earlier polls
+ * (state.nearDone, see nearDrops). open: IDs Inventory lists unclaimed (openInInventory). listed:
+ * this poll's active, unclaimed, pending and resting IDs. An entry ends when Inventory lists the
+ * drop unclaimed again or its window ends. Bound: LEFT_DROPS_MAX, newest kept.
  */
-export function leftDrops(prev, near, campaigns, listed, now) {
-  const inInventory = new Set(campaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => d?.id)));
-  const ended = (x) => x.endsAt != null && now >= x.endsAt;
-  let out = (Array.isArray(prev) ? prev : []).filter((x) => !inInventory.has(x.id) && !ended(x));
+export function leftDrops(prev, near, open, listed, now) {
+  let out = (Array.isArray(prev) ? prev : []).filter((x) => !open.has(x.id) && !endedAt(x, now));
   for (const d of Array.isArray(near) ? near : []) {
-    if (inInventory.has(d.id) || listed.has(d.id) || ended(d) || out.some((x) => x.id === d.id)) continue;
+    if (open.has(d.id) || listed.has(d.id) || endedAt(d, now) || out.some((x) => x.id === d.id)) continue;
     out = [...out, { ...d, at: now }];
   }
   return out.slice(-LEFT_DROPS_MAX);
+}
+
+const endedAt = (x, now) => x.endsAt != null && now >= x.endsAt;
+
+/** Drop IDs Inventory lists and has not marked claimed. */
+export function openInInventory(campaigns) {
+  return new Set(campaigns.flatMap((c) => (c.timeBasedDrops || []).filter((d) => d?.self?.isClaimed !== true).map((d) => d?.id)));
+}
+
+/**
+ * The candidates leftDrops watches next poll: Inventory's own drops in active within
+ * LEFT_NEAR_MINUTES of their requirement, and earlier ones Inventory has let go of while another
+ * list still holds them (the session naming the drop, which rebuilds it in active). The real exit
+ * took up to four minutes (18:58 to 19:02 UTC), so one poll of the session holding on must not lose
+ * it. Bound: LEFT_DROPS_MAX.
+ */
+export function nearDrops(prevNear, active, inventoryIds, open, listed, now) {
+  const own = active
+    .filter((d) => inventoryIds.has(d.campaignId) && !d.unjudged && !d.held && d.required - d.minutes <= LEFT_NEAR_MINUTES)
+    .map((d) => ({ id: d.id, campaignId: d.campaignId, name: d.name, minutes: d.minutes, required: d.required, endsAt: d.endsAt }));
+  const carried = (Array.isArray(prevNear) ? prevNear : [])
+    .filter((d) => !open.has(d.id) && listed.has(d.id) && !endedAt(d, now) && !own.some((x) => x.id === d.id));
+  return [...own, ...carried].slice(0, LEFT_DROPS_MAX);
 }
 
 /** Not-started drops listed across open channels (update, upcoming): 20 tabs could each list 20 campaigns. */
@@ -879,13 +902,11 @@ export function update(prev, obs, now) {
   s.pending = pendingDrops(fromSessions, now);
   s.resting = restingDrops(fromRewards, now);
   const listedIds = new Set([...active, ...unclaimed, ...s.pending, ...s.resting].map((d) => d.id));
-  s.leftDrops = leftDrops(prev?.leftDrops, prev?.nearDone, obs.campaigns, listedIds, now);
+  const openIds = openInInventory(obs.campaigns);
+  s.leftDrops = leftDrops(prev?.leftDrops, prev?.nearDone, openIds, listedIds, now);
   for (const x of s.leftDrops) leftNear.add(x.id);
-  // Inventory's own drops only (rewardCampaigns and sessionCampaigns skip its campaigns).
-  s.nearDone = active
-    .filter((d) => inventoryIds0.has(d.campaignId) && !d.unjudged && !d.held && d.required - d.minutes <= LEFT_NEAR_MINUTES)
-    .slice(0, LEFT_DROPS_MAX)
-    .map((d) => ({ id: d.id, campaignId: d.campaignId, name: d.name, minutes: d.minutes, required: d.required, endsAt: d.endsAt }));
+  // Inventory's own drops (rewardCampaigns and sessionCampaigns skip its campaigns), plus carried ones.
+  s.nearDone = nearDrops(prev?.nearDone, active, inventoryIds0, openIds, listedIds, now);
   const pending = new Map();
   for (const d of s.pending) if (!pending.has(d.campaignId)) pending.set(d.campaignId, d);
   const known = obs.sessions || (obs.session ? [obs.session] : []);
@@ -1256,7 +1277,7 @@ export function update(prev, obs, now) {
       code: 'idle',
       hasStreams: true,
       dropLeft: true,
-      message: `Twitch stopped listing ${st.displayName || st.login}'s ${d.name} at ${Math.min(d.minutes, d.required)} of ${d.required} minutes, so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.`,
+      message: `Twitch no longer lists ${st.displayName || st.login}'s ${d.name} as in progress (last read ${Math.min(d.minutes, d.required)} of ${d.required} minutes), so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.`,
     };
   } else if (!candidates.length) {
     const hasStreams = streams.some((st) => st.login);
@@ -1370,7 +1391,7 @@ export function events(prev, next, now) {
   for (const x of next.leftDrops || []) {
     if (announced.has(x.id)) continue;
     announced.add(x.id);
-    out.push({ type: 'earned', title: 'Drop likely earned', message: `Twitch stopped listing ${x.name} at ${Math.min(x.minutes, x.required)} of ${x.required} minutes, so you have probably earned it.` });
+    out.push({ type: 'earned', title: 'Drop likely earned', message: `Twitch no longer lists ${x.name} as in progress (last read ${Math.min(x.minutes, x.required)} of ${x.required} minutes), so you have probably earned it.` });
   }
   next.notifiedLeft = [...announced].slice(-NOTIFIED_LEFT_MAX);
   return out;

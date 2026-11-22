@@ -146,17 +146,18 @@ channel badge whose every timed drop is like that makes its channel `badge_left`
 and why is unknown, and the channel stays `badge_unseen`.
 
 `state.leftDrops` (`leftDrops()`): the same rule for a game drop, from Inventory. `state.nearDone`
-is each poll's Inventory drops in `active` within `LEFT_NEAR_MINUTES` of their requirement (60 of
-60 included). One of those that the next good poll's Inventory no longer lists, and that is in no
-other list either (`active`, `unclaimed`, `pending`, `resting`), before its window ends, is
-recorded: likely earned. Only Inventory's own drops count, since a drop built from the session or
-the reward inventory lapses whenever its tab closes or a lookup fails. A drop Inventory still
-lists (claimed, say) has not left. A channel whose every watch drop of a game campaign is there
+(`nearDrops()`) is each poll's Inventory drops in `active` within `LEFT_NEAR_MINUTES` of their
+requirement (60 of 60 included), plus earlier ones Inventory has let go of while another list
+still holds them (the session naming the drop rebuilds it in `active`). One of those that a later
+good poll finds in no list (`active`, `unclaimed`, `pending`, `resting`) and not listed unclaimed
+by Inventory, before its window ends, is recorded: likely earned. Only Inventory's own drops start
+a candidate, since a drop built from the session or the reward inventory lapses whenever its tab
+closes or a lookup fails. Inventory listing it as claimed counts as gone (no claim step was seen). A channel whose every watch drop of a game campaign is there
 reads `finished` (not `unstarted`, "may need linking"), with nothing re-listed in `upcoming`, and
 the idle verdict is `dropLeft`. `events()` notifies once per drop ("Drop likely earned", type
 `earned`, not a warning), remembered in `state.notifiedLeft` apart from `leftDrops`, so a drop
-listed again for a poll is not announced twice. Entries end when Inventory lists the drop again or
-its window ends; newest 20 kept, 50 notified IDs. Seen 2026-11-22: RuneScape Bones, a BADGE
+listed again for a poll is not announced twice. Entries end when Inventory lists the drop
+unclaimed again or its window ends; newest 20 kept, 50 notified IDs. Seen 2026-11-22: RuneScape Bones, a BADGE
 reward with no claim step, left at 59 of 60 with nothing said, and Tyler had it.
 
 ## 5. Player state

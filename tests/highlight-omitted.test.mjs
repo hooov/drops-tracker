@@ -133,10 +133,11 @@ test('RuneScape Bones flat: a stall, not "Sub drops only"', async () => {
 test('RuneScape Bones earned: done, never a stall', async () => {
   const toSixty = steps(4, (i) => ({ minutes: 57 + i }));
   // Leaving Inventory at 60 of 60 is the likely-earned case too (leftDrops, 2026-11-22): one notice,
-  // since a BADGE reward has no claim step. Until then this test expected silence. Not when
-  // Inventory still lists it claimed, nor when the session at 60 still lists it.
+  // since a BADGE reward has no claim step. Until then this test expected silence. Claimed straight
+  // from in progress, with no claim step seen, is the same: a BADGE drop Twitch kept listing as
+  // claimed would look like this (not captured). Not while the session at 60 still lists it.
   for (const [name, after, notice] of [
-    ['claimed, still listed', { minutes: 60, claimed: true }, []],
+    ['claimed, still listed', { minutes: 60, claimed: true }, ['earned']],
     ['gone from Inventory, reward earned', { minutes: 60, gone: true }, ['earned']],
     ['gone from Inventory, reward not listed, session at 60', { minutes: 60, gone: true, owned: false }, []],
     ['gone from Inventory, reward not listed, no session', { minutes: 60, gone: true, owned: false, noSession: true }, ['earned']],
@@ -166,8 +167,8 @@ test('Bones at 59 of 60, then gone from every list: likely earned, said once', a
     if (process.env.PRINT === '1') console.log(name, JSON.stringify({ ...v, fired }, null, 1));
     assert.deepEqual(fired, ['earned'], `${name}: one notification`);
     assert.equal(said[0].title, 'Drop likely earned', name);
-    assert.equal(said[0].message, 'Twitch stopped listing RuneScape Bones at 59 of 60 minutes, so you have probably earned it.', name);
-    const line = "Twitch stopped listing Charlie's RuneScape Bones at 59 of 60 minutes, so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.";
+    assert.equal(said[0].message, 'Twitch no longer lists RuneScape Bones as in progress (last read 59 of 60 minutes), so you have probably earned it.', name);
+    const line = "Twitch no longer lists Charlie's RuneScape Bones as in progress (last read 59 of 60 minutes), so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.";
     assert.equal(v.states, 'charlie:finished echo_247:no_drops', `${name}: not "Not counting yet"`);
     assert.deepEqual([v.verdict, v.warning, v.toolbar, v.chip.tone, v.chipEcho.tone], ['idle', null, ' #667085', 'idle', 'idle'], name);
     assert.equal(v.headline, 'Drop likely earned', name);
@@ -203,6 +204,15 @@ test('gone from every list further from its requirement, or as its campaign ends
   const ended = await run([...steps(3, (i) => ({ minutes: 57 + i, endAt })), ...steps(4, () => ({ minutes: 59, gone: true, owned: false, noSession: true, endAt }))]);
   assert.ok(!ended.fired.includes('earned'), 'its campaign ended');
   assert.notEqual(ended.s.verdict.dropLeft, true);
+});
+
+// The real exit took up to four minutes (18:58 to "by 19:02"), so a session still naming Bones
+// for a poll or two after Inventory let go must not lose the transition.
+test('gone from Inventory while the session still names it, then from the session: one notification', async () => {
+  const held = { minutes: 59, gone: true, owned: false };
+  const { s, fired } = await run([...steps(3, (i) => ({ minutes: 57 + i })), held, held, ...steps(3, () => ({ ...held, noSession: true }))]);
+  assert.deepEqual(fired, ['earned']);
+  assert.equal(s.streams[0].channelState, 'finished');
 });
 
 test('gone, then back in Inventory, then gone again: one notification', async () => {
