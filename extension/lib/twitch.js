@@ -573,6 +573,47 @@ function applyCampaigns(channel, item) {
  * Returns null when the answer cannot be read, which means unknown, never "nothing in progress".
  * A campaign missing from it is unknown too: a badge already claimed was not listed.
  */
+export const MAX_DAY_GROUPS = 20; // Repeating reward groups whose day rewards are kept (dayRewards).
+const MAX_DAYS = 31;
+const MAX_NAME = 100;
+
+/**
+ * Each repeating watch group's reward per day, from the DropChannelCampaignsProgress answer Twitch's
+ * channel page received (page-hook.js; the query needs Twitch's integrity token, so the extension
+ * never asks it). Twitch's panel shows day n's reward as rewardGroup.rewards[n], else rewards[0]
+ * (read from its client, 2026-11-22), while ChannelDropsCampaigns lists only the first (GTAVI:
+ * "GTA DVD Chest", default image). Names and art only: the answer's progress (self) is the
+ * viewer's and is not kept. null when unreadable. Bound: MAX_DAY_GROUPS groups of MAX_DAYS.
+ */
+export function parseDayRewards(item) {
+  const list = item?.data?.channelDropCampaignsProgress;
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const c of list) {
+    if (typeof c?.id !== 'string' || !Array.isArray(c.rewardGroups)) continue;
+    for (const g of c.rewardGroups) {
+      const crit = g?.progressCriteria;
+      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH' || !(crit.repeatableConfig?.repeatableTimes > 1) || !Array.isArray(g.rewards)) continue;
+      const days = g.rewards.slice(0, MAX_DAYS).map((r) => ({ name: typeof r?.name === 'string' ? r.name.slice(0, MAX_NAME) : '', image: httpsOr(r?.thumbnailURL) }));
+      if (!days.some((d) => d.name)) continue;
+      out.push({ campaignId: c.id, groupId: g.id, endAt: dateOrNull(c.endAt), days });
+      if (out.length >= MAX_DAY_GROUPS) return out;
+    }
+  }
+  return out;
+}
+
+/** Stored day rewards with a fresh answer's groups replacing their own. Ended campaigns dropped. Bound: MAX_DAY_GROUPS, newest kept. */
+export function mergeDayRewards(stored, parsed, now) {
+  const fresh = (Array.isArray(parsed) ? parsed : []).map((x) => ({ ...x, at: now }));
+  const key = (x) => `${x.campaignId}/${x.groupId}`;
+  const kept = (Array.isArray(stored) ? stored : []).filter((x) => !fresh.some((f) => key(f) === key(x)));
+  return [...kept, ...fresh]
+    .filter((x) => x.endAt == null || now < x.endAt)
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+    .slice(-MAX_DAY_GROUPS);
+}
+
 export function parseRewardInventory(item) {
   if (errorsOf(item).length || needsIntegrity(item) || isStale(item)) return null;
   const list = item?.data?.currentUser?.inventory?.viewerRewardDropCampaignsInProgress;

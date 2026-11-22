@@ -357,7 +357,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   });
   $('debug-copy').addEventListener('click', async () => {
     // Read fresh, so it is what is really stored rather than what this panel last saw.
-    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog', 'pageOps']);
+    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog', 'pageOps', 'dayRewards']);
     await copyText($('debug-copy'), 'Copy debug info', JSON.stringify(debugBundle({ ...stored, version }, Date.now())));
   });
 

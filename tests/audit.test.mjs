@@ -331,10 +331,14 @@ test('one campaign with enormous names cannot fill the saved list', () => {
   assert.ok(JSON.stringify(parseDirectory(item, T0)).length < 2000);
 });
 
-test('the page hook only runs on the one page that needs it, not where drops are claimed', () => {
+// Until 2026-11-22 the hook ran only on the Drops campaigns page. A channel page's answer now
+// carries a reward drop's day names (Tyler approved the hook on channel pages), so it runs on
+// twitch.tv, still never on the inventory page, where drops are claimed. Anywhere it runs, a
+// request it does not read, a claim included, passes through untouched (tests/page-hook.test.mjs).
+test('the page hook runs on twitch.tv pages but not on the inventory page, where drops are claimed', () => {
   const manifest = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url)));
   for (const script of ['page-hook.js', 'page-bridge.js']) {
     const entry = manifest.content_scripts.find((c) => c.js.includes(script));
-    assert.deepEqual(entry.matches, ['https://www.twitch.tv/drops/campaigns*'], script);
+    assert.deepEqual([entry.matches, entry.exclude_matches], [['https://www.twitch.tv/*'], ['https://www.twitch.tv/drops/inventory*']], script);
   }
 });

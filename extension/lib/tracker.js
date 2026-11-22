@@ -467,7 +467,31 @@ export const CREDIT_UNLISTED_MAX = 10;
 /** How long a drop placed on a channel by its minutes stays there with no further rise (update). */
 export const PLACED_KEEP_MS = 30 * 60000;
 
-function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
+/**
+ * Which day of a repeating reward group Twitch's panel shows, 0-based (its client, 2026-11-22):
+ * the day after the last granted, in progress or earned (CLAIMABLE); once today's minutes are done
+ * and not claimable, the day just granted; every day granted, the last. An ended window counts as
+ * 0 minutes. g: a reward inventory group (parseRewardInventory).
+ */
+export function dayIndex(g, required, now) {
+  const total = g?.repeatTimes > 1 ? g.repeatTimes : 1;
+  if (total <= 1) return 0;
+  const grants = Math.max(0, g.grants ?? 0);
+  const expired = g.windowEnd != null && g.windowEnd <= now;
+  const minutes = expired ? 0 : g.minutes ?? 0;
+  if (grants < total && (g.status === 'CLAIMABLE' || !(required > 0 && minutes >= required))) return grants;
+  return Math.max(0, Math.min(grants, total) - 1);
+}
+
+/** Today's reward of a repeating group from the channel page's day rewards, or null (rewards[n], else rewards[0]). */
+function dayReward(dayRewards, campaignId, g, required, now) {
+  const entry = (Array.isArray(dayRewards) ? dayRewards : []).find((x) => x.campaignId === campaignId && x.groupId === g.id);
+  if (!entry?.days?.length) return null;
+  const day = entry.days[dayIndex(g, required, now)] ?? entry.days[0];
+  return day?.name ? day : null;
+}
+
+function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false, dayRewards = null) {
   const out = new Map();
   if (!groups?.length) return [];
   for (const st of streams) {
@@ -485,12 +509,16 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = f
         game: { name: c.channelOwned ? st.channel.displayName || st.login : c.game || c.name },
         fromRewards: true,
         timeBasedDrops: matched.map(([d, g]) => {
+          // A repeating drop is named for today's reward, as Twitch's panel names it (2026-11-22:
+          // "Diamond Chain" on day five, where the channel's list says "GTA DVD Chest").
+          const day = g.repeatTimes ? dayReward(dayRewards, c.id, g, d.required, now) : null;
+          const name = day?.name || d.name;
           const base = {
             id: d.id,
-            name: d.name,
+            name,
             requiredMinutesWatched: d.required,
             endAt: d.endAt,
-            benefitEdges: [{ benefit: { name: d.name, imageAssetURL: d.image } }],
+            benefitEdges: [{ benefit: { name, imageAssetURL: day ? day.image || d.image : d.image } }],
             // A channel's own badge is judged like any drop when this poll read it: its minutes
             // here rose one a minute (2026-11-19, 69 to 106 of 180), and leaving it unjudged hid a
             // 10-minute stall behind "today's reward drop is earned". Repeating rewards stay unjudged.
@@ -893,7 +921,8 @@ export function update(prev, obs, now) {
   const leftNear = new Set(s.leftBadges.filter((x) => x.required - x.minutes <= LEFT_NEAR_MINUTES).map((x) => x.id));
   // Fresh: answered this poll. A held answer is up to REWARD_HOLD_MS old, so a badge read from it
   // would look flat and must not be judged.
-  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups));
+  // dayRewards: what Twitch's channel page received (background.js, from page-hook.js), read only for names and art.
+  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups), obs.dayRewards);
   const fromSessions = sessionCampaigns(obs.streams || [], new Set([...inventoryIds0, ...fromRewards.map((c) => c.id)]), obs.sessions, s.rewards, s.drops, now);
   const allCampaigns = [...obs.campaigns, ...fromRewards, ...fromSessions];
   const { active, unclaimed } = summarize(allCampaigns, now);

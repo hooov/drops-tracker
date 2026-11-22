@@ -83,7 +83,7 @@ const STATE_FIELDS = [
 ];
 
 /** What Copy debug info hands over. Built from named fields only, so a token can never ride along. */
-export function debugBundle({ state, settings, hashes, autoReload, directory, minuteLog, pageOps, version }, now) {
+export function debugBundle({ state, settings, hashes, autoReload, directory, minuteLog, pageOps, dayRewards, version }, now) {
   const picked = {};
   for (const field of STATE_FIELDS) if (state?.[field] !== undefined) picked[field] = state[field];
   return {
@@ -98,5 +98,7 @@ export function debugBundle({ state, settings, hashes, autoReload, directory, mi
     minuteLog: Array.isArray(minuteLog) ? minuteLog : [],
     // Operation names, hashes and variable types only (lib/pageops.js), so nothing identifying.
     pageOps: pageOps && typeof pageOps === 'object' ? pageOps : {},
+    // Reward names and art per day from Twitch's channel page (twitch.js parseDayRewards): campaign data, nobody's progress.
+    dayRewards: Array.isArray(dayRewards) ? dayRewards : [],
   };
 }
