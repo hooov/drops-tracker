@@ -1172,6 +1172,29 @@ try {
     }
     return r.fulfill({ headers, body: JSON.stringify(dashboardBody) });
   });
+
+  // A channel page's DropChannelCampaignsProgress answer, read by the real page hook in the page's
+  // own world: the day names reach storage, and the page gets every answer whole, the one read
+  // and one it does not read. The answer is constructed from the query's fields (2026-11-22).
+  const dayAnswer = [{ data: { ok: 'other' } }, { data: { channelDropCampaignsProgress: [{ id: 'e2e-gta', endAt: inDays(30), rewardGroups: [{ id: 'e2e-dvd', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 60 }, repeatableConfig: { repeatableTimes: 6 } }, rewards: ['Bronze Chain', 'Day 2', 'Day 3', 'Day 4', 'Diamond Chain', 'Day 6'].map((name, i) => ({ id: `r${i}`, name, thumbnailURL: `https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e${i}.png` })), self: { status: 'IN_PROGRESS', currentMinutesWatched: 48, grantCount: 4 } }] }] } }];
+  await ctx.route('https://gql.twitch.tv/**', (r) => {
+    if (!r.request().postData()?.includes('E2EOtherOperation')) return r.fallback();
+    return r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(dayAnswer) });
+  });
+  const dayPage = await ctx.newPage();
+  await dayPage.goto('https://www.twitch.tv/e2e_days');
+  const pageGot = await dayPage.evaluate(async () => {
+    const r = await fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify([{ operationName: 'E2EOtherOperation' }, { operationName: 'DropChannelCampaignsProgress', variables: { channelID: '1' } }]) });
+    return r.json();
+  });
+  assert.deepEqual(pageGot, dayAnswer, 'the page gets the whole answer');
+  await until(popup, async () => (await chrome.storage.local.get('dayRewards')).dayRewards?.length === 1);
+  const dayStored = await popup.evaluate(async () => (await chrome.storage.local.get('dayRewards')).dayRewards);
+  assert.deepEqual(dayStored.map((x) => [x.campaignId, x.groupId, x.days.map((d) => d.name)[4], x.days[4].image]), [['e2e-gta', 'e2e-dvd', 'Diamond Chain', 'https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e4.png']]);
+  assert.equal(JSON.stringify(dayStored).includes('grantCount'), false, 'no progress kept');
+  await dayPage.close();
+  await popup.evaluate(() => chrome.storage.local.remove('dayRewards'));
+  step('channel page: the hook passes its answers through whole and keeps a reward drop\'s day names');
   // Real Twitch clears an invalid token whenever it sees one, so put it back before each step that needs it.
   const fakeLogin = () => sw.evaluate(() => chrome.cookies.set({ url: 'https://www.twitch.tv', name: 'auth-token', value: 'e2einvalidtoken0000000000000000', domain: '.twitch.tv', secure: true }));
   const campaignTabs = () => ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length;
