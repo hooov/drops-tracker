@@ -31,6 +31,8 @@ const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can s
 // fault. After this it settles to a plain idle, and stays there until something can earn again.
 export const LOST_SHOWN_MS = 10 * 60000;
 const LEFT_BADGES_MAX = 20; // Badge groups remembered as having left the in-progress list.
+const LEFT_DROPS_MAX = 20; // Inventory drops remembered as near done (nearDone) or as having left (leftDrops).
+const NOTIFIED_LEFT_MAX = 50; // Drop IDs already announced as likely earned, newest kept (events).
 
 export function emptyState() {
   return {
@@ -299,9 +301,13 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   let isBlocked = false;
   let reward = false;
   for (const c of campaigns) {
-    // A channel badge every timed drop of which left Twitch's in-progress list at its requirement.
-    const left = !!leftNear && c.channelOwned && c.watchDrops?.length > 0 && c.watchDrops.every((d) => leftNear.has(d.id));
+    // Every timed drop left Twitch's lists at its requirement: a channel badge's in-progress list
+    // (leftBadges), or a game campaign's Inventory (leftDrops).
+    const gone = !!leftNear && c.watchDrops?.length > 0 && c.watchDrops.every((d) => leftNear.has(d.id));
+    const left = gone && c.channelOwned;
     if (active.some((d) => d.campaignId === c.id && d.remaining > 0 && !d.unjudged)) return 'eligible';
+    // Likely earned, so done here, not "not counting yet, may need linking" (2026-11-22).
+    if (gone && !c.channelOwned) continue;
     // A reward drop earned for today waits for its next window: good news, and Twitch's numbers,
     // so the quiet reward state rather than a "not counting yet" warning every day.
     if (blocked.has(c.id) && rewardIds.has(c.id)) {
@@ -405,8 +411,29 @@ export function leftBadges(prev, before, groups, now) {
   return out.slice(-LEFT_BADGES_MAX);
 }
 
-/** Within this many minutes of its requirement, a badge leaving the list reads as likely earned. */
+/** Within this many minutes of its requirement, a badge or drop leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
+
+/**
+ * Inventory drops seen leaving every list within LEFT_NEAR_MINUTES of their requirement: likely
+ * earned. Seen 2026-11-22 (Tyler, granted): RuneScape Bones, a BADGE reward with no claim step, read
+ * 59 of 60, and at the next poll Inventory no longer listed it and nothing else did, with nothing
+ * said. Only Inventory's own answer counts: a drop built from the session or the reward inventory
+ * exists only while its tab is open and its lookups answer, so its lapsing is not Twitch's. A drop
+ * Inventory still lists (claimed, say) has not left. near: the last good poll's close Inventory
+ * drops (state.nearDone). listed: this poll's active, unclaimed, pending and resting IDs. An entry
+ * ends when Inventory lists the drop again or its window ends. Bound: LEFT_DROPS_MAX, newest kept.
+ */
+export function leftDrops(prev, near, campaigns, listed, now) {
+  const inInventory = new Set(campaigns.flatMap((c) => (c.timeBasedDrops || []).map((d) => d?.id)));
+  const ended = (x) => x.endsAt != null && now >= x.endsAt;
+  let out = (Array.isArray(prev) ? prev : []).filter((x) => !inInventory.has(x.id) && !ended(x));
+  for (const d of Array.isArray(near) ? near : []) {
+    if (inInventory.has(d.id) || listed.has(d.id) || ended(d) || out.some((x) => x.id === d.id)) continue;
+    out = [...out, { ...d, at: now }];
+  }
+  return out.slice(-LEFT_DROPS_MAX);
+}
 
 /** Not-started drops listed across open channels (update, upcoming): 20 tabs could each list 20 campaigns. */
 export const UPCOMING_MAX = 60;
@@ -851,6 +878,14 @@ export function update(prev, obs, now) {
   const blocked = blockedCampaigns(allCampaigns, now);
   s.pending = pendingDrops(fromSessions, now);
   s.resting = restingDrops(fromRewards, now);
+  const listedIds = new Set([...active, ...unclaimed, ...s.pending, ...s.resting].map((d) => d.id));
+  s.leftDrops = leftDrops(prev?.leftDrops, prev?.nearDone, obs.campaigns, listedIds, now);
+  for (const x of s.leftDrops) leftNear.add(x.id);
+  // Inventory's own drops only (rewardCampaigns and sessionCampaigns skip its campaigns).
+  s.nearDone = active
+    .filter((d) => inventoryIds0.has(d.campaignId) && !d.unjudged && !d.held && d.required - d.minutes <= LEFT_NEAR_MINUTES)
+    .slice(0, LEFT_DROPS_MAX)
+    .map((d) => ({ id: d.id, campaignId: d.campaignId, name: d.name, minutes: d.minutes, required: d.required, endsAt: d.endsAt }));
   const pending = new Map();
   for (const d of s.pending) if (!pending.has(d.campaignId)) pending.set(d.campaignId, d);
   const known = obs.sessions || (obs.session ? [obs.session] : []);
@@ -940,6 +975,8 @@ export function update(prev, obs, now) {
         }
       }
     }
+    // A game drop of this channel that left every list near its requirement (leftDrops).
+    const leftHere = channelState === 'finished' ? s.leftDrops.find((l) => (st.channel?.campaigns || []).some((c) => c.id === l.campaignId)) : null;
     tabs[st.tabId] = {
       login: st.login,
       since: rec ? rec.since : now,
@@ -975,6 +1012,7 @@ export function update(prev, obs, now) {
       blockedOpens: channelState === 'blocked' ? [...(st.channel?.campaigns || [])].map((c) => blocked.get(c.id)).find(Boolean)?.opens ?? null : null,
       // A reward drop earned for today: when the next one can start.
       rewardOpens: channelState === 'reward' ? (st.channel?.campaigns || []).map((c) => blocked.get(c.id)?.opens).find(Boolean) ?? null : null,
+      ...(leftHere ? { leftDrop: { name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
       // Highest minutes seen, or null when Twitch has reported none. Sub drops never have any.
       badges: (st.channel?.badges || []).map((b) => ({
         ...b,
@@ -1210,6 +1248,16 @@ export function update(prev, obs, now) {
       // The evidence (left the in-progress list one reading short) is in states.js badge_left.
       message: `Twitch stopped listing ${name}'s badge${read}, so you have probably earned it. The badge picker in ${name}'s chat shows whether you have it.`,
     };
+  } else if (!candidates.length && streams.some((st) => st.leftDrop)) {
+    // The same for a game drop leaving Inventory (leftDrops): RuneScape Bones, 2026-11-22.
+    const [st] = frontFirst(streams.filter((x) => x.leftDrop));
+    const d = st.leftDrop;
+    s.verdict = {
+      code: 'idle',
+      hasStreams: true,
+      dropLeft: true,
+      message: `Twitch stopped listing ${st.displayName || st.login}'s ${d.name} at ${Math.min(d.minutes, d.required)} of ${d.required} minutes, so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.`,
+    };
   } else if (!candidates.length) {
     const hasStreams = streams.some((st) => st.login);
     s.verdict = { code: 'idle', hasStreams };
@@ -1315,6 +1363,16 @@ export function events(prev, next, now) {
     });
   }
   next.notifiedUnplaced = [...told].filter((id) => unplaced.some((u) => u.campaignId === id));
+  // A drop with no claim step leaving every list near its requirement (leftDrops): once per drop,
+  // kept apart from leftDrops so a drop Inventory lists again for a poll is not announced twice.
+  // Not a warning: nothing to do. Bound: NOTIFIED_LEFT_MAX, newest kept.
+  const announced = new Set(prev?.notifiedLeft || []);
+  for (const x of next.leftDrops || []) {
+    if (announced.has(x.id)) continue;
+    announced.add(x.id);
+    out.push({ type: 'earned', title: 'Drop likely earned', message: `Twitch stopped listing ${x.name} at ${Math.min(x.minutes, x.required)} of ${x.required} minutes, so you have probably earned it.` });
+  }
+  next.notifiedLeft = [...announced].slice(-NOTIFIED_LEFT_MAX);
   return out;
 }
 
