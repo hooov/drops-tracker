@@ -765,21 +765,21 @@ function diagnose(candidates, streams, active, unclaimed) {
   // stopped counting entirely, and closing it brought minutes back within about 2 min. Reloading
   // the earning tab would not remove the cause, so this is not a reloadable cause.
   // (docs/twitch-drops-facts.md, "Measured live"). It conflicts with one 2026-11-06 run where two
-  // streams still earned, so the message says what was seen rather than that two always fail.
+  // streams still earned, so the message says what is happening, not that the second one is the
+  // cause. Kept to two short sentences (Tyler, 2026-11-22: the "in testing" one was noise).
   const other = streams.find((s) => s.playerState === 'playing' && s.tabId !== playing.tabId);
   if (other) {
-    const tested = 'A second stream stopped Drops in testing until it was closed.';
     // A playing tab that is not a channel, such as the front page's autoplay, has no name.
     const message = other.login && other.login === playing.login
-      ? `${named(playing)} is playing in two tabs, and Twitch is not adding minutes. ${tested} Close one of them.`
+      ? `${named(playing)} stopped earning while playing in two tabs. Close one of them.`
       : named(other)
-        ? `${named(other)} is also playing, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause ${named(other)}.`
-        : `Another Twitch tab is also playing video, and Twitch is not adding minutes on ${named(playing)}. ${tested} Close or pause that tab.`;
+        ? `${named(playing)} stopped earning while ${named(other)} is also playing. Close or pause ${named(other)}.`
+        : `${named(playing)} stopped earning while another Twitch tab is playing video. Close or pause that tab.`;
     return { cause: 'second_stream', message, tabId: playing.tabId, otherTabId: other.tabId };
   }
   return {
     cause: 'uncounted',
-    message: `${named(playing)} is playing, but Twitch is not adding minutes. It can recover by itself; reload the tab if it stays stuck.`,
+    message: `${named(playing)} stopped earning. Reload the tab if it stays stuck.`,
     tabId: playing.tabId,
   };
 }
@@ -886,8 +886,15 @@ export function update(prev, obs, now) {
     const here = known.filter((x) => x.login === st.login);
     const fresh = here.find((x) => risen.has(x.dropId) && unfinished(x.dropId) && campaignOf(x.dropId) && !listedOn(st).has(campaignOf(x.dropId)));
     const moved = was && known.some((x) => x.dropId === was.dropId && x.login !== st.login);
-    const keep = was && !moved && now - was.lastRise < PLACED_KEEP_MS && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
-    const p = fresh ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), since: was?.dropId === fresh.dropId ? was.since : now, lastRise: now } : keep;
+    // Twitch credits "while they're live in {Category}": a new category ends it at once, as a
+    // listed campaign leaving the channel would ("may have changed game", no hang, no reload).
+    // An unreadable category (undefined) says nothing and keeps it.
+    const game = st.channel.gameId;
+    const changedGame = was && game !== undefined && was.gameId !== undefined && game !== was.gameId;
+    const keep = was && !moved && !changedGame && now - was.lastRise < PLACED_KEEP_MS && unfinished(was.dropId) && !listedOn(st).has(was.campaignId) ? was : null;
+    const p = fresh
+      ? { tabId: st.tabId, login: st.login, dropId: fresh.dropId, campaignId: campaignOf(fresh.dropId), gameId: game, since: was?.dropId === fresh.dropId && !changedGame ? was.since : now, lastRise: now }
+      : keep && keep.gameId === undefined && game !== undefined ? { ...keep, gameId: game } : keep;
     if (p) placedHere.set(st.tabId, p);
   }
   s.placed = [...placedHere.values()];

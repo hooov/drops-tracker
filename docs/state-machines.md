@@ -85,7 +85,8 @@ earn (`canEarn()`). Minutes override it: a tab whose session-named drop rose thi
 campaign its lists do not hold, is `eligible` with that campaign in `campaignIds` and its
 lists' own state in `listedState` (`reward` instead of `eligible` for a never-judged reading).
 `state.placed` is kept through polls that say nothing and ends when the credit moves, the drop
-finishes, the lists hold it, the tab goes, or `PLACED_KEEP_MS` pass with no rise. Tabs already
+finishes, the lists hold it, the tab goes, the stream's category (`channel.gameId`) changes, or
+`PLACED_KEEP_MS` pass with no rise. Tabs already
 `reward`, `unknown`, `offline` or `not_channel` are left alone. Each case is logged in
 `state.creditUnlisted`, last 10. Companions: `blockedOpens` only for `blocked`, `credited` for the tab the session names when
 it is eligible or its drop is a reward running total (`creditedCampaign` in state is that drop's

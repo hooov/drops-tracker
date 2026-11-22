@@ -624,8 +624,9 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
   const { campaigns, rewards } = parseInventory(first[0]);
   const channels = {};
   unique.forEach((login, i) => { channels[login] = parseChannel(login, first[i + 1]); });
-  // The category each stream is in, for earnsHere. Kept out of the channel object, which is stored
-  // and copied into debug info. Bound: one per looked-up channel. null: Twitch says none (game
+  // The category each stream is in, for earnsHere, and as channel.gameId for the tracker (Twitch's
+  // public category ID; tracker state copies named fields only, so it is not stored). Bound: one
+  // per looked-up channel. null: Twitch says none (game
   // null). undefined: the answer cannot say (broadcastSettings or its game field gone, or not an
   // ID), which must not read as "no category": that is "Sub drops only" with a drop rising.
   const gameOf = (u) => {
@@ -650,6 +651,8 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
       liveChannels.forEach((c, i) => {
         applyCampaigns(c, second[i * 3]);
         applyChannelCampaigns(c, second[i * 3 + 2], options.now ?? Date.now(), gameIds.get(c.login));
+        // For the tracker: a drop placed on this channel by its minutes ends when this changes.
+        c.gameId = gameIds.get(c.login);
         const sessionAnswer = second[i * 3 + 1];
         // The only source of a badge's minutes. Its query failing is not Twitch reporting none.
         if (errorsOf(sessionAnswer).length && c.campaigns.some((x) => x.channelOwned)) c.unknown = true;

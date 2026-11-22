@@ -193,6 +193,31 @@ test('placed, then flat with the channel list failing on every other call: still
   assert.deepEqual(fired, ['warning']);
 });
 
+// Twitch credits "while they're live in {Category}": after a game change minutes stop on purpose,
+// and a reload cannot help. Read as a listed campaign leaving the channel: the "may have changed
+// game" message, no "not counting" warning, no reload.
+test('placed, then the stream changes game: no warning, the changed-game message', async () => {
+  const LEAGUE = { id: '21779', displayName: 'League of Legends', name: 'League of Legends' };
+  const mins = [1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4];
+  const { s, now, fired } = await run(mins.map((m, i) => ({ minutes: m, game: i < 4 ? OTHER : LEAGUE })));
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:sub_only');
+  assert.notEqual(v.verdict, 'stalled');
+  // The one notification a listed campaign leaving the channel gives too, not "Drops not counting".
+  assert.deepEqual([fired, v.warning], [['warning'], 'Stopped earning Drops']);
+  assert.equal(s.verdict.lost, true);
+  assert.match(s.verdict.message, /changed game/);
+  assert.deepEqual(s.placed, []);
+});
+
+test('placed, then the category unreadable for a poll: kept, still one stall warning', async () => {
+  const mins = [1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4];
+  const { s, now, fired } = await run(mins.map((m, i) => ({ minutes: m, game: OTHER, noBroadcastSettings: i === 5 })));
+  const v = views(s, now);
+  assert.deepEqual([v.verdict, v.warning], ['stalled', 'Drops not counting']);
+  assert.deepEqual(fired, ['warning']);
+});
+
 test('placed, then flat past PLACED_KEEP_MS: back to what the lists say', async () => {
   const mins = [1, 2, 3, 4, ...Array(34).fill(4)];
   const { s } = await run(mins.map((m) => ({ minutes: m, game: OTHER })));
