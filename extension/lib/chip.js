@@ -18,6 +18,20 @@ export function channelFromPath(pathname) {
 }
 
 /**
+ * Whether a channel page should ask for a check now rather than wait for the minute's poll:
+ * 'new' when the last poll did not see this channel (just opened, or a channel change inside
+ * Twitch's page), 'shown' when it saw it as a background tab and it is now in front (the headline
+ * picks the tab in front, tracker.js frontFirst), null otherwise. content.js asks once per reason
+ * and channel; a page the poll never sees (tab 21 and up) must not ask again and again.
+ */
+export function checkNeeded(state, login, visible) {
+  if (!state || !login || !Array.isArray(state.streams)) return null;
+  const here = state.streams.find((s) => s.login === login);
+  if (!here) return 'new';
+  return visible && here.hidden ? 'shown' : null;
+}
+
+/**
  * The drops worth showing on this channel, in the tracker's order. `from` names another tab when
  * those drops are earned there instead. login is null when no channel is in view (the toolbar popup
  * over another site). All Drops still lists every campaign with its progress.

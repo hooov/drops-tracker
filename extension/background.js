@@ -364,12 +364,32 @@ async function pollOnce() {
   return next;
 }
 
+let pollStartedAt = 0;
+
 function poll() {
+  if (!inflight) pollStartedAt = Date.now();
   inflight ??= limit(pollOnce(), POLL_TIMEOUT_MS, 'Poll timed out').finally(() => { inflight = null; });
   return inflight;
 }
 
 const pollQuietly = () => { poll().catch(() => {}); }; // The next alarm tries again.
+
+// A channel page asking for a check at once (content.js askIfNeeded): at most one extra poll per
+// SOON_GAP_MS, so flipping through channels costs a few polls, not one per channel. One timer at
+// most; a worker that stops before it fires loses nothing, since the minute's alarm still polls.
+const SOON_GAP_MS = 10000;
+let soonTimer = null;
+function pollSoon() {
+  // A poll already running may have listed the tabs before this page existed: one more after it.
+  if (inflight) {
+    inflight.catch(() => {}).finally(() => { pollSoon().catch(() => {}); });
+    return Promise.resolve(null);
+  }
+  const wait = pollStartedAt + SOON_GAP_MS - Date.now();
+  if (wait <= 0) return poll();
+  soonTimer ??= setTimeout(() => { soonTimer = null; pollQuietly(); }, wait);
+  return Promise.resolve(null);
+}
 
 function ensureAlarm() {
   chrome.alarms.create(ALARM, { periodInMinutes: 1 });
@@ -396,7 +416,7 @@ chrome.notifications.onClicked.addListener((id) => {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'poll') {
-    poll().then(reply, () => reply(null));
+    (msg.soon === true ? pollSoon() : poll()).then(reply, () => reply(null));
     return true;
   }
   if (msg?.type === 'directory') {

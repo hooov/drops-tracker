@@ -5,7 +5,7 @@
   if (!chrome.runtime?.id) return;
   window.__dropsTrackerStop?.(); // Re-injected on install or update: replace the old instance.
 
-  const { chipView, shouldCompact, channelFromPath } = await import(chrome.runtime.getURL('lib/chip.js'));
+  const { chipView, shouldCompact, channelFromPath, checkNeeded } = await import(chrome.runtime.getURL('lib/chip.js'));
   const { normalize } = await import(chrome.runtime.getURL('lib/settings.js'));
   // The panel must not be able to take the chip down with it. Brave reads an unpacked extension's
   // files from disk at once but its manifest only on Reload, so a tab opened in between gets new
@@ -219,10 +219,28 @@
     chip.dataset.compact = String(shouldCompact(row.offsetWidth, used, chip.offsetWidth, view.text));
   }
 
+  // A channel the last poll did not see, or one it saw behind another tab and now in front, asks
+  // for a check at once instead of waiting up to a minute (audit, 2026-11-22). Once per reason and
+  // channel, so a page the poll never sees (tab 21 and up) asks once, not every second. Bound: two
+  // logins. The worker spaces these out (background.js SOON_GAP_MS).
+  let askedNew = null;
+  let askedShown = null;
+  const onVisibility = () => { if (document.hidden) askedShown = null; };
+  document.addEventListener('visibilitychange', onVisibility);
+  function askIfNeeded() {
+    const login = channelFromPath(location.pathname);
+    const why = checkNeeded(state, login, document.visibilityState === 'visible');
+    if (why === 'new' && askedNew !== login) askedNew = login;
+    else if (why === 'shown' && askedShown !== login) askedShown = login;
+    else return;
+    chrome.runtime.sendMessage({ type: 'poll', soon: true }).catch(() => {});
+  }
+
   function tick() {
     if (!chrome.runtime?.id) { stop(); return; } // Extension reloaded: this instance is orphaned.
     // A page change Twitch makes must not throw on every tick or disturb the page. Try again next tick.
     try {
+      askIfNeeded();
       attach();
       fit(paint());
       panel?.render(state);
@@ -244,6 +262,7 @@
     removeEventListener('resize', placePanel);
     document.removeEventListener('pointerdown', onPointer, true);
     document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('visibilitychange', onVisibility);
     if (chrome.runtime?.id) chrome.storage.onChanged.removeListener(onStorage);
     closePanel(false);
     chip.remove();

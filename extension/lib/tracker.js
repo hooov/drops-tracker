@@ -22,6 +22,9 @@ export const STREAM_SOFT_LIMIT = 2; // Reported per-IP limit; only this browser'
 const REWARDS_MAX = 2000;
 const DROPS_MAX = 100;
 const DIP_POLLS = 3; // A lower reading must last this many polls before it is believed.
+// And this long: a channel just opened asks for a check at once, and three quick checks reading a
+// stale lower number would be believed, then the real number read as credited minutes (2026-11-22).
+const DIP_MS = 2 * 60000;
 const FRESH_READING_MS = 5000;
 const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can still arrive after leaving.
 // "Stopped earning" is news when it happens; left amber with nothing to do about it, it reads as a
@@ -681,12 +684,16 @@ function trackMinutes(previous, campaigns, sessions, firstGoodPoll, sessionOnly,
       rec.low = 0;
     } else if (minutes < rec.peak) {
       rec.low += 1;
-      if (rec.low >= DIP_POLLS) {
+      // A state saved mid-dip by an older version has no lowAt: its clock starts now.
+      if (rec.low === 1 || rec.lowAt == null) rec.lowAt = now;
+      if (rec.low >= DIP_POLLS && now - rec.lowAt >= DIP_MS) {
         rec.peak = minutes;
         rec.low = 0;
+        delete rec.lowAt;
       }
     } else {
       rec.low = 0;
+      delete rec.lowAt;
     }
   };
   for (const c of campaigns) {

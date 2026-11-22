@@ -223,6 +223,22 @@ try {
   assert.equal(s.streams.every((t) => t.playerState === 'playing'), true);
   step('injection reads real video state from both tabs; first poll says Checking');
 
+  // A channel change inside Twitch's page, with no reload and no poll asked for by this test: the
+  // page asks for a check itself, within the worker's 10-second spacing (audit, 2026-11-22).
+  const tabLogins = () => popup.evaluate(async () => ((await chrome.storage.local.get('state')).state.streams || []).map((t) => t.login));
+  // The minute's alarm is paused for this step, so only the page's own request can pass it.
+  await sw.evaluate(() => chrome.alarms.clear('poll'));
+  await bravo.evaluate(() => history.pushState({}, '', '/charlie'));
+  await until(popup, async () => ((await chrome.storage.local.get('state')).state.streams || []).some((t) => t.login === 'charlie'), undefined, { timeout: 25000 });
+  await bravo.evaluate(() => history.pushState({}, '', '/bravo'));
+  await until(popup, async () => {
+    const logins = ((await chrome.storage.local.get('state')).state.streams || []).map((t) => t.login);
+    return logins.includes('bravo') && !logins.includes('charlie');
+  }, undefined, { timeout: 25000 });
+  assert.deepEqual((await tabLogins()).sort(), ['alphatv', 'bravo']);
+  await sw.evaluate(() => chrome.alarms.create('poll', { periodInMinutes: 1 }));
+  step('a channel changed inside Twitch\'s page is checked within seconds, without waiting for the minute');
+
   await advance(1, 1);
   await alpha.waitForTimeout(600);
   s = await poll();
