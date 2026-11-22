@@ -1039,6 +1039,17 @@ export function update(prev, obs, now) {
   }
   if (s.timeline.length > TIMELINE_MAX) s.timeline.splice(0, s.timeline.length - TIMELINE_MAX);
   s.rate = creditRate(s.timeline);
+  // "Earning slowly" is about the channel Twitch credits now. Minutes from before it last changed
+  // were another channel's (audit, 2026-11-22: 11 of 30 on a channel just opened, from the last
+  // one's hang, about 18 minutes to clear). No credited channel known (a failed session) changes
+  // nothing. The strip's count (s.rate) still covers every minute it draws. Bound: two scalars.
+  const ratedLogin = session?.login || null;
+  if (ratedLogin && ratedLogin !== s.rateLogin) {
+    // First sight, as after an update: nothing to cut yet.
+    s.rateFrom = s.rateLogin ? bucket : null;
+    s.rateLogin = ratedLogin;
+  }
+  const ownRate = s.rateFrom != null ? creditRate(s.timeline.filter((t) => t.m >= s.rateFrom)) : s.rate;
 
   // Which tabs could earn, to tell a tab that went away from a channel that changed. A raid or a
   // channel going offline keeps the tab, so that still warns. Leaving is deliberate, so it does not.
@@ -1068,7 +1079,7 @@ export function update(prev, obs, now) {
   const wasTracking = prev?.tracking === true || ['earning', 'stalled'].includes(prev?.verdict?.code) || prev?.lostAt != null;
   s.lostAt = null;
   if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null) {
-    const slow = s.rate.watched >= RATE_MIN_MINUTES && s.rate.counted / s.rate.watched < SLOW_BELOW;
+    const slow = ownRate.watched >= RATE_MIN_MINUTES && ownRate.counted / ownRate.watched < SLOW_BELOW;
     // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
     // rather than flickering the warning off and on.
     // Kept only while the same channel is still credited and its tab still open: after the user
@@ -1092,7 +1103,8 @@ export function update(prev, obs, now) {
       // A quiet poll keeps the judgement but asks again whether another tab can earn. A judgement
       // saved by 0.1.8 or older has no name to rebuild from and is kept as it was.
       : keep ? (prev.verdict.wasted.name ? wastedView(prev.verdict.wasted, session, s.active, streams) : prev.verdict.wasted) : null;
-    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted };
+    // rate: the minutes "slowly" was judged on, for the chip's "N of the last N".
+    s.verdict = { code: 'earning', channel: session?.displayName || null, slow, wasted, ...(slow ? { rate: ownRate } : {}) };
   } else if (!candidates.length && unchecked && prev?.verdict?.code === 'stalled'
     && streams.some((st) => st.channelState === 'unknown' && prev.streams?.some((p) => p.tabId === st.tabId && p.channelState === 'eligible'))) {
     // One failed lookup on the stalled tab says nothing new: the stall a fresh reading raised is

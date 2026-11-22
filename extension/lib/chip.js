@@ -170,7 +170,9 @@ function runningView(v, tone, rate, label, pct, progress, credited) {
       return { tone, text: label || 'Drops', pct, title };
     }
     if (v.slow) {
-      return { tone, text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${rate.counted} of the last ${rate.watched} watched minutes counted.`.trim() };
+      // The count "slowly" was judged on: this channel's minutes only (tracker.js ownRate).
+      const r = v.rate || rate;
+      return { tone, text: label || 'Drops', pct, title: `${progress} Earning slowly${where}: ${r.counted} of the last ${r.watched} watched minutes counted.`.trim() };
     }
     return { tone, text: label || 'Drops', pct, title: `${progress} Earning${where}.`.trim() };
   }
