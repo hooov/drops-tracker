@@ -1007,6 +1007,14 @@ export function update(prev, obs, now) {
   // Timeline: one entry per wall-clock minute.
   const bucket = Math.floor(now / 60000);
   const candidates = streams.filter((st) => st.channelState === 'eligible');
+  // The tabs a headline about one tab should pick from: those in front, newest state first, or all
+  // of them when none is. In front only on a player that answered hidden: false; a tab not read is
+  // not known to be in front. Returns the same array when nothing is in front.
+  const front = new Set((obs.streams || []).filter((st) => st.player && st.player.hidden === false).map((st) => st.tabId));
+  const frontFirst = (list) => {
+    const shown = list.filter((st) => front.has(st.tabId)).sort((a, b) => (b.stateSince ?? 0) - (a.stateSince ?? 0));
+    return shown.length ? shown : list;
+  };
   // Able to earn only on readings held from an earlier answer: its minutes this poll are not
   // known, so it counts neither as watched-without-credit nor as evidence of a stall.
   const heldOnly = (st) => {
@@ -1092,7 +1100,7 @@ export function update(prev, obs, now) {
   } else if (!candidates.length && streams.some((st) => st.channelState === 'reward')) {
     // Quiet on purpose: no warning, no hang, no reload. A flat reading here was normal while
     // Twitch counted every minute (2026-11-18), so it says nothing about whether it is counting.
-    const st = streams.find((x) => x.channelState === 'reward');
+    const [st] = frontFirst(streams.filter((x) => x.channelState === 'reward'));
     const shown = s.active.find((d) => d.unjudged && st.campaignIds.includes(d.campaignId));
     const total = (s.pending || []).find((d) => d.runningTotal && st.campaignIds.includes(d.campaignId));
     const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -1104,8 +1112,13 @@ export function update(prev, obs, now) {
         : `Progress for ${st.displayName}'s ${total?.name || 'reward'} could not be read. Twitch's Drops page shows it.`;
     s.verdict = { code: 'idle', hasStreams: true, reward: true, message };
   } else if (!candidates.length && streams.some((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState))) {
-    const open = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
-    const since = Math.max(s.resumeAt ?? 0, Math.min(...open.map((st) => st.stateSince)));
+    // The tab in front is the one being looked at: a channel just opened gets its own grace and its
+    // own name, not those of a background tab Twitch had not started for minutes (audit,
+    // 2026-11-22: echo_247's "may need your game account linked" on every channel opened after it).
+    const all = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
+    const open = frontFirst(all);
+    const inFront = open !== all;
+    const since = Math.max(s.resumeAt ?? 0, inFront ? open[0].stateSince : Math.min(...open.map((st) => st.stateSince)));
     const first = open[0];
     const late = first.channelState === 'badge_unseen' ? badgeTooLate(first, now) : null;
     const message = {
@@ -1140,7 +1153,7 @@ export function update(prev, obs, now) {
   } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
     // Not a warning: one reading short of the requirement, then gone from the list, is how an
     // earned badge looked (2026-11-20). The evidence is said, so it can be checked on Twitch.
-    const st = streams.find((x) => x.channelState === 'badge_left');
+    const [st] = frontFirst(streams.filter((x) => x.channelState === 'badge_left'));
     const name = st.displayName || st.login;
     const d = (st.badges || []).flatMap((b) => b.drops || []).find((x) => x.left?.near);
     const read = d ? ` at ${d.left.minutes} of ${d.required} minutes` : '';
