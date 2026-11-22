@@ -380,7 +380,8 @@ function applyChannelCampaigns(channel, item, now = Date.now(), gameId = null) {
     if (x.brandName !== CREATOR_BADGE_BRAND) {
       // Two reasons the highlight answer leaves out a campaign this one lists: you dismissed its
       // highlight (2026-11-20), or for no reason it gives (2026-11-22, a watch campaign in the
-      // stream's own game, listed signed in and out, never dismissed). The second is added only for
+      // stream's own game, never dismissed, omitted signed in and out; this answer was captured
+      // signed out only). The second is added only for
       // its watch groups whose categories hold the game the stream is in now: Twitch credits a
       // campaign "while they're live in {Category}", and a campaign listed for another game could
       // otherwise read as a channel that should be earning, a false stall. A finished drop is still
@@ -393,7 +394,8 @@ function applyChannelCampaigns(channel, item, now = Date.now(), gameId = null) {
         have.add(x.id);
         continue;
       }
-      const inGame = gameId ? watchGroupsOf(x).filter((g) => (g.progressCriteria.categories || []).some((k) => k?.id === gameId)) : [];
+      const inCategory = (g) => Array.isArray(g.progressCriteria.categories) && g.progressCriteria.categories.some((k) => k?.id === gameId);
+      const inGame = gameId ? watchGroupsOf(x).filter(inCategory) : [];
       if (inGame.length) {
         addDismissedCampaign(c, x, inGame, x.game?.displayName || x.game?.name || null);
         have.add(x.id);
