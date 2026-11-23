@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/lib/tracker.js && node --check extension/lib/twitch.js && node --check extension/lib/chip.js && node --check extension/lib/panel.js && node --check extension/lib/settings.js && node --check extension/lib/states.js && node --check extension/lib/directory.js && node --check extension/lib/badges.js && node --check extension/lib/minutelog.js && node --check extension/lib/debug.js && node --check extension/lib/pageops.js && node --check extension/page-hook.js && node --check extension/page-bridge.js",
+    "check": "node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/lib/tracker.js && node --check extension/lib/twitch.js && node --check extension/lib/chip.js && node --check extension/lib/panel.js && node --check extension/lib/settings.js && node --check extension/lib/states.js && node --check extension/lib/directory.js && node --check extension/lib/badges.js && node --check extension/lib/minutelog.js && node --check extension/lib/debug.js && node --check extension/lib/pageops.js && node --check extension/page-hook.js && node --check extension/page-bridge.js && node --check scripts/leveldb.mjs && node --check scripts/read-storage.mjs && node --check scripts/make-storage-fixture.mjs",
     "e2e": "node scripts/e2e.mjs",
+    "storage": "node scripts/read-storage.mjs",
     "icons": "node scripts/make-icons.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "package": "node scripts/package.mjs",

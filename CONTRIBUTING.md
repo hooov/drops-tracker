@@ -36,6 +36,7 @@ Never pass an async function to Playwright's `waitForFunction`: it returns a Pro
 Checking a change against real Twitch before it ships, without opening extra streams:
 - Reload the extension at brave://extensions, then the Twitch tab, so the page sends its queries again.
 - Copy debug info (Settings, Developer mode) holds the state, the minute log and `pageOps`, the operations Twitch's page sent. A query Twitch moved data to shows up there.
+- `npm run storage` prints what Copy debug info leaves out (the owned reward IDs) and the minutes credited per unbroken run, from a copy of this extension's own storage folder. Options are at the top of `scripts/read-storage.mjs`. Its output holds your channels, so it stays out of the repo.
 - Snippets that read or change the extension's storage go in the **service worker** console: brave://extensions, the "service worker" link on the Drops Tracker card. The Twitch page's own console has no `chrome.storage`. Wrap them as `await (async () => { ... })()` so they print their result and can be run twice.
 - No desktop notification: in that console, `await chrome.notifications.getPermissionLevel()` should say `granted`, and a `chrome.notifications.create` call should show one. If it does not appear, Windows is hiding it: Brave in Windows Settings > System > Notifications, and Do Not Disturb off (hit on 2026-11-19).
 - Check every view the change can reach, not only the one reported: the panel headline, the chip on the channel's own tab and on a second tab, the toolbar badge and the Badges tab.
