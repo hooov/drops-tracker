@@ -54,6 +54,9 @@ export const CHANNEL_STATES = {
   // Twitch not counting it, which is not the same as the campaign not having started: shown for a
   // campaign running since the day before (2026-11-19).
   unstarted: { label: 'Not counting yet' },
+  // A reward campaign with no progress in sight, not owned and not called claimed by Twitch's
+  // channel page: finished and not started look the same (2026-11-23, drops-tracker#17).
+  reward_unproven: { label: 'Cannot tell if finished' },
   // A badge or reward campaign whose progress comes from Twitch's reward inventory or a session
   // running total: shown as Twitch reports it, never judged. On 2026-11-18 the tracker saw about
   // 15 of 250 minutes Twitch counted there, and called a hang while it counted.
@@ -74,7 +77,7 @@ export const VERDICT_CODES = {
   earning: ['channel', 'slow', 'wasted', 'rate'], // rate: with slow, the credited channel's own count.
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
   // dropLeft: a game drop left every list near its requirement (tracker.js leftDrops).
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'reward', 'badgeLeft', 'dropLeft', 'since', 'message'],
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'unproven', 'reward', 'badgeLeft', 'dropLeft', 'since', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],
@@ -105,7 +108,8 @@ export function verdictTone(v) {
     case 'idle':
       if (v.lost) return 'warn'; // Find another stream.
       // Twitch not counting a campaign yet: usually nothing to do but wait.
-      if (v.limited) return v.unstarted || v.blocked ? 'idle' : 'unknown';
+      // A reward campaign that may be finished: nothing to do, and nothing is being missed.
+      if (v.limited) return v.unstarted || v.blocked || v.unproven ? 'idle' : 'unknown';
       return 'idle';
     default: return 'idle';
   }

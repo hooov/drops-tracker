@@ -150,7 +150,8 @@ function chipViewOf(state, now, login) {
   if (v.lost) return { tone, text: 'Stopped', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
   if (v.limited) {
     if (tone === 'unknown') return { ...unknown(`${claimNote}${progress} ${v.message}`.trim()), pct };
-    return { tone, text: 'Not yet', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
+    // "Not yet" would say it is still to come, and it may be finished.
+    return { tone, text: v.unproven ? label || 'Drops' : 'Not yet', pct, title: `${claimNote}${progress} ${v.message}`.trim() };
   }
   // Nothing left to earn here, only a reward: a full purple ring, not a warning.
   if (claim && !top) return { tone: 'info', text: connectOnly ? 'Connect' : 'Claim', pct: 100, title: claimNote.trim() };

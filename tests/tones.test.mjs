@@ -35,6 +35,7 @@ const rows = [
   ['signed out', state({ code: 'signed_out', message: 'x' }), { tone: 'warn', chip: 'Log in', tb: 'OFF', warns: true }],
   ['not counting yet (unstarted)', state({ code: 'idle', hasStreams: true, limited: true, unstarted: true, message: 'x' }), { tone: 'idle', chip: 'Not yet', tb: '', warns: false }],
   ['not counting yet (blocked)', state({ code: 'idle', hasStreams: true, limited: true, blocked: true, message: 'x' }), { tone: 'idle', chip: 'Not yet', tb: '', warns: false }],
+  ['cannot tell if finished', state({ code: 'idle', hasStreams: true, limited: true, unproven: true, message: 'x' }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
   ['cannot track this badge', state({ code: 'idle', hasStreams: true, limited: true, badge: true, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: true }],
   ['cannot check streams, just now', state({ code: 'idle', hasStreams: true, limited: true, since: NOW - MIN, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: false }],
   ['cannot check streams, 3 min', state({ code: 'idle', hasStreams: true, limited: true, since: NOW - 3 * MIN, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: true }],

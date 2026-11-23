@@ -287,7 +287,9 @@ function badgeTooLate(stream, now) {
 
 // notStarted: when given, collects the game campaigns read as not started from nothing (not a
 // session reporting nothing, which state.pending lists), so My Drops can list their drops.
-function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null) {
+// claimed: `campaign/group` keys Twitch's channel page called finished (twitch.js parseClaimedGroups).
+// unproven: when given, collects the reward campaigns nothing says are finished or not started.
+function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null, claimed = new Set(), unproven = null) {
   if (!stream.login) return 'not_channel';
   // No entry at all means it was not looked up (past the channel limit), not that it is offline.
   if (!stream.channel || stream.channel.unknown) return 'unknown';
@@ -296,6 +298,7 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   if (!campaigns.length) return stream.channel.subOnly ? 'sub_only' : 'no_drops';
   const owned = new Set(rewards.ids);
   let unstarted = false;
+  let rewardUnproven = false;
   let badgeUnseen = false;
   let badgeLeft = false;
   let isBlocked = false;
@@ -331,9 +334,20 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
     if (inventoryIds.has(c.id)) continue;
     const allOwned = c.benefitIds?.length > 0 && c.benefitIds.every((id) => owned.has(id));
     if (allOwned) continue;
+    // A reward given as a POOL is never in the owned list under any ID seen, so for a reward
+    // campaign each group also counts as done when Twitch's channel page called it claimed
+    // (2026-11-23, drops-tracker#17: Night Out, finished, beside nine owned Evolutions rewards).
+    // Only here, after every sign of progress: rising minutes win over a flag that went stale.
+    if (c.rewardCampaign && c.watchDrops?.length > 0 && c.watchDrops.every((d) => claimed.has(`${c.id}/${d.id}`)
+      || (d.benefitIds?.length > 0 && d.benefitIds.every((id) => owned.has(id))))) continue;
     if (left) badgeLeft = true;
     else if (c.channelOwned) badgeUnseen = true;
-    else {
+    else if (c.rewardCampaign && !c.game) {
+      // Finished or not started look the same from here, and there is no game account to link.
+      // One that names a game keeps "may need linking": none has been captured.
+      rewardUnproven = true;
+      unproven?.push(c);
+    } else {
       unstarted = true;
       if (!c.rewardCampaign) notStarted?.push(c);
     }
@@ -343,6 +357,7 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   if (isBlocked) return 'blocked';
   if (reward) return 'reward';
   if (unstarted) return 'unstarted';
+  if (rewardUnproven) return 'reward_unproven';
   // A timer badge with no session: Twitch is not reporting its minutes. There is no game account
   // to link, and what a session looks like once a badge is earned has not been seen, so this may
   // mean already earned. Not knowing is still worth saying. One that left the in-progress list at
@@ -1000,7 +1015,9 @@ export function update(prev, obs, now) {
   s.placed = [...placedHere.values()];
   // States the placement overrides: the lists' view. reward (credited, quiet), unknown, offline
   // and not_channel are left as they are.
-  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
+  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'reward_unproven', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
+  // Read fresh each poll (background.js, storage claimedGroups), never kept in this state.
+  const claimed = new Set((Array.isArray(obs.claimedGroups) ? obs.claimedGroups : []).filter((x) => x?.campaignId && x.groupId && now < x.endAt).map((x) => `${x.campaignId}/${x.groupId}`));
   const tabs = {};
   // Drops of campaigns Twitch has not started on an open channel, listed with no minutes (as
   // pending is) so its My Drops is not empty before the first minute (audit, 2026-11-22). Never
@@ -1011,7 +1028,8 @@ export function update(prev, obs, now) {
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
     const notStarted = [];
-    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted);
+    const unproven = [];
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted, claimed, unproven);
     const place = placedHere.get(st.tabId);
     const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
     if (channelState === 'unstarted') {
@@ -1062,6 +1080,8 @@ export function update(prev, obs, now) {
       blockedOpens: channelState === 'blocked' ? [...(st.channel?.campaigns || [])].map((c) => blocked.get(c.id)).find(Boolean)?.opens ?? null : null,
       // A reward drop earned for today: when the next one can start.
       rewardOpens: channelState === 'reward' ? (st.channel?.campaigns || []).map((c) => blocked.get(c.id)?.opens).find(Boolean) ?? null : null,
+      // The reward campaign that cannot be told finished from not started, so the headline can name it.
+      ...(channelState === 'reward_unproven' && unproven[0]?.name ? { unprovenReward: unproven[0].name } : {}),
       ...(leftHere ? { leftDrop: { name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
       // Highest minutes seen, or null when Twitch has reported none. Sub drops never have any.
       badges: (st.channel?.badges || []).map((b) => ({
@@ -1245,11 +1265,11 @@ export function update(prev, obs, now) {
         // Why a flat reading here is not judged is in states.js (reward); it is not the user's concern.
         : `Progress for ${st.displayName}'s ${total?.name || 'reward'} could not be read. Twitch's Drops page shows it.`;
     s.verdict = { code: 'idle', hasStreams: true, reward: true, message };
-  } else if (!candidates.length && streams.some((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState))) {
+  } else if (!candidates.length && streams.some((st) => ['unstarted', 'reward_unproven', 'badge_unseen', 'blocked'].includes(st.channelState))) {
     // The tab in front is the one being looked at: a channel just opened gets its own grace and its
     // own name, not those of a background tab Twitch had not started for minutes (audit,
     // 2026-11-22: echo_247's "may need your game account linked" on every channel opened after it).
-    const all = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
+    const all = streams.filter((st) => ['unstarted', 'reward_unproven', 'badge_unseen', 'blocked'].includes(st.channelState));
     const open = frontFirst(all);
     const inFront = open !== all;
     const since = Math.max(s.resumeAt ?? 0, inFront ? open[0].stateSince : Math.min(...open.map((st) => st.stateSince)));
@@ -1266,6 +1286,8 @@ export function update(prev, obs, now) {
         // locked, ticking with another drop or waiting is not known (2026-11-19).
         ? `No minutes are rising on ${first.displayName}, and Twitch reports none for its ${first.pendingDrop}.`
         : `${first.displayName} has a campaign that has not started counting. It may need your game account linked.`,
+      // Finished and not started look alike, and it has no game account to link (2026-11-23).
+      reward_unproven: `Cannot tell whether you have finished ${first.unprovenReward || 'the reward campaign'} on ${first.displayName}. The Drops panel in its chat shows your progress.`,
       // Within a day, the time: a daily reward's next window opens 24 hours after the last began.
       blocked: first.blockedOpens != null
         ? `${first.displayName}'s next drop opens ${first.blockedOpens - now < 86400000
@@ -1282,6 +1304,7 @@ export function update(prev, obs, now) {
         badge: first.channelState === 'badge_unseen',
         blocked: first.channelState === 'blocked',
         unstarted: first.channelState === 'unstarted',
+        ...(first.channelState === 'reward_unproven' ? { unproven: true } : {}),
         message,
       };
   } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
@@ -1357,7 +1380,8 @@ export function warning(state, now) {
       // A drop that has not started or opens later is being tracked fine: Twitch is not counting
       // it, and there is usually nothing to do but wait. The panel says so; no pill, no
       // notification (Tyler, 2026-11-20).
-      if (v.limited && (v.unstarted || v.blocked)) return null;
+      // One that may be finished has nothing to do either.
+      if (v.limited && (v.unstarted || v.blocked || v.unproven)) return null;
       // A failed channel lookup waits GAP_MS like a failed poll does: one blip is not news.
       // Before 2026-11-20 it notified on the first failed lookup. A badge without minutes has
       // already waited STALL_MS to get here, and has no since.

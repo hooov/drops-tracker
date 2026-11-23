@@ -190,6 +190,7 @@ export function verdictText(state, now) {
       if (v.lost) return ['Stopped earning', v.message];
       // "Cannot check streams" is for failed lookups only: a campaign Twitch has not started was
       // shown under it (2026-11-13), which read as the extension failing.
+      if (v.unproven) return ['Cannot tell if finished', v.message];
       if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked || v.unstarted ? 'Not counting yet' : 'Cannot check streams', v.message];
       if (v.badgeLeft) return ['Badge likely earned', v.message];
       if (v.dropLeft) return ['Drop likely earned', v.message];

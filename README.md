@@ -117,7 +117,7 @@ Measured facts behind the thresholds, the real failure shapes Twitch returns, an
 | `extension/background.js` | Service worker: polling loop, tab reads, storage, badge, notifications, auto-reload, All Drops loading |
 | `extension/content.js` | Chip in the chat row and the in-page panel host |
 | `extension/popup.html`, `popup.js` | Toolbar popup, using the same panel |
-| `extension/page-hook.js`, `page-bridge.js` | Run on twitch.tv pages except `/drops/inventory`: read the campaign list the Drops page receives, and a reward drop's day names a channel page receives; every other request passes through untouched |
+| `extension/page-hook.js`, `page-bridge.js` | Run on twitch.tv pages except `/drops/inventory`: read the campaign list the Drops page receives, and a reward drop's day names and which reward drops are finished, as a channel page receives them; every other request passes through untouched |
 | `extension/panel.css` | Panel styles, built on Twitch's design tokens |
 | `extension/lib/tracker.js` | Pure state machine and verdicts. Start here |
 | `extension/lib/twitch.js` | Read-only GQL client and response parsing |

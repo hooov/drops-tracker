@@ -1,4 +1,4 @@
-import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, TwitchError } from './lib/twitch.js';
+import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, TwitchError } from './lib/twitch.js';
 import { update, events, badge, warning, rewardsDue } from './lib/tracker.js';
 import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
@@ -197,7 +197,7 @@ async function observe(prev) {
   // Keep channel pages, plus non-channel pages only if they are really playing video (front page).
   const relevant = tabs.filter((t) => t.login || (t.player?.hasVideo && !t.player.paused));
   try {
-    const { hashes, dayRewards } = await chrome.storage.local.get(['hashes', 'dayRewards']);
+    const { hashes, dayRewards, claimedGroups } = await chrome.storage.local.get(['hashes', 'dayRewards', 'claimedGroups']);
     // The reward inventory at least every REWARD_HOLD_MS, for badges no channel lists, and once
     // after a window it read has ended.
     const askRewards = rewardsDue(prev, Date.now());
@@ -210,6 +210,7 @@ async function observe(prev) {
       sessions: snap.sessions,
       rewardGroups: snap.rewardGroups,
       dayRewards: Array.isArray(dayRewards) ? dayRewards : [],
+      claimedGroups: Array.isArray(claimedGroups) ? claimedGroups : [],
       streams: relevant.map((t) => ({ ...t, channel: t.login ? snap.channels[t.login] : null })),
     };
   } catch (e) {
@@ -415,16 +416,21 @@ chrome.notifications.onClicked.addListener((id) => {
   chrome.tabs.create({ url: 'https://www.twitch.tv/drops/inventory' });
 });
 
-// A repeating reward drop's per-day rewards, from the answer Twitch's channel page received
-// (page-hook.js). Names and art only (parseDayRewards); bound: MAX_DAY_GROUPS (mergeDayRewards).
+// A repeating reward drop's per-day rewards, and which reward groups are finished, from the answer
+// Twitch's channel page received (page-hook.js). Names and art only (parseDayRewards); group IDs
+// and an end date only (parseClaimedGroups). Bounds: MAX_DAY_GROUPS, MAX_CLAIMED_GROUPS (the merges).
 // One write at a time, so two tabs answering at once cannot drop each other's groups.
 let dayRewardWrites = Promise.resolve();
 function acceptDayRewards(item) {
   const parsed = parseDayRewards(item);
-  if (!parsed?.length) return Promise.resolve(false);
+  const claims = parseClaimedGroups(item);
+  if (!parsed?.length && !claims?.listed.length) return Promise.resolve(false);
   dayRewardWrites = dayRewardWrites.then(async () => {
-    const { dayRewards } = await chrome.storage.local.get('dayRewards');
-    await chrome.storage.local.set({ dayRewards: mergeDayRewards(dayRewards, parsed, Date.now()) });
+    const stored = await chrome.storage.local.get(['dayRewards', 'claimedGroups']);
+    await chrome.storage.local.set({
+      ...(parsed?.length ? { dayRewards: mergeDayRewards(stored.dayRewards, parsed, Date.now()) } : {}),
+      ...(claims?.listed.length ? { claimedGroups: mergeClaimedGroups(stored.claimedGroups, claims, Date.now()) } : {}),
+    });
   }).catch(() => {});
   return dayRewardWrites.then(() => true);
 }

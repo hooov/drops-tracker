@@ -623,6 +623,52 @@ export function mergeDayRewards(stored, parsed, now) {
     .slice(-MAX_DAY_GROUPS);
 }
 
+export const MAX_CLAIMED_GROUPS = 100; // Reward groups remembered as claimed (claimedGroups). Ten seen on one channel.
+
+/**
+ * Reward groups the DropChannelCampaignsProgress answer calls finished for this viewer: CLAIMED,
+ * with every repeat granted. The one thing found that says so for a reward given as a POOL: the
+ * owned list held neither the ball Night Out lists nor the badge it became, and the reward
+ * inventory lists neither campaign once done (captured 2026-11-23, drops-tracker#17). IDs and the
+ * campaign's end only: no minutes, counts or names. A channel's own badge is left out: it has its
+ * own rules. listed: every watch group the answer names, so a merge can take back a flag the
+ * answer no longer supports (another account). null when unreadable or only partly answered, which
+ * is unknown and must change nothing.
+ */
+export function parseClaimedGroups(item) {
+  const list = item?.data?.channelDropCampaignsProgress;
+  if (!Array.isArray(list) || errorsOf(item).length) return null;
+  const claimed = [];
+  const listed = [];
+  for (const c of list) {
+    if (typeof c?.id !== 'string' || !Array.isArray(c.rewardGroups) || c.brandName === CREATOR_BADGE_BRAND) continue;
+    const endAt = dateOrNull(c.endAt);
+    for (const g of c.rewardGroups) {
+      const crit = g?.progressCriteria;
+      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH') continue;
+      listed.push(claimKey(c.id, g.id));
+      // No end date: nothing would ever drop the flag.
+      if (endAt == null || g.self?.status !== 'CLAIMED') continue;
+      // A repeating group may read CLAIMED after each day's grant, so every repeat has to be.
+      if (crit.repeatableConfig && !(crit.repeatableConfig.repeatableTimes > 0 && g.self.grantCount >= crit.repeatableConfig.repeatableTimes)) continue;
+      claimed.push({ campaignId: c.id, groupId: g.id, endAt });
+    }
+  }
+  return { claimed, listed };
+}
+
+const claimKey = (campaignId, groupId) => `${campaignId}/${groupId}`;
+
+/** Stored claimed groups with a fresh answer's own groups replaced. Ended campaigns dropped. Bound: MAX_CLAIMED_GROUPS, newest kept. */
+export function mergeClaimedGroups(stored, parsed, now) {
+  const answered = new Set(parsed?.listed || []);
+  const kept = (Array.isArray(stored) ? stored : []).filter((x) => x?.campaignId && x.groupId && !answered.has(claimKey(x.campaignId, x.groupId)));
+  return [...kept, ...(parsed?.claimed || []).map((x) => ({ ...x, at: now }))]
+    .filter((x) => now < x.endAt)
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+    .slice(-MAX_CLAIMED_GROUPS);
+}
+
 export function parseRewardInventory(item) {
   if (errorsOf(item).length || needsIntegrity(item) || isStale(item)) return null;
   const list = item?.data?.currentUser?.inventory?.viewerRewardDropCampaignsInProgress;

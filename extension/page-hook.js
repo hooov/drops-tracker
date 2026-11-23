@@ -1,7 +1,8 @@
 // Runs in the page's own world on twitch.tv pages. Some answers need Twitch's integrity check,
 // which only its own page can pass, so the extension cannot ask for them. It reads the answer
 // Twitch's page already received instead: the campaign list on the Drops page, and on a channel
-// page the per-day rewards of a repeating reward drop (2026-11-22). Nothing here touches the
+// page the per-day rewards of a repeating reward drop (2026-11-22) and which reward groups are
+// finished (2026-11-23), both from one answer. Nothing here touches the
 // request, its headers or any token, and a failure here must never affect the page.
 // It runs on the channel page that reports watched minutes, where a failed report loses the
 // minute, so every other request passes straight through: no copy of its answer is taken

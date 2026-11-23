@@ -789,6 +789,28 @@ try {
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
   step('minutes credited to an earned drop: amber, says which tab could earn instead; clears on the next minute that rises');
 
+  // A finished reward campaign (drops-tracker#17): with the channel page's answer its row says so;
+  // without it the headline and the row say it cannot be told, in grey, and nothing mentions linking.
+  const unprovenMsg = 'Cannot tell whether you have finished Pokémon Night Out Campaign on AlphaTV. The Drops panel in its chat shows your progress.';
+  const rewardRow = (channelState, verdict) => popup.evaluate(async ([cs, v]) => {
+    const { state } = await chrome.storage.local.get('state');
+    const stream = { ...state.streams[0], login: 'alphatv', displayName: 'AlphaTV', channelState: cs, playerState: 'playing', credited: false, campaignIds: [] };
+    await chrome.storage.local.set({ state: { ...state, active: [], unclaimed: [], session: null, lastPollAt: Date.now(), streams: [stream], verdict: v } });
+  }, [channelState, verdict]);
+  await rewardRow('reward_unproven', { code: 'idle', hasStreams: true, limited: true, badge: false, blocked: false, unstarted: false, unproven: true, message: unprovenMsg });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Cannot tell if finished');
+  assert.equal(await popup.textContent('#verdict-detail'), unprovenMsg);
+  assert.equal(await popup.getAttribute('#verdict', 'data-tone'), 'idle');
+  assert.match(await popup.textContent('#streams'), /Cannot tell if finished/);
+  assert.doesNotMatch(await popup.textContent('body'), /account linked/);
+  await shot('13-cannot-tell-if-finished');
+  await rewardRow('finished', { code: 'idle', hasStreams: true });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Not earning');
+  assert.match(await popup.textContent('#streams'), /Campaign finished/);
+  s = await earningNow();
+  await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
+  step('finished reward campaign: "Campaign finished", or "Cannot tell if finished" in grey without the page\'s answer');
+
   // A tracker that stopped polling must not keep showing good news.
   await popup.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
@@ -1176,7 +1198,7 @@ try {
   // A channel page's DropChannelCampaignsProgress answer, read by the real page hook in the page's
   // own world: the day names reach storage, and the page gets every answer whole, the one read
   // and one it does not read. The answer is constructed from the query's fields (2026-11-22).
-  const dayAnswer = [{ data: { ok: 'other' } }, { data: { channelDropCampaignsProgress: [{ id: 'e2e-gta', endAt: inDays(30), rewardGroups: [{ id: 'e2e-dvd', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 60 }, repeatableConfig: { repeatableTimes: 6 } }, rewards: [{ id: 'chest', name: 'GTA DVD Chest', distributionType: 'POOL', pool: { id: 'pool', rewards: ['Purple Chain', 'Bronze Chain', 'Silver Chain', 'Gold Chain', 'Diamond Chain', 'Miami Chain'].map((name, i) => ({ id: `r${i}`, name, thumbnailURL: `https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e${i}.png` })) } }], self: { status: 'IN_PROGRESS', currentMinutesWatched: 48, grantCount: 4 } }] }] } }];
+  const dayAnswer = [{ data: { ok: 'other' } }, { data: { channelDropCampaignsProgress: [{ id: 'e2e-gta', endAt: inDays(30), rewardGroups: [{ id: 'e2e-dvd', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 60 }, repeatableConfig: { repeatableTimes: 6 } }, rewards: [{ id: 'chest', name: 'GTA DVD Chest', distributionType: 'POOL', pool: { id: 'pool', rewards: ['Purple Chain', 'Bronze Chain', 'Silver Chain', 'Gold Chain', 'Diamond Chain', 'Miami Chain'].map((name, i) => ({ id: `r${i}`, name, thumbnailURL: `https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e${i}.png` })) } }], self: { status: 'IN_PROGRESS', currentMinutesWatched: 48, grantCount: 4 } }, { id: 'e2e-ball', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 20 }, repeatableConfig: { repeatableTimes: 3 } }, rewards: [{ id: 'ball', name: 'Ball', distributionType: 'POOL' }], self: { status: 'CLAIMED', currentMinutesWatched: 20, grantCount: 3 } }] }] } }];
   await ctx.route('https://gql.twitch.tv/**', (r) => {
     if (!r.request().postData()?.includes('E2EOtherOperation')) return r.fallback();
     return r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(dayAnswer) });
@@ -1192,9 +1214,13 @@ try {
   const dayStored = await popup.evaluate(async () => (await chrome.storage.local.get('dayRewards')).dayRewards);
   assert.deepEqual(dayStored.map((x) => [x.campaignId, x.groupId, x.days.map((d) => d.name)[4], x.days[4].image]), [['e2e-gta', 'e2e-dvd', 'Diamond Chain', 'https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e4.png']]);
   assert.equal(JSON.stringify(dayStored).includes('grantCount'), false, 'no progress kept');
+  // The finished group from the same answer: which one, and when its campaign ends, nothing else.
+  const claimStored = await popup.evaluate(async () => (await chrome.storage.local.get('claimedGroups')).claimedGroups);
+  assert.deepEqual(claimStored.map((x) => Object.keys(x).sort()), [['at', 'campaignId', 'endAt', 'groupId']]);
+  assert.deepEqual([claimStored[0].campaignId, claimStored[0].groupId], ['e2e-gta', 'e2e-ball']);
   await dayPage.close();
-  await popup.evaluate(() => chrome.storage.local.remove('dayRewards'));
-  step('channel page: the hook passes its answers through whole and keeps a reward drop\'s day names');
+  await popup.evaluate(() => chrome.storage.local.remove(['dayRewards', 'claimedGroups']));
+  step('channel page: the hook passes its answers through whole, keeps a reward drop\'s day names and which groups are finished');
   // Real Twitch clears an invalid token whenever it sees one, so put it back before each step that needs it.
   const fakeLogin = () => sw.evaluate(() => chrome.cookies.set({ url: 'https://www.twitch.tv', name: 'auth-token', value: 'e2einvalidtoken0000000000000000', domain: '.twitch.tv', secure: true }));
   const campaignTabs = () => ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length;

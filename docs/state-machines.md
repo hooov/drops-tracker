@@ -12,6 +12,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 |---|---|
 | Wrong headline in the panel ("Earning", "Not counting", "Stopped earning", "Cannot track", "Badge likely earned", "Drop likely earned") or wrong chip colour | [Verdict](#1-verdict) |
 | A drop with no claim step (a BADGE reward) finished and nothing was said, or "Drop likely earned" on one not earned | [Channel state](#4-channel-state), `state.leftDrops` |
+| "Cannot tell if finished", or a finished reward campaign reading "Not counting yet" | [Channel state](#4-channel-state), `reward_unproven` |
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
@@ -139,6 +140,16 @@ always did. `state.unplacedBadges`
 latest minutes; `rising` when they went up. Moved only by a fresh answer, and held when an open
 channel's list could not be read. It changes no channel state or verdict: a rising one is said at
 the top of the Badges tab, and all are counted in Debug.
+
+`reward_unproven`: a reward campaign that names no game, with no progress in any list, not owned and
+not claimed: finished and not started look the same. Headline "Cannot tell if finished" after the
+same grace as `unstarted`, grey, no warning, no toolbar mark; `unprovenReward` on the stream names
+the campaign. `unstarted` on the same channel wins. A reward campaign counts as finished when every
+watch group is owned or in storage `claimedGroups` (at most `MAX_CLAIMED_GROUPS`, dropped when the
+campaign ends), which `parseClaimedGroups()` fills from the channel page's
+`DropChannelCampaignsProgress` answer (`page-hook.js`): CLAIMED with every repeat granted. A fresh
+answer replaces its own groups, so a flag it no longer supports (another account) goes; one with an
+error changes nothing. Checked last, so minutes or an in-progress reading win over a flag.
 
 `state.leftBadges` (`leftBadges()`): badge groups seen leaving the in-progress list, `{ minutes,
 readAt }` of their last reading. Only a transition counts: listed in the last good answer, absent
