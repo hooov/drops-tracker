@@ -114,7 +114,7 @@ Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, e
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
 drop is earned and the next can start later. A repeating drop is named for the day's reward (name
-and art) when Twitch's channel page has given its day rewards (storage `dayRewards`, from
+and art) when Twitch's channel page has given its day rewards, two or more (storage `dayRewards`, from
 `page-hook.js`; `dayIndex()` picks the day as Twitch's panel does), else for the list's reward. That drop is also kept as `state.resting`
 (`restingDrops()`, from `restUntil` set in `rewardCampaigns()`: Twitch's `nextEligibleAt`, else the
 window end), never in `active`. Watch Drops lists it on its own channel only, full with a clock pill

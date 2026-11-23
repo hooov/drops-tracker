@@ -586,7 +586,7 @@ const MAX_NAME = 100;
  * that the extension cannot see (module 635265). GTAVI's group lists one reward, the chest (POOL,
  * "GTA DVD Chest", default image, in ChannelDropsCampaigns), so a group whose only reward is a pool
  * holding one reward per repeat is read as that chest. A pool of another size, whose order is not
- * known, is not. Names and art only: the answer's progress (self) is the viewer's and is not kept.
+ * known, is not. A group with fewer than two days is not kept. Names and art only: the answer's progress (self) is the viewer's and is not kept.
  * null when unreadable. Bound: MAX_DAY_GROUPS groups of MAX_DAYS.
  */
 export function parseDayRewards(item) {
@@ -602,7 +602,9 @@ export function parseDayRewards(item) {
       const pool = g.rewards.length === 1 ? g.rewards[0]?.pool?.rewards : null;
       const source = Array.isArray(pool) && pool.length === times ? pool : g.rewards;
       const days = source.slice(0, MAX_DAYS).map((r) => ({ name: typeof r?.name === 'string' ? r.name.slice(0, MAX_NAME) : '', image: httpsOr(r?.thumbnailURL) }));
-      if (!days.some((d) => d.name)) continue;
+      // One reward for every day names no day: the list's own reward stands, and it would take a
+      // slot (2026-11-22: 10 single-reward Pokémon groups out of 20).
+      if (days.length < 2 || !days.some((d) => d.name)) continue;
       out.push({ campaignId: c.id, groupId: g.id, endAt: dateOrNull(c.endAt), days });
       if (out.length >= MAX_DAY_GROUPS) return out;
     }

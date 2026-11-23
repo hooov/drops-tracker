@@ -3,9 +3,9 @@
 // its badge art, this showed "GTA DVD Chest" with REWARD/default.png). Read from Twitch's client
 // the same day: day n shows the daily chest's pool.rewards[n] on the GTA6 card, rewardGroup.rewards[n]
 // (else rewards[0]) on the generic one, from the DropChannelCampaignsProgress answer its channel
-// page receives (page-hook.js). That answer is
-// constructed here from the query's fields, not captured: only "Bronze Chain" (day 1) and
-// "Diamond Chain" (day 5) are names seen on Twitch; the others are placeholders.
+// page receives (page-hook.js). That answer is constructed here from the query's fields: the raw
+// answer was not captured, but the six names and their order are what parseDayRewards stored from
+// it in Tyler's Brave (0.1.16 debug bundle, 2026-11-22). Art URLs are placeholders.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ const MIN = 60000;
 const GTA = reward.viewerDropCampaigns[0].id;
 const DVD = '2283245e-d15c-11f1-8cdd-0a58a9feac02';
 const json = (body) => ({ status: 200, ok: true, json: async () => body });
-const DAY_NAMES = ['Bronze Chain', 'Day 2 Badge', 'Day 3 Badge', 'Day 4 Badge', 'Diamond Chain', 'Day 6 Badge'];
+const DAY_NAMES = ['Purple Chain', 'Bronze Chain', 'Silver Chain', 'Gold Chain', 'Diamond Chain', 'Miami Chain'];
 const art = (i) => `https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/day${i + 1}.png`;
 
 // shape 'pool' (GTAVI's): the group's one reward is the chest (POOL, as ChannelDropsCampaigns lists
@@ -60,20 +60,29 @@ test('parse: each repeating watch group\'s reward per day, names and art only', 
     assert.deepEqual(out, [{ campaignId: GTA, groupId: DVD, endAt: Date.parse('2026-12-31T23:59:59Z'), days }], shape);
     assert.equal(JSON.stringify(out).includes('grantCount'), false, 'the viewer\'s progress is not kept');
   }
-  // A pool that is not one reward per day (its order unknown), or one beside other rewards: the
-  // group's own rewards, as Twitch's generic card reads them.
-  const shortPool = parseDayRewards(progressAnswer(DAY_NAMES.slice(0, 3)));
-  assert.deepEqual(shortPool[0].days.map((d) => d.name), ['GTA DVD Chest']);
+  // A pool beside other rewards: the group's own rewards, as Twitch's generic card reads them.
   const beside = progressAnswer();
   beside.data.channelDropCampaignsProgress[0].rewardGroups[0].rewards.push({ id: 'x', name: 'Other', thumbnailURL: art(7) });
   assert.deepEqual(parseDayRewards(beside)[0].days.map((d) => d.name), ['GTA DVD Chest', 'Other']);
   const odd = progressAnswer(DAY_NAMES, 'rewards');
   odd.data.channelDropCampaignsProgress[0].rewardGroups[0].rewards[1].thumbnailURL = 'http://example.com/x.png';
   odd.data.channelDropCampaignsProgress[0].rewardGroups[0].rewards[2].name = 5;
-  assert.deepEqual(parseDayRewards(odd)[0].days.slice(1, 3), [{ name: 'Day 2 Badge', image: null }, { name: '', image: art(2) }], 'not https: no image; not a string: no name');
+  assert.deepEqual(parseDayRewards(odd)[0].days.slice(1, 3), [{ name: 'Bronze Chain', image: null }, { name: '', image: art(2) }], 'not https: no image; not a string: no name');
   for (const bad of [null, {}, { data: {} }, { data: { channelDropCampaignsProgress: null } }, { errors: [{ message: 'failed integrity check' }] }]) {
     assert.equal(parseDayRewards(bad), null, JSON.stringify(bad));
   }
+});
+
+// Tyler's 0.1.16 bundle (2026-11-22): one channel's Pokémon campaigns put 10 single-reward
+// repeating groups into dayRewards (cap MAX_DAY_GROUPS). One reward for every day names no day,
+// and those entries can evict GTAVI's.
+test('parse: a repeating group with one reward for every day is not kept', () => {
+  assert.deepEqual(parseDayRewards(progressAnswer(['Haunter'], 'rewards')), [], 'one reward repeated');
+  // Its order is unknown, so it reads as the chest alone, which is one reward.
+  assert.deepEqual(parseDayRewards(progressAnswer(DAY_NAMES.slice(0, 3))), [], 'a pool that is not one reward per day');
+  const mixed = progressAnswer();
+  mixed.data.channelDropCampaignsProgress[0].rewardGroups.push({ id: 'poke', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 30 }, repeatableConfig: { repeatableTimes: 3 } }, rewards: [{ id: 'p', name: 'Haunter', thumbnailURL: art(7) }] });
+  assert.deepEqual(parseDayRewards(mixed).map((x) => x.groupId), [DVD], 'only the multi-day group');
 });
 
 test('merge: newest answer per group wins, ended campaigns dropped, bounded', () => {
@@ -151,8 +160,10 @@ test('48 of 60 on day five: the card shows Diamond Chain with its art, as Twitch
 test('no page answer yet, or no entry for that day: the list\'s own reward, as before', async () => {
   const none = await run(2, undefined);
   assert.deepEqual(channelDrops(none, 'echo', { pending: true }).drops.map((d) => d.name), ['GTA DVD Chest']);
-  const short = await run(2, parseDayRewards(progressAnswer(['Bronze Chain'], 'rewards')));
-  assert.deepEqual(channelDrops(short, 'echo', { pending: true }).drops.map((d) => [d.name, d.image]), [['Bronze Chain', art(0)]], 'Twitch falls back to the first');
-  const blank = await run(2, parseDayRewards(progressAnswer(['Bronze Chain', '', '', '', '', ''], 'rewards')));
+  const one = await run(2, parseDayRewards(progressAnswer(['Purple Chain'], 'rewards')));
+  assert.deepEqual(channelDrops(one, 'echo', { pending: true }).drops.map((d) => d.name), ['GTA DVD Chest'], 'one reward for every day is not kept');
+  const short = await run(2, parseDayRewards(progressAnswer(['Purple Chain', 'Bronze Chain'], 'rewards')));
+  assert.deepEqual(channelDrops(short, 'echo', { pending: true }).drops.map((d) => [d.name, d.image]), [['Purple Chain', art(0)]], 'no fifth day: Twitch falls back to the first');
+  const blank = await run(2, parseDayRewards(progressAnswer(['Purple Chain', '', '', '', '', ''], 'rewards')));
   assert.deepEqual(channelDrops(blank, 'echo', { pending: true }).drops.map((d) => d.name), ['GTA DVD Chest'], 'a nameless day keeps the list\'s name');
 });
