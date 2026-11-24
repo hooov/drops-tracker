@@ -94,6 +94,12 @@ test('rows: a game name with punctuation makes a valid link', () => {
   assert.equal(new URL(rows[0].browseUrl).pathname.split('/').length, 4);
 });
 
+test('rows: a % in a game name is encoded twice, which Twitch needs (checked 2026-11-24)', () => {
+  const link = (game) => directoryRows({ campaigns: [{ kind: 'drop', id: '1', name: 'x', game, owner: '', drops: 1, minutes: 5 }] }, [], '', NOW).rows[0].browseUrl;
+  assert.equal(link('100% Orange Juice'), 'https://www.twitch.tv/directory/game/100%2525%20Orange%20Juice');
+  assert.equal(link('Grand Theft Auto VI'), 'https://www.twitch.tv/directory/game/Grand%20Theft%20Auto%20VI');
+});
+
 test('links that are not https are dropped, so a bad value cannot become a javascript: link', () => {
   const body = clone();
   body.data.currentUser.dropCampaigns[0].accountLinkURL = 'javascript:alert(1)';

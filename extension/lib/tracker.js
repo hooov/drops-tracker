@@ -955,6 +955,7 @@ function diagnose(candidates, streams, active, unclaimed) {
 /**
  * obs: { error?: {kind,message} } or
  *      { campaigns, rewards: {ids, complete}, session, streams: [{tabId, login, channel, tab, player}] }
+ *      either with accountChanged: true when the sign-in is not the last poll's.
  */
 export function update(prev, obs, now) {
   // Over the empty state, so state saved by an older version can never crash a poll.
@@ -962,6 +963,12 @@ export function update(prev, obs, now) {
   if (!Array.isArray(s.timeline)) s.timeline = [];
   if (!s.verdict?.code) s.verdict = { code: 'starting' };
   s.lastPollAt = now;
+  // Signed in as someone else since the last poll, with no poll signed out in between: the same two
+  // the sign-out below forgets, also when this poll failed. This poll's own answers are theirs.
+  if (obs.accountChanged) {
+    if (s.rewards) s.rewards.wholeAt = null;
+    s.rewardSeen = null;
+  }
 
   if (obs.error) {
     // Unknown is not stalled: keep the last good data and say what we cannot see.

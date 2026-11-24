@@ -413,7 +413,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('dir-status').hidden = !status;
     $('dir-error').textContent = directory?.error && !directoryLoading ? directoryError(directory.error) : '';
     $('dir-error').hidden = !$('dir-error').textContent;
-    $('dir-refresh').disabled = directoryLoading;
+    $('dir-refresh').setAttribute('aria-disabled', String(directoryLoading));
 
     const list = $('dir-list');
     list.hidden = !hasList;
@@ -522,8 +522,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     showTab(name);
     $(`tab-${name}`).focus();
   });
-  $('dir-refresh').addEventListener('click', () => loadDirectory(true));
-  $('unearned-load').addEventListener('click', () => loadDirectory(true));
+  // aria-disabled while it loads, not disabled, which would drop the keyboard's place.
+  for (const id of ['dir-refresh', 'unearned-load']) {
+    $(id).addEventListener('click', () => { if (!directoryLoading) loadDirectory(true); });
+  }
   $('dir-search').addEventListener('input', () => renderDirectory(Date.now()));
   // Twitch's page shortcuts would otherwise take typed letters: f for fullscreen, m for mute.
   // Escape still closes the panel, since that listener runs before this one, on the way down.
@@ -646,7 +648,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       ? 'Loading. A Twitch tab opens in the background for a moment.'
       : hasList ? `Sitewide list updated ${ago(now - directory.at)}` : 'Sitewide list not loaded';
     $('unearned-load').textContent = hasList ? 'Load again' : 'Load';
-    $('unearned-load').disabled = directoryLoading;
+    $('unearned-load').setAttribute('aria-disabled', String(directoryLoading));
     $('unearned-error').textContent = directoryLoading ? '' : badgesListError(directory?.error);
     $('unearned-error').hidden = !$('unearned-error').textContent;
     // Never "all earned": it only knows the campaigns it has come across.

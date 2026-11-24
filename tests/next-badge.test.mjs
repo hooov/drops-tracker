@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseSeenBadges, mergeSeenBadges, parseRewardInventory } from '../extension/lib/twitch.js';
+import { parseSeenBadges, mergeSeenBadges, parseRewardInventory, loginPrint } from '../extension/lib/twitch.js';
 import { REWARD_HOLD_MS } from '../extension/lib/tracker.js';
 import { update } from './invariants.mjs';
 import { unearnedBadges, closeFirst, OWNED_FRESH_MS } from '../extension/lib/badges.js';
@@ -227,7 +227,18 @@ test('a missing badge done for today does not borrow another reward\'s minutes t
   assert.equal(row(both, [claim]).next, false);
 });
 
-test('numbers kept are capped: out of range is unknown', () => {
+test('a daily badge too late but done for today: a badge with no reading got those minutes too', () => {
+  // Evolutions' first badge, and its second made a once-only one Twitch gives no reading for.
+  const now = EVO_END - 2 * HOUR;
+  const at = (minutes) => row(poll(now, { rewardGroups: evoInv({ grantCount: 1, currentMinutesWatched: minutes, ...window(now - HOUR) }, evoIds.slice(0, 1)) }), evoSeen(now, (g) => {
+    g.length = 2;
+    Object.assign(g[1].progressCriteria, { requirements: { minutesWatched: 20, subs: null }, repeatableConfig: null });
+  }), now);
+  assert.deepEqual([at(20).missing[0].late, at(20).next], [true, false]);
+  assert.deepEqual([at(5).missing[0].late, at(5).next], [true, true], 'today not done: it can still gain');
+});
+
+test('numbers kept are capped:out of range is unknown', () => {
   const first = (change) => evoSeen(T0, (g) => change(g[0].progressCriteria))[0].groups[0];
   assert.equal(first((c) => { c.requirements.minutesWatched = 1e308; }).minutes, null);
   assert.equal(first((c) => { c.repeatableConfig.repeatableTimes = 1e308; }).times, null);
@@ -364,7 +375,35 @@ test('a window read before the channel was closed still says today is done', () 
   assert.equal(row(out, evoSeen(), later + MIN).watch, 'Each badge: watch 20m on 3 days');
 });
 
-test('"Close <channel> first" while another channel is earning', () => {
+test('another account signing in forgets the last one\'s progress, with no signed-out poll between', () => {
+  const start = T0 - HOUR;
+  const first = poll(T0, { rewardGroups: evoInv({ grantCount: 1, currentMinutesWatched: 20, ...window(start) }) });
+  const later = T0 + MIN;
+  const obs = (over) => ({ campaigns: [], rewards: { ids: [], complete: true }, session: null, sessions: [], streams: [], ...over });
+  const shown = (s) => row(s, evoSeen(), later);
+  assert.equal(shown(update(first, obs(), later)).watch, 'Each badge: done for today, then 20m on 2 more days', 'the same account keeps it');
+  const other = update(first, obs({ accountChanged: true }), later);
+  assert.deepEqual([other.rewardSeen, shown(other).watch], [null, 'Each badge: watch 20m on 3 days']);
+  // Their own answer in that same poll is theirs, and kept.
+  const groups = evoInv({ grantCount: 2, currentMinutesWatched: 0, currentWindow: null });
+  assert.equal(shown(update(first, obs({ accountChanged: true, rewardGroups: groups }), later)).watch, 'Each badge: watch 20m on 1 more day');
+  // A failed first poll, or one without a whole owned list, says nothing from the last account's.
+  const failed = update(first, { error: { kind: 'network', message: 'x' }, accountChanged: true }, later);
+  assert.deepEqual([failed.rewardSeen, failed.rewards.wholeAt, shown(failed).kind], [null, null, 'unknown']);
+  const partial = update(first, obs({ accountChanged: true, rewards: { ids: [], complete: false } }), later);
+  assert.deepEqual([partial.rewards.wholeAt, shown(partial).kind], [null, 'unknown']);
+  assert.equal(update(undefined, obs({ accountChanged: true }), later).rewardSeen ?? null, null, 'with nothing stored yet');
+});
+
+test('the login is compared by a fingerprint that does not hold it', async () => {
+  const token = 'abcdefghij0123456789klmnopqrst';
+  const print = await loginPrint(token);
+  assert.match(print, /^[0-9a-f]{16}$/);
+  assert.equal(await loginPrint(token), print);
+  assert.notEqual(await loginPrint(`${token}x`), print);
+});
+
+test('"Close <channel> first" while another channel is earning',() => {
   // Charlie credited on OSRS; Evolutions is Next or OSRS is, by what is owned.
   const channel = { id: '20000012', login: 'charlie', displayName: 'Charlie', live: true, unknown: false, subOnly: false, badges: [], campaigns: [{ id: osrsFx.inventory.id, name: 'OSRS Hardcore Worlds', benefitIds: [], channelOwned: false, rewardCampaign: false, game: 'Old School RuneScape', endAt: osrsFx.inventory.endAt, watchDrops: [{ id: BONES, required: 60, benefitIds: [] }] }] };
   const streams = [{ tabId: 1, login: 'charlie', channel, tab: {}, player: { hasVideo: true, paused: false, currentTime: 10, readyState: 4, muted: false, hidden: false } }];
