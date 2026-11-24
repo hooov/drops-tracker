@@ -100,7 +100,9 @@ async function run(steps) {
     const player = (base) => ({ hasVideo: true, paused: false, ended: false, readyState: 4, currentTime: base + i * 60 });
     const streams = step.noTab ? [] : [{ tabId: 1, login: fx.login, channel: snap.channels[fx.login], tab: {}, player: player(100) }];
     if (step.echo) streams.push({ tabId: 2, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: { ...player(500), hidden: true } });
-    const next = update(s, { campaigns: snap.campaigns, rewards: snap.rewards, session: snap.session, sessions: snap.sessions, rewardGroups: snap.rewardGroups, streams }, t);
+    // error: the poll failed with that kind. accountChanged: the sign-in is not the last poll's.
+    const obs = step.error ? { error: { kind: step.error, message: 'x' } } : { campaigns: snap.campaigns, rewards: snap.rewards, session: snap.session, sessions: snap.sessions, rewardGroups: snap.rewardGroups, streams };
+    const next = update(s, { ...obs, ...(step.accountChanged ? { accountChanged: true } : {}) }, t);
     const evs = events(s, next, t);
     fired.push(...evs.map((e) => e.type));
     said.push(...evs);
@@ -281,6 +283,48 @@ test('gone, then back in Inventory, then gone again: one notification', async ()
   const gone = { minutes: 59, gone: true, owned: false, noSession: true };
   const { fired } = await run([...steps(3, (i) => ({ minutes: 57 + i })), gone, { minutes: 59 }, gone, gone]);
   assert.deepEqual(fired, ['earned']);
+});
+
+// Replayed 2026-11-24, not captured: the last account's drop at 59 of 60 is in no list of the new
+// account's, which read as that drop leaving: "Drop likely earned" to somebody who had not watched.
+const fiftyNine = () => steps(3, (i) => ({ minutes: 57 + i }));
+const notTheirs = { minutes: 59, gone: true, owned: false, noSession: true };
+
+test('another account signs in with a drop at 59 of 60: never "likely earned" to them', async () => {
+  for (const [name, between] of [
+    ['straight after', [{ ...notTheirs, accountChanged: true }]],
+    ['a signed-out poll between', [{ ...notTheirs, error: 'auth' }, { ...notTheirs, accountChanged: true }]],
+    // The browser closed in between, so there is no fingerprint to compare with.
+    ['a signed-out poll, then no fingerprint', [{ ...notTheirs, error: 'auth' }]],
+    ['their own session naming the drop for a poll', [{ ...notTheirs, noSession: false, accountChanged: true }]],
+    ['their first poll failing', [{ ...notTheirs, error: 'network', accountChanged: true }]],
+  ]) {
+    const { s, now, fired } = await run([...fiftyNine(), ...between, ...steps(4, () => notTheirs)]);
+    assert.ok(!fired.includes('earned'), `${name}: no notification`);
+    assert.deepEqual([s.leftDrops, s.nearDone], [[], []], name);
+    assert.notEqual(views(s, now).headline, 'Drop likely earned', name);
+    assert.deepEqual(leftCards(s, fx.login), [], name);
+  }
+});
+
+test('another account signs in after one was likely earned: its headline and card go with it', async () => {
+  const earned = await run([...fiftyNine(), notTheirs, notTheirs, notTheirs, notTheirs]);
+  assert.deepEqual([views(earned.s, earned.now).headline, earned.fired], ['Drop likely earned', ['earned']], 'the first account has it');
+  for (const step of [{ ...notTheirs, accountChanged: true }, { ...notTheirs, error: 'auth' }]) {
+    const { s, now, fired } = await run([...fiftyNine(), notTheirs, notTheirs, notTheirs, notTheirs, step, notTheirs]);
+    assert.notEqual(views(s, now).headline, 'Drop likely earned');
+    assert.deepEqual([s.leftDrops, leftCards(s, fx.login), fired.filter((x) => x === 'earned')], [[], [], ['earned']]);
+  }
+});
+
+test('the new account finishing the drop itself is still likely earned, and a failed poll forgets nothing', async () => {
+  const own = await run([{ minutes: 59 }, { minutes: 59, accountChanged: true }, notTheirs, notTheirs]);
+  assert.deepEqual(own.fired, ['earned']);
+  for (const error of ['network', 'api_changed']) {
+    const { s, fired } = await run([...fiftyNine(), { ...notTheirs, error }, notTheirs, notTheirs]);
+    assert.ok(fired.includes('earned'), error);
+    assert.equal(s.leftDrops.length, 1, error);
+  }
 });
 
 // Audit 2026-11-22: ChannelDropsCampaigns is the list, so its failing, or the stream's category
