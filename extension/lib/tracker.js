@@ -780,12 +780,20 @@ function restingDrops(fromRewards, now) {
   return out;
 }
 
-/** Remember owned rewards across polls: the field fails on about half of real calls. */
-function mergeRewards(previous, seen) {
-  const before = { ids: [], ...previous };
+/**
+ * Remember owned rewards across polls: the field fails on about half of real calls. wholeAt: when a
+ * whole list was last read, which is what "not owned" may be said from (badges.js rewardOwned).
+ */
+function mergeRewards(previous, seen, now) {
+  const before = { ids: [], wholeAt: null, ...previous };
   if (!seen?.ids) return before;
   const ids = seen.complete ? seen.ids : [...new Set([...before.ids, ...seen.ids])];
-  return { ids: ids.slice(0, REWARDS_MAX) };
+  // An empty list straight after one with rewards in it is either another account or Twitch failing
+  // without saying so: not proof that nothing is owned until a second one.
+  const doubtful = !seen.ids.length && before.ids.length > 0;
+  const whole = seen.complete && !doubtful && ids.length <= REWARDS_MAX;
+  // A partial list says nothing about the last whole one; a doubtful or cut one replaces it.
+  return { ids: ids.slice(0, REWARDS_MAX), wholeAt: whole ? now : seen.complete ? null : before.wholeAt };
 }
 
 /** The drop a minute mark belongs to: a running total is kept as `<drop id>:total`. */
@@ -959,6 +967,8 @@ export function update(prev, obs, now) {
     // Unknown is not stalled: keep the last good data and say what we cannot see.
     const code = obs.error.kind === 'auth' ? 'signed_out' : obs.error.kind === 'api_changed' ? 'api_changed' : 'error';
     s.verdict = { code, message: obs.error.message };
+    // Whoever signs in next may own less: nothing is "not owned" until their own list is read.
+    if (code === 'signed_out' && s.rewards) s.rewards.wholeAt = null;
     return s;
   }
 
@@ -967,7 +977,7 @@ export function update(prev, obs, now) {
   if (firstGoodPoll) s.resumeAt = now;
   s.lastOkAt = now;
 
-  s.rewards = mergeRewards(s.rewards, obs.rewards);
+  s.rewards = mergeRewards(s.rewards, obs.rewards, now);
   // Twitch's reward inventory: this poll's answer, else the last good one for REWARD_HOLD_MS, so
   // one failed call (Inventory's reward fields fail on about half of real calls) does not flip a
   // channel between two sources and re-fire its notification. undefined: not asked this poll.

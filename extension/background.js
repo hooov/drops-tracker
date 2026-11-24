@@ -1,4 +1,4 @@
-import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, TwitchError } from './lib/twitch.js';
+import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, mergeSeenBadges, TwitchError } from './lib/twitch.js';
 import { update, events, badge, warning, rewardsDue } from './lib/tracker.js';
 import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
@@ -209,6 +209,7 @@ async function observe(prev) {
       session: snap.session,
       sessions: snap.sessions,
       rewardGroups: snap.rewardGroups,
+      seenBadges: snap.seenBadges,
       dayRewards: Array.isArray(dayRewards) ? dayRewards : [],
       claimedGroups: Array.isArray(claimedGroups) ? claimedGroups : [],
       streams: relevant.map((t) => ({ ...t, channel: t.login ? snap.channels[t.login] : null })),
@@ -225,6 +226,15 @@ async function recordMinute(prev, obs, next, now) {
   if (!entry) return;
   const { minuteLog } = await chrome.storage.local.get('minuteLog');
   await chrome.storage.local.set({ minuteLog: addMinute(minuteLog, entry) });
+}
+
+// Badge campaigns seen on open channels, for "Badges not earned yet". Written only when something
+// changed. Bound: MAX_SEEN_BADGES, each dropped when its campaign ends (mergeSeenBadges).
+async function rememberBadges(obs, now) {
+  const { seenBadges } = await chrome.storage.local.get('seenBadges');
+  const next = mergeSeenBadges(seenBadges, obs.seenBadges, now);
+  const same = Array.isArray(seenBadges) && next.length === seenBadges.length && next.every((c, i) => c === seenBadges[i]);
+  if (!same && (next.length || seenBadges !== undefined)) await chrome.storage.local.set({ seenBadges: next });
 }
 
 async function paintBadge(state, prefs) {
@@ -354,6 +364,7 @@ async function pollOnce() {
   const evs = events(prev, next, now);
   await chrome.storage.local.set({ state: next });
   await recordMinute(prev, obs, next, now).catch(() => {});
+  await rememberBadges(obs, now).catch(() => {});
   // Claim reminders off: no claim notification, no CLM. Claims are still marked as notified, so
   // switching it back on later does not bring a burst of old ones.
   const prefs = normalize((await chrome.storage.local.get('settings')).settings);

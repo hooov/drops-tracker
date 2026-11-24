@@ -1006,6 +1006,8 @@ try {
   // A badge only ChannelDropsCampaigns lists (captured 2026-11-19), its minutes from the reward
   // inventory, drawn by the real popup.
   const ccFx = loadFixture(root, 'channel-campaigns-2026-11-19.json');
+  // loadFixture shifts from 2026-11-06, so a capture from 11-19 would not have started yet.
+  for (const x of ccFx.answer.data.channelDropCampaigns) x.startAt = new Date(Date.now() - 86400000).toISOString();
   const invFx = loadFixture(root, 'reward-inventory-2026-11-19.json');
   await sw.evaluate(([cc, inv]) => {
     const badgeInv = structuredClone(inv.answer);
@@ -1038,6 +1040,44 @@ try {
   assert.doesNotMatch(ccShown, /no open channel lists/, 'placed, so not reported as missing');
   assert.equal(await popup.locator('#view-badges .bar').count(), 1, 'only the watch drop has a bar');
   step('Badges tab: a badge only ChannelDropsCampaigns lists, with minutes from the reward inventory');
+
+  // Badges not earned yet: the same answer's sitewide campaign, remembered by the poll. Its one BADGE
+  // is in no owned list and its chest (POOL) cannot be told; the channel's own badge stays above.
+  await popup.waitForSelector('#unearned-list .dir-row');
+  const unearned = () => popup.$$eval('#unearned-list .dir-row', (list) => list.map((r) => [...r.querySelectorAll('p')].map((p) => p.textContent)));
+  const [gtaRow, ...others] = await unearned();
+  assert.equal(others.length, 0);
+  assert.equal(gtaRow[0], 'GTAVI Launch Celebration');
+  assert.equal(gtaRow[1], 'Not all earned');
+  assert.deepEqual(gtaRow.slice(3), ['Golden Iguana', 'GTA DVD Chest: cannot tell if earned', 'Some badges may need more than watching.']);
+  assert.equal(await popup.textContent('#unearned-status'), 'Sitewide list not loaded');
+  assert.equal(await popup.textContent('#unearned-load'), 'Load');
+  assert.equal(ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length, 0, 'showing the tab opens no page');
+  const seenStored = await popup.evaluate(async () => (await chrome.storage.local.get('seenBadges')).seenBadges);
+  assert.equal(/alphatv|10000001|Foxtrot/i.test(JSON.stringify(seenStored)), false, 'no channel is kept');
+  assert.equal(await popup.$eval('#unearned-list .dir-links a', (a) => a.href), 'https://www.twitch.tv/directory/game/Grand%20Theft%20Auto%20VI');
+  await popup.click('#unearned-list .dir-row summary');
+  assert.equal(await popup.isVisible('#unearned-list .dir-more'), true);
+  await shot('28-badges-not-earned');
+  // A poll redraws the list when something in it changed: here the badge turns up owned, which
+  // leaves only the chest. The opened row stays open.
+  await sw.evaluate(() => {
+    const before = self.__transform;
+    self.__transform = (answer, ops) => before(answer, ops).map((a, i) => (ops[i].operationName !== 'Inventory' ? a : {
+      data: { currentUser: { inventory: { ...a.data.currentUser.inventory, gameEventDrops: [...a.data.currentUser.inventory.gameEventDrops, { id: '8aada31e-d18c-11f1-a5bd-0a58a9feac02' }] } } },
+    }));
+  });
+  await advance(1);
+  await poll();
+  await popup.waitForFunction(() => /Cannot tell if earned/.test(document.getElementById('unearned-list').textContent));
+  assert.equal(await popup.isVisible('#unearned-list .dir-more'), true, 'an opened row stays open through a redraw');
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Golden Iguana/, 'owned, so not listed');
+  // Twitch's channel page says the chest is finished: nothing left to earn, so the row goes.
+  await popup.evaluate(() => chrome.storage.local.set({ claimedGroups: [{ campaignId: 'b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0', groupId: '2283245e-d15c-11f1-8cdd-0a58a9feac02', endAt: Date.now() + 86400000, at: Date.now() }] }));
+  await popup.waitForFunction(() => document.getElementById('unearned-list').hidden);
+  assert.equal(await popup.textContent('#unearned-none'), 'None among the campaigns seen so far.');
+  await popup.evaluate(() => chrome.storage.local.remove('claimedGroups'));
+  step('Badges not earned yet: missing, unknown, owned and finished, links, opened rows kept, no page opened');
   await sw.evaluate(() => { self.__transform = null; self.__minutes += 1; });
   await advance(1);
   s = await poll();
@@ -1381,6 +1421,34 @@ try {
   await visit.close();
   step('visiting Twitch\'s page refreshes the list by itself and clears the failure; names cannot inject markup');
 
+  // The same saved list in the Badges tab: showing it loads nothing, however old; Load does.
+  await popup.evaluate(async () => {
+    const { directory } = await chrome.storage.local.get('directory');
+    await chrome.storage.local.set({ directory: { ...directory, at: directory.at - 3 * 3600000, triedAt: directory.at - 3 * 3600000 } });
+  });
+  const beforeBadges = campaignPageLoads;
+  await popup.click('#tab-badges');
+  await popup.waitForFunction(() => /Open a channel in it to see its badges/.test(document.getElementById('unearned-list').textContent));
+  assert.match(await popup.textContent('#unearned-list'), /Pokémon Night Out Campaign/);
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Poke Ball/, 'the one reward the list names is not all of it');
+  assert.match(await popup.textContent('#unearned-status'), /^Sitewide list updated 3h \dm ago$/);
+  await popup.waitForTimeout(600);
+  assert.equal(campaignPageLoads, beforeBadges, 'showing the Badges tab must not open a page');
+  await popup.screenshot({ path: join(out, '29-badges-sitewide-unseen.png') });
+  await fakeLogin();
+  await popup.click('#unearned-load');
+  await popup.waitForFunction(() => /^Sitewide list updated \d+s ago$/.test(document.getElementById('unearned-status').textContent), null, { timeout: 15000 });
+  assert.equal(campaignPageLoads, beforeBadges + 1);
+  dashboardMode = 'integrity';
+  await fakeLogin();
+  await popup.click('#unearned-load');
+  await popup.waitForFunction(() => /changed how this list loads/.test(document.getElementById('unearned-error').textContent), null, { timeout: 15000 });
+  assert.match(await popup.textContent('#unearned-list'), /Pokémon Night Out Campaign/, 'a failure keeps the list');
+  await until(popup, async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
+  dashboardMode = 'ok';
+  await popup.click('#tab-all');
+  step('Badges tab: the saved sitewide list with its age; only Load opens a page; a failure says so and keeps it');
+
   // Logged out: says so without opening a page.
   await sw.evaluate(() => chrome.cookies.remove({ url: 'https://www.twitch.tv', name: 'auth-token' }));
   const beforeOut = campaignPageLoads;
@@ -1419,6 +1487,14 @@ try {
   await alpha.keyboard.type('fm');
   assert.equal(await alpha.inputValue('#drops-tracker-panel #dir-search'), 'fm');
   assert.equal(await alpha.evaluate(() => window.__keys), 0, 'typed letters must not reach Twitch\'s page shortcuts');
+  await alpha.click('#drops-tracker-panel #tab-badges');
+  await alpha.waitForSelector('#drops-tracker-panel #unearned-list .dir-row');
+  await alpha.locator('#drops-tracker-panel #unearned-list .dir-row summary').first().click();
+  const unearnedFit = await alpha.evaluate(() => { const h = document.getElementById('drops-tracker-panel'); return [h.scrollHeight - h.clientHeight, h.scrollWidth - h.clientWidth]; });
+  assert.deepEqual(unearnedFit, [0, 0], 'the Badges tab must not scroll');
+  await alpha.screenshot({ path: join(out, '30-badges-not-earned-in-chat.png') });
+  await alpha.click('#drops-tracker-panel #tab-all');
+  await alpha.click('#drops-tracker-panel #dir-search');
   await alpha.keyboard.press('Escape');
   await alpha.waitForFunction(() => !document.getElementById('drops-tracker-panel'));
   step(`in chat: list fits above the chip (${chatFit.avail} free), typing stays out of Twitch's shortcuts, Escape still closes`);

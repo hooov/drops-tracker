@@ -47,7 +47,21 @@ export function directoryError(error) {
   }
 }
 
-function endsText(end, now) {
+/**
+ * A category's page from its name, which is all ChannelDropsCampaigns gives (no slug). Twitch's site
+ * decodes the name twice, so a % has to be encoded twice (checked signed out, 2026-11-24). Two
+ * categories can share a name, and the link then opens whichever Twitch picks.
+ */
+export function categoryUrl(name) {
+  if (!name) return null;
+  try {
+    return `https://www.twitch.tv/directory/game/${encodeURIComponent(String(name).replaceAll('%', '%25'))}`;
+  } catch {
+    return null; // Half a surrogate pair, which a name clipped in storage can end with.
+  }
+}
+
+export function endsText(end, now) {
   if (end == null) return '';
   const minutes = Math.max(1, Math.round((end - now) / 60000));
   if (minutes < 60) return `ends in ${minutes}m`;

@@ -22,6 +22,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
+| A badge you own under "Badges not earned yet", one missing from it, or "Cannot tell if earned" | [Badges not earned yet](#11-badges-not-earned-yet) |
 | PersistedQueryNotFound, or tracking stops after a Twitch deploy | [Query hashes](#9-query-hashes) |
 | Minute strip or "N of the last N counted" looks wrong | [Minutes and rate](#10-minutes-and-rate) |
 | A channel just opened shows nothing, another channel's drops, or another tab's "Not counting yet" | [Verdict](#1-verdict) (which tab), [Minutes and rate](#10-minutes-and-rate) (polls) |
@@ -237,6 +238,26 @@ Polls: the alarm once a minute, plus a check asked for at once by a page whose c
 poll did not see, or that comes to the front after being seen behind (`checkNeeded()` in chip.js,
 once per reason and channel per page), spaced `SOON_GAP_MS` (10 s) apart by the worker with one
 timer. Opening the panel and the toolbar popup also poll.
+
+## 11. Badges not earned yet
+Rows are worked out when drawn (`unearnedBadges()` in badges.js), never stored. They come from
+storage `seenBadges` (badge campaigns on opened channels, `parseSeenBadges()` in twitch.js, no channel
+kept, at most `MAX_SEEN_BADGES`, dropped when the campaign ends), the sitewide rows of `directory`,
+the owned list and `claimedGroups`. Order: `missing` (a BADGE proven not owned), `unseen` (sitewide, no
+opened channel has listed it), `unknown`. A campaign whose watch rewards are all proven is left out,
+even with a sub goal left.
+
+A reward is owned when the owned list names it or its group is in `claimedGroups`; not owned only when
+it is a BADGE, `state.rewards.wholeAt` (the last whole owned list) is under `OWNED_FRESH_MS` (30
+minutes) old, and it is not likely earned (`state.leftDrops`); otherwise unknown. `wholeAt` is set by
+a list with no error about it, every entry with an ID, no further page and no more than `REWARDS_MAX`
+entries. A failed or partial list keeps the last one; a sign-out, or an empty list straight after one
+with rewards, clears it. A campaign only partly read (`cut`) is never counted or left out. Showing the
+tab opens no page: only Load does, through the [All Drops list](#8-all-drops-list).
+
+Known limits: a switch of account with no poll signed out in between can show the last account's badges
+until its list is read; two categories can share a name, and the link opens the one Twitch picks; an
+account that owns nothing may be answered `null` (not captured), which reads as unknown.
 
 ## Known rough edges (not bugs today, worth knowing before changing nearby code)
 - Three notions of "out of date": the chip's own (`STALE_MS`, "Drops ?"), the panel's (shown as a
