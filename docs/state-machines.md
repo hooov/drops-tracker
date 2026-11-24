@@ -22,7 +22,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
-| A badge you own under "Badges not earned yet", one missing from it, or "Cannot tell if earned" | [Badges not earned yet](#11-badges-not-earned-yet) |
+| A badge you own under "Badges not earned yet", one missing from it, "Cannot tell if earned", the wrong "Next" or watch time, or "Cannot finish before it ends" | [Badges not earned yet](#11-badges-not-earned-yet) |
 | PersistedQueryNotFound, or tracking stops after a Twitch deploy | [Query hashes](#9-query-hashes) |
 | Minute strip or "N of the last N counted" looks wrong | [Minutes and rate](#10-minutes-and-rate) |
 | A channel just opened shows nothing, another channel's drops, or another tab's "Not counting yet" | [Verdict](#1-verdict) (which tab), [Minutes and rate](#10-minutes-and-rate) (polls) |
@@ -242,10 +242,11 @@ timer. Opening the panel and the toolbar popup also poll.
 ## 11. Badges not earned yet
 Rows are worked out when drawn (`unearnedBadges()` in badges.js), never stored. They come from
 storage `seenBadges` (badge campaigns on opened channels, `parseSeenBadges()` in twitch.js, no channel
-kept, at most `MAX_SEEN_BADGES`, dropped when the campaign ends), the sitewide rows of `directory`,
-the owned list and `claimedGroups`. Order: `missing` (a BADGE proven not owned), `unseen` (sitewide, no
-opened channel has listed it), `unknown`. A campaign whose watch rewards are all proven is left out,
-even with a sub goal left.
+kept, at most `MAX_SEEN_BADGES`, dropped when the campaign ends; per watch group its minutes and repeat
+settings, four capped fields, at most 40 groups), the sitewide rows of `directory`, the owned list and
+`claimedGroups`. Order: the Next row, `missing` (a BADGE proven not owned; least slack first, too late
+last), `unseen` (sitewide, no opened channel has listed it), `unknown`. A campaign whose watch rewards
+are all proven is left out, even with a sub goal left.
 
 A reward is owned when the owned list names it or its group is in `claimedGroups`; not owned only when
 it is a BADGE, `state.rewards.wholeAt` (the last whole owned list) is under `OWNED_FRESH_MS` (30
@@ -255,9 +256,38 @@ entries. A failed or partial list keeps the last one; a sign-out, or an empty li
 with rewards, clears it. A campaign only partly read (`cut`) is never counted or left out. Showing the
 tab opens no page: only Load does, through the [All Drops list](#8-all-drops-list).
 
+Watch time, per group (`groupNeed()`), from readings only, no request of its own:
+
+| Group | Progress from | When unknown |
+|---|---|---|
+| once | Inventory (`state.active`, not `unjudged` or `held`), read every poll; else `state.rewardSeen` | the whole time, as none done |
+| repeating | `state.rewardSeen`: days granted, and today's minutes until `windowEnd` | every day, as none done |
+| no minutes, or `times` null (stored by an older version, or unreadable) | nothing | no watch time, cannot be Next |
+
+`state.rewardSeen` is the last good reward inventory answer, account-wide, so it covers campaigns with
+no open channel. `state.rewardInv` is the same answer held 15 minutes for tracking; this one has no
+end, because it is not asked while no channel is live and a window done today stays done. Bound: one
+answer (`MAX_REWARD_GROUPS`), replaced whole by the next good one, cleared by a sign-out. A group
+missing from it is unknown, never zero.
+
+A row's watch time is its longest group that can gain now (drops in one campaign tick together). Next:
+a `missing` row with a missing badge not too late that can gain now, or that waits on the campaign's
+other rewards (at its minutes and not given, or requirements unmet) while one of those, known to be in
+progress, can. Least slack first: time to the end minus the longest group's time, days as whole windows.
+A group cannot gain while
+today's window is done, or with requirements Twitch says are unmet; with every daily group done today,
+a group with no reading is not taken as open either. Too late needs a reading: the soonest finish,
+counted from when it was read, is after the end. A repeating group also needs its reset, its granted
+days and one reward for every repeat (`all`: `shouldCompleteAllRepeatsToEarn`, no last-chance
+extension). "Close <channel> first" (`closeFirst()`): verdict `earning`, the session's channel open
+here, and neither crediting nor carrying the Next campaign.
+
 Known limits: a switch of account with no poll signed out in between can show the last account's badges
-until its list is read; two categories can share a name, and the link opens the one Twitch picks; an
-account that owns nothing may be answered `null` (not captured), which reads as unknown.
+and progress until its own are read; two categories can share a name, and the link opens the one Twitch
+picks; an account that owns nothing may be answered `null` (not captured), which reads as unknown. A
+badge that needs more than its own minutes (GTAVI's Golden Iguana: all 12 rewards) can be Next while
+only its sub rewards are left, when nothing says its days are finished. Granted days part-way through a
+campaign like Evolutions are read as Twitch's client reads them, not captured.
 
 ## Known rough edges (not bugs today, worth knowing before changing nearby code)
 - Three notions of "out of date": the chip's own (`STALE_MS`, "Drops ?"), the panel's (shown as a

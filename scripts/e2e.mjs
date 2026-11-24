@@ -10,6 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { loadFixture } from './fixtures.mjs';
+import { parseSeenBadges } from '../extension/lib/twitch.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ext = join(root, 'extension');
@@ -1049,7 +1050,12 @@ try {
   assert.equal(others.length, 0);
   assert.equal(gtaRow[0], 'GTAVI Launch Celebration');
   assert.equal(gtaRow[1], 'Not all earned');
-  assert.deepEqual(gtaRow.slice(3), ['Golden Iguana', 'GTA DVD Chest: cannot tell if earned', 'Some badges may need more than watching.']);
+  // Its daily chest, from the reward inventory: today's window done, one of six days granted.
+  assert.equal(gtaRow[2], 'Done for today, then 1h on 5 more days');
+  assert.match(gtaRow[3], /^Ends /);
+  assert.deepEqual(gtaRow.slice(4), ['Golden Iguana: watch 1h', 'GTA DVD Chest: cannot tell if earned, done for today, then 1h on 5 more days', 'Some badges may need more than watching.']);
+  assert.equal(await popup.locator('#unearned-list .tag').count(), 0, 'done for today: not Next');
+  assert.equal(await popup.isVisible('#unearned-close'), false, 'nothing is Next');
   assert.equal(await popup.textContent('#unearned-status'), 'Sitewide list not loaded');
   assert.equal(await popup.textContent('#unearned-load'), 'Load');
   assert.equal(ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length, 0, 'showing the tab opens no page');
@@ -1059,6 +1065,62 @@ try {
   await popup.click('#unearned-list .dir-row summary');
   assert.equal(await popup.isVisible('#unearned-list .dir-more'), true);
   await shot('28-badges-not-earned');
+  // Two more campaigns remembered from other channels, as the poll stores them: Evolutions, with no
+  // progress reported, and OSRS, its 59 minutes left known from Inventory and 20 minutes to go.
+  // Meanwhile AlphaTV is earning something else.
+  const osrsFx = loadFixture(root, 'highlight-omitted-2026-11-22.json');
+  const pokeFx = loadFixture(root, 'pokemon-campaigns-2026-11-23.json');
+  const nowThere = await popup.evaluate(() => Date.now());
+  const dated = (list, end) => ({ data: { channelDropCampaigns: list.map((c) => ({ ...c, startAt: new Date(nowThere - 86400000).toISOString(), ...(end ? { endAt: new Date(end).toISOString() } : {}) })) } });
+  const osrsEnd = nowThere + 20 * 60000;
+  const moreSeen = [
+    ...parseSeenBadges(dated(osrsFx.channelCampaigns.data.channelDropCampaigns, osrsEnd), '459931', nowThere),
+    ...parseSeenBadges(dated(pokeFx.list.slice(0, 1)), '509658', nowThere),
+  ].map((c) => ({ ...c, at: nowThere }));
+  assert.equal(moreSeen.length, 2);
+  await popup.evaluate(async (extra) => {
+    const { seenBadges } = await chrome.storage.local.get('seenBadges');
+    await chrome.storage.local.set({ seenBadges: [...seenBadges, ...extra] });
+  }, moreSeen);
+  const bones = { ...osrsFx.inventory, startAt: new Date(nowThere - 86400000).toISOString(), endAt: new Date(osrsEnd).toISOString() };
+  bones.timeBasedDrops = bones.timeBasedDrops.map((d) => ({ ...d, startAt: bones.startAt, endAt: bones.endAt }));
+  await sw.evaluate((camp) => {
+    const before = self.__transform;
+    self.__transform = (answer, ops) => before(answer, ops).map((a, i) => {
+      if (ops[i].operationName !== 'Inventory') return a;
+      const inv = a.data.currentUser.inventory;
+      return { data: { currentUser: { inventory: { ...inv, dropCampaignsInProgress: [...inv.dropCampaignsInProgress, camp] } } } };
+    });
+  }, bones);
+  await popup.waitForFunction(() => document.querySelectorAll('#unearned-list .dir-row').length === 3);
+  await popup.focus('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"] summary');
+  await advance(1, 1);
+  s = await poll();
+  assert.equal(s.verdict.code, 'earning');
+  await popup.waitForFunction(() => /Cannot finish before it ends/.test(document.getElementById('unearned-list').textContent));
+  const heads = await popup.$$eval('#unearned-list .dir-row', (list) => list.map((r) => [...r.querySelectorAll('summary p, summary .tag')].map((p) => p.textContent)));
+  assert.deepEqual(heads.map((h) => h.filter((t) => !/^Ends /.test(t))), [
+    ['Pokemon Evolutions', '0 of 9 owned', 'Each badge: watch 20m on 3 days', 'Next'],
+    ['GTAVI Launch Celebration', 'Not all earned', 'Done for today, then 1h on 5 more days'],
+    ['OSRS Hardcore Worlds', 'Not earned yet', 'Watch 59m more, 1 of 60 min done', 'Cannot finish before it ends'],
+  ]);
+  assert.equal(await popup.textContent('#unearned-close'), 'Close AlphaTV first: Twitch counts one channel at a time.');
+  assert.equal(await popup.evaluate(() => document.activeElement?.closest('.dir-row')?.dataset.id), 'b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0', 'the keyboard stays on its row through a redraw');
+  await popup.evaluate(() => { for (const r of document.querySelectorAll('#unearned-list .dir-row')) r.open = false; });
+  await popup.waitForTimeout(100);
+  await popup.locator('#view-badges').screenshot({ path: join(out, '28b-next-badge.png') });
+  await popup.evaluate(() => { document.getElementById('unearned-list').scrollTop = 1000; });
+  await popup.screenshot({ path: join(out, '28c-next-badge-too-late.png') });
+  const wide = await popup.evaluate(() => [...document.querySelectorAll('#unearned-list, #unearned-list .dir-row, #unearned-list .tag')].filter((x) => x.scrollWidth > x.clientWidth + 1).length);
+  assert.equal(wide, 0, 'nothing is cut off sideways');
+  await popup.evaluate(() => { document.querySelector('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"]').open = true; });
+  // The two are gone again for the rest of the run.
+  await popup.evaluate(async (ids) => {
+    const { seenBadges } = await chrome.storage.local.get('seenBadges');
+    await chrome.storage.local.set({ seenBadges: seenBadges.filter((c) => !ids.includes(c.id)) });
+  }, moreSeen.map((c) => c.id));
+  await popup.waitForFunction(() => document.querySelectorAll('#unearned-list .dir-row').length === 1);
+  step('Badges not earned yet: watch time, Next, done for today, too late, and the line to close the earning channel');
   // A poll redraws the list when something in it changed: here the badge turns up owned, which
   // leaves only the chest. The opened row stays open.
   await sw.evaluate(() => {
