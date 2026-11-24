@@ -10,9 +10,10 @@ test('countdown: days and hours, hours and minutes, then seconds in the last hou
   assert.equal(countdown(at, before(26 * 3600 + 5)), '1d 2h');
   assert.equal(countdown(at, before(3 * 3600 + 59 * 60 + 30)), '3h 59m');
   assert.equal(countdown(at, before(3600)), '1h 0m');
-  assert.equal(countdown(at, before(3599)), '59:59');
-  assert.equal(countdown(at, before(34 * 60 + 12)), '34:12');
-  assert.equal(countdown(at, before(0.4)), '0:01', 'a part second still to go is not open yet');
+  assert.equal(countdown(at, before(3599)), '59m 59s');
+  assert.equal(countdown(at, before(34 * 60 + 12)), '34m 12s');
+  assert.equal(countdown(at, before(89)), '1m 29s', 'not "1:29", which read as an hour and a half');
+  assert.equal(countdown(at, before(0.4)), '1s', 'a part second still to go is not open yet');
   assert.equal(countdown(at, at), 'Open now');
   assert.equal(countdown(at, at + 5000), 'Open now', 'until the next poll picks the new day up');
   assert.equal(countdown(NaN, at), 'Open now', 'never "NaN:NaN"');
@@ -91,6 +92,12 @@ test('rows: a game name with punctuation makes a valid link', () => {
   const dir = { campaigns: [{ kind: 'drop', id: '1', name: 'x', game: "Tom Clancy's: The/Division 2", owner: '', drops: 1, minutes: 5 }] };
   const { rows } = directoryRows(dir, [], '', NOW);
   assert.equal(new URL(rows[0].browseUrl).pathname.split('/').length, 4);
+});
+
+test('rows: a % in a game name is encoded twice, which Twitch needs (checked 2026-11-24)', () => {
+  const link = (game) => directoryRows({ campaigns: [{ kind: 'drop', id: '1', name: 'x', game, owner: '', drops: 1, minutes: 5 }] }, [], '', NOW).rows[0].browseUrl;
+  assert.equal(link('100% Orange Juice'), 'https://www.twitch.tv/directory/game/100%2525%20Orange%20Juice');
+  assert.equal(link('Grand Theft Auto VI'), 'https://www.twitch.tv/directory/game/Grand%20Theft%20Auto%20VI');
 });
 
 test('links that are not https are dropped, so a bad value cannot become a javascript: link', () => {

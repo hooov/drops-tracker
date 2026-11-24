@@ -85,6 +85,13 @@ button.link { padding: 0; }
 /* Badges */
 #view-badges .card { padding-bottom: 8px; }
 #view-badges .card:has(.bar) { padding-bottom: 12px; }
+.unearned-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 8px; }
+/* Scrolls by itself, like All Drops: 420px is the rest of this view with two badge cards above it. */
+#unearned-list { max-height: max(120px, min(300px, calc(var(--dt-avail, 600px) - 420px))); }
+.tag.next { color: var(--dt-text); }
+#unearned-close { margin: 4px 0; }
+.unearned-head .link { flex: none; }
+.unearned-head .link[aria-disabled="true"] { opacity: 0.5; cursor: default; text-decoration: none; }
 
 /* All Drops */
 .dir-head { display: flex; align-items: center; gap: 4px; }
@@ -126,7 +133,7 @@ button.link { padding: 0; }
 .dir-more { padding: 4px 2px 8px 49px; }
 .dir-links { display: flex; gap: 12px; margin-top: 4px; }
 .dir-empty { padding: 8px 2px; }
-.round:disabled { opacity: 0.5; cursor: default; background: none; }
+.round:disabled, .round[aria-disabled="true"] { opacity: 0.5; cursor: default; background: none; }
 
 /* Status */
 .status { --tone: var(--dt-idle); }

@@ -12,13 +12,17 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 |---|---|
 | Wrong headline in the panel ("Earning", "Not counting", "Stopped earning", "Cannot track", "Badge likely earned", "Drop likely earned") or wrong chip colour | [Verdict](#1-verdict) |
 | A drop with no claim step (a BADGE reward) finished and nothing was said, or "Drop likely earned" on one not earned | [Channel state](#4-channel-state), `state.leftDrops` |
+| "Minutes are rising from a stream outside this browser" or another drop's percentage right after a reward campaign finished, or finishing one said nothing | [Channel state](#4-channel-state), `state.rewardsDone` |
+| "Cannot tell if finished", or a finished reward campaign reading "Not counting yet" | [Channel state](#4-channel-state), `reward_unproven` |
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
-| A daily drop done for today missing from Watch Drops, or its clock pill / "Next day at" wrong | [Channel state](#4-channel-state), `state.resting` |
+| A daily drop done for today missing from Watch Drops, or its clock pill / "Opens again at" wrong | [Channel state](#4-channel-state), `state.resting` |
+| A reward drop's card names the list's reward ("GTA DVD Chest") or the wrong day, not the badge Twitch's panel shows | [Channel state](#4-channel-state), storage `dayRewards` |
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
 | All Drops empty, stuck loading, or a tab flashes up | [All Drops list](#8-all-drops-list) |
+| A badge you own under "Badges not earned yet", one missing from it, "Cannot tell if earned", the wrong "Next" or watch time, or "Cannot finish before it ends" | [Badges not earned yet](#11-badges-not-earned-yet) |
 | PersistedQueryNotFound, or tracking stops after a Twitch deploy | [Query hashes](#9-query-hashes) |
 | Minute strip or "N of the last N counted" looks wrong | [Minutes and rate](#10-minutes-and-rate) |
 | A channel just opened shows nothing, another channel's drops, or another tab's "Not counting yet" | [Verdict](#1-verdict) (which tab), [Minutes and rate](#10-minutes-and-rate) (polls) |
@@ -33,16 +37,24 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 - `signed_out`, `api_changed`, `error`: from the poll's error kind. That branch returns early, so
   `tracking`, `lostAt`, `streams` and `session` keep the previous poll's values: unknown is never stalled.
 - `earning`: minutes rose within the limit (`STALL_MS`, `DEAD_PLAYER_MS` when every player is
-  visibly dead, `NO_STREAM_MS` with no eligible tab). Flags: `slow` (rate under `SLOW_BELOW` over
+  visibly dead, `NO_STREAM_MS` with no eligible tab), unless no tab can earn and the channel that
+  gain landed on (`state.lastGainLogin`) has had its reward campaign seen finishing since. Flags: `slow` (rate under `SLOW_BELOW` over
   `RATE_MIN_MINUTES`, counted only since the credited channel last changed, carried as `rate`; see
   section 10), `wasted` (see below), `channel` (Twitch's session name).
-- `waiting`: something can earn and the first minute has not landed.
+- `waiting`: something can earn and the first minute has not landed. Also the first `STALL_MS` of
+  a channel that cannot count yet (`unstarted`, `reward_unproven`, `badge_unseen`, `blocked`),
+  except a `blocked` one with `blockedOpens`: Twitch's own opening time is said at once.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
-- `idle`: nothing open can earn. `lost` (was earning, the tab can no longer), `limited` (cannot
+- `idle`: nothing open can earn. `lost` (was earning, the tab can no longer; not when the tab that
+  was earning, by the last session or `lastGainLogin`, is itself `finished` or `badge_left`; judged
+  before `badgeLeft` and `dropLeft`, which last as long as their campaign and would hide it for
+  another tab), `limited` (cannot
   tell: lookups failed, a badge timer, or the next drop cannot count yet), `badgeLeft` (a channel
   is `badge_left`: "Badge likely earned", grey, no warning, the last reading said), `dropLeft` (a
   `finished` channel whose game drop is in `state.leftDrops`: "Drop likely earned", the same, and
-  the chip's title carries the message). Only idle carries these.
+  the chip's title carries the message), `rewardDone` (the `finished` channel the last minute
+  landed on, whose reward campaign is in `state.rewardsDone` since: "Campaign finished", grey, the
+  same, until a minute lands anywhere; after `lost` and a tab just left). Only idle carries these.
   `lost` lasts `LOST_SHOWN_MS` (10 min) from `lostAt`, then settles to a plain idle and does not
   come back until something earns again: left amber with nothing to act on, it read as a fault.
 - Which tab an idle headline names (not counting yet, reward, badge likely earned): the tab in
@@ -112,7 +124,9 @@ progress is shown, as for a resting drop. `reward`: a campaign read from
 Twitch's reward inventory (`rewardCampaigns()`, active rows marked `unjudged`, except a channel's own non-repeating badge read fresh that poll, which is judged and makes its channel `eligible`) or a session running
 total. Never a candidate, so never waiting, stalled or reloaded; verdict `idle` + `reward` when
 nothing rises, `earning` when either reading rises; `rewardOpens` on the stream when today's reward
-drop is earned and the next can start later. That drop is also kept as `state.resting`
+drop is earned and the next can start later. A repeating drop is named for the day's reward (name
+and art) when Twitch's channel page has given its day rewards, two or more (storage `dayRewards`, from
+`page-hook.js`; `dayIndex()` picks the day as Twitch's panel does), else for the list's reward. That drop is also kept as `state.resting`
 (`restingDrops()`, from `restUntil` set in `rewardCampaigns()`: Twitch's `nextEligibleAt`, else the
 window end), never in `active`. Watch Drops lists it on its own channel only, full with a clock pill
 counting down (`countdown()` in directory.js): beside that channel's other drops, or alone when no other
@@ -137,6 +151,25 @@ latest minutes; `rising` when they went up. Moved only by a fresh answer, and he
 channel's list could not be read. It changes no channel state or verdict: a rising one is said at
 the top of the Badges tab, and all are counted in Debug.
 
+`reward_unproven`: a reward campaign that names no game, with no progress in any list, not owned and
+not claimed: finished and not started look the same. Headline "Cannot tell if finished" after the
+same grace as `unstarted`, grey, no warning, no toolbar mark; `unprovenReward` on the stream names
+the campaign. `unstarted` on the same channel wins. A reward campaign counts as finished when every
+watch group is owned or in storage `claimedGroups` (at most `MAX_CLAIMED_GROUPS`, dropped when the
+campaign ends), which `parseClaimedGroups()` fills from the channel page's
+`DropChannelCampaignsProgress` answer (`page-hook.js`): CLAIMED with every repeat granted. A fresh
+answer replaces its own groups, so a flag it no longer supports (another account) goes; one with an
+error changes nothing. Checked last, so minutes or an in-progress reading win over a flag.
+
+`state.rewardsDone` (`rewardsDone()`): reward campaigns seen going from in progress to finished.
+`state.rewardsCounting` (`rewardsCounting()`) is each reward campaign an open channel offers that the
+reward inventory listed. One of those moves to `rewardsDone` when a later answer (`state.rewardInv`,
+held through failed calls; not one cut short at `MAX_REWARD_GROUPS`) leaves it out, nothing in `active` or `pending` reads it, and
+every watch group is owned or claimed. One finished before it was ever seen counting is in neither:
+its channel reads `finished` with the plain "Not earning". `events()` notifies once per campaign
+("Campaign finished", type `earned`), remembered in `state.notifiedRewards`. An entry ends when the
+inventory lists the campaign again or it ends; newest 20 kept in each list.
+
 `state.leftBadges` (`leftBadges()`): badge groups seen leaving the in-progress list, `{ minutes,
 readAt }` of their last reading. Only a transition counts: listed in the last good answer, absent
 from this poll's fresh one (not one cut short at `MAX_REWARD_GROUPS`); back in the list clears it;
@@ -154,11 +187,21 @@ by Inventory, before its window ends, is recorded: likely earned. Only Inventory
 a candidate, since a drop built from the session or the reward inventory lapses whenever its tab
 closes or a lookup fails. Inventory listing it as claimed counts as gone (no claim step was seen). A channel whose every watch drop of a game campaign is there
 reads `finished` (not `unstarted`, "may need linking"), with nothing re-listed in `upcoming`, and
-the idle verdict is `dropLeft`. `events()` notifies once per drop ("Drop likely earned", type
+the idle verdict is `dropLeft`. Its Open streams row reads "Drop likely earned" too, and My Drops
+keeps a full card for it (`leftCards` in chip.js, from the stream's `leftDrop`; never in
+`channelDrops`, so the chip's percentage ignores it). `events()` notifies once per drop ("Drop likely earned", type
 `earned`, not a warning), remembered in `state.notifiedLeft` apart from `leftDrops`, so a drop
 listed again for a poll is not announced twice. Entries end when Inventory lists the drop
 unclaimed again or its window ends; newest 20 kept, 50 notified IDs. Seen 2026-11-22: RuneScape Bones, a BADGE
 reward with no claim step, left at 59 of 60 with nothing said, and Tyler had it.
+
+On a sign-out or `obs.accountChanged`, `forgetAccount()` empties what is only known from one poll to the
+next: `nearDone`, `leftDrops`, `rewardInv`, `leftBadges`, `rewardsCounting`, `rewardsDone`, `unplacedBadges`.
+Compared across two accounts, the last one's drop or badge read as having left, a campaign finished long
+ago as finished now, and more minutes as rising (replayed 2026-11-24). A new sign-in of the same account
+loses them too, and can hear "Badge Drops Tracker cannot show" a second time after a sign-out. The
+notified IDs (`notifiedLeft`, `notifiedRewards`) are kept, so the new account gets no notification for one
+the last account was told about; its headline still shows.
 
 ## 5. Player state
 `stream.playerState`, from `classifyPlayer()`: asleep (tab discarded or frozen by the browser),
@@ -191,7 +234,9 @@ tried as working, then pinned in twitch.js, then learned from twitch.tv's own re
 `state.drops[id]` `{ peak, low, at, session }` (`trackMinutes()`): a lower reading must last
 `DIP_POLLS` polls and `DIP_MS` (`lowAt`) before it is believed, so extra polls (a page asking for a
 check, below) cannot shorten it; a gap longer than `GAP_MS` re-baselines. `state.timeline`
-`{ m, g, w, d }` per wall-clock minute, at most `TIMELINE_MAX`. `creditRate()` sums `d`;
+`{ m, g, w, d }` per wall-clock minute, at most `TIMELINE_MAX`; `w` (watched) needs a tab able to
+earn for a full minute (`FULL_MINUTE_MS`, from `ableSince` or `resumeAt`) or credit landing, since
+a first check is only a baseline. `creditRate()` sums `d`;
 `timelineCells()` (minutelog.js) draws late credit on the minute it belonged to. `state.rate` covers
 the whole strip and is what its caption says; `verdict.slow` is judged on the minutes since the
 credited channel (`rateLogin`) last changed (`rateFrom`, a minute number), so a channel just opened
@@ -201,6 +246,62 @@ Polls: the alarm once a minute, plus a check asked for at once by a page whose c
 poll did not see, or that comes to the front after being seen behind (`checkNeeded()` in chip.js,
 once per reason and channel per page), spaced `SOON_GAP_MS` (10 s) apart by the worker with one
 timer. Opening the panel and the toolbar popup also poll.
+
+## 11. Badges not earned yet
+Rows are worked out when drawn (`unearnedBadges()` in badges.js), never stored. They come from
+storage `seenBadges` (badge campaigns on opened channels, `parseSeenBadges()` in twitch.js, no channel
+kept, at most `MAX_SEEN_BADGES`, dropped when the campaign ends; per watch group its minutes and repeat
+settings, four capped fields, at most 40 groups), the sitewide rows of `directory`, the owned list and
+`claimedGroups`. Order: the Next row, `missing` (a BADGE proven not owned; least slack first, too late
+last), `unseen` (sitewide, no opened channel has listed it), `unknown`. A campaign whose watch rewards
+are all proven is left out, even with a sub goal left.
+
+A reward is owned when the owned list names it or its group is in `claimedGroups`; not owned only when
+it is a BADGE, `state.rewards.wholeAt` (the last whole owned list) is under `OWNED_FRESH_MS` (30
+minutes) old, and it is not likely earned (`state.leftDrops`); otherwise unknown. `wholeAt` is set by
+a list with no error about it, every entry with an ID, no further page and no more than `REWARDS_MAX`
+entries. A failed or partial list keeps the last one; a sign-out, or an empty list straight after one
+with rewards, clears it. A campaign only partly read (`cut`) is never counted or left out. Showing the
+tab opens no page: only Load does, through the [All Drops list](#8-all-drops-list).
+
+Watch time, per group (`groupNeed()`), from readings only, no request of its own:
+
+| Group | Progress from | When unknown |
+|---|---|---|
+| once | Inventory (`state.active`, not `unjudged` or `held`), read every poll; else `state.rewardSeen` | the whole time, as none done |
+| repeating | `state.rewardSeen`: days granted, and today's minutes until `windowEnd` | every day, as none done |
+| no minutes, or `times` null (stored by an older version, or unreadable) | nothing | no watch time, cannot be Next |
+
+`state.rewardSeen` is the last good reward inventory answer, account-wide, so it covers campaigns with
+no open channel. `state.rewardInv` is the same answer held 15 minutes for tracking; this one has no
+end, because it is not asked while no channel is live and a window done today stays done. Bound: one
+answer (`MAX_REWARD_GROUPS`), replaced whole by the next good one, cleared by a sign-out. A group
+missing from it is unknown, never zero.
+
+A row's watch time is its longest group that can gain now (drops in one campaign tick together). Next:
+a `missing` row with a missing badge not too late that can gain now, or that waits on the campaign's
+other rewards (at its minutes and not given, or requirements unmet) while one of those, known to be in
+progress, can. Least slack first: time to the end minus the longest group's time, days as whole windows.
+A group cannot gain while
+today's window is done, or with requirements Twitch says are unmet; with every daily group done today,
+a group with no reading is not taken as open either. Too late needs a reading: the soonest finish,
+counted from when it was read, is after the end. A repeating group also needs its reset, its granted
+days and one reward for every repeat (`all`: `shouldCompleteAllRepeatsToEarn`, no last-chance
+extension). "Close <channel> first" (`closeFirst()`): verdict `earning`, the session's channel open
+here, and neither crediting nor carrying the Next campaign.
+
+A switch of account with no poll signed out in between clears `wholeAt` and `rewardSeen` too
+(`obs.accountChanged`, `forgetAccount()`). Each poll compares a fingerprint of the sign-in (`loginPrint()`: the start of
+its SHA-256) with the last poll's, in `chrome.storage.session` (one value, in memory, gone when the
+browser closes; nothing to compare with is not a change). A new sign-in of the same account clears them
+too, which only reads as unknown until the next answer.
+
+Known limits: after a switch of account, badges the last one owned read as owned until a whole list of
+the new one's is read, and rewards its channel pages called claimed until a page answers; two categories can share a name, and the link opens the one Twitch
+picks; an account that owns nothing may be answered `null` (not captured), which reads as unknown. A
+badge that needs more than its own minutes (GTAVI's Golden Iguana: all 12 rewards) can be Next while
+only its sub rewards are left, when nothing says its days are finished. Granted days part-way through a
+campaign like Evolutions are read as Twitch's client reads them, not captured.
 
 ## Known rough edges (not bugs today, worth knowing before changing nearby code)
 - Three notions of "out of date": the chip's own (`STALE_MS`, "Drops ?"), the panel's (shown as a

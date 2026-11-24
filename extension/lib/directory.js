@@ -24,7 +24,8 @@ export function countdown(at, now) {
   if (!(s > 0)) return 'Open now';
   if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
   if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  // With units, as the lines above: "1:29" beside "4h 11m" read as an hour and a half.
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
 
 export function isFresh(dir, now) {
@@ -46,7 +47,21 @@ export function directoryError(error) {
   }
 }
 
-function endsText(end, now) {
+/**
+ * A category's page from its name, which is all ChannelDropsCampaigns gives (no slug). Twitch's site
+ * decodes the name twice, so a % has to be encoded twice (checked signed out, 2026-11-24). Two
+ * categories can share a name, and the link then opens whichever Twitch picks.
+ */
+export function categoryUrl(name) {
+  if (!name) return null;
+  try {
+    return `https://www.twitch.tv/directory/game/${encodeURIComponent(String(name).replaceAll('%', '%25'))}`;
+  } catch {
+    return null; // Half a surrogate pair, which a name clipped in storage can end with.
+  }
+}
+
+export function endsText(end, now) {
   if (end == null) return '';
   const minutes = Math.max(1, Math.round((end - now) / 60000));
   if (minutes < 60) return `ends in ${minutes}m`;
@@ -91,7 +106,7 @@ export function directoryRows(dir, mine, query, now) {
         pct: pct ?? null,
         // The furthest drop still being earned, not the campaign: earned drops are not in the list.
         tag: pct != null ? `Next drop ${pct}%` : (c.linked ? 'Linked' : ''),
-        browseUrl: c.kind === 'reward' ? null : `https://www.twitch.tv/directory/game/${encodeURIComponent(c.game)}`,
+        browseUrl: c.kind === 'reward' ? null : categoryUrl(c.game),
       };
     })
     .sort((a, b) => (

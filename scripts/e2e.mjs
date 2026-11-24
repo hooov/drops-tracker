@@ -10,6 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { loadFixture } from './fixtures.mjs';
+import { parseSeenBadges } from '../extension/lib/twitch.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ext = join(root, 'extension');
@@ -221,6 +222,14 @@ try {
   assert.equal(s.verdict.code, 'waiting');
   assert.equal(s.streams.length, 2);
   assert.equal(s.streams.every((t) => t.playerState === 'playing'), true);
+  // "Checking" says what it waits for, how long that normally takes, and how long it has been.
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Checking');
+  assert.match(await popup.textContent('#verdict-detail'), /^Waiting for the (first|next) minute to land\. Twitch adds one about every minute\.$/);
+  await popup.waitForFunction(() => /^(\d+m )?\d+s$/.test(document.querySelector('#verdict-age').textContent));
+  // The first check is only a baseline: no red square, and no "0 of the last 1".
+  assert.doesNotMatch(await popup.getAttribute('#timeline', 'data-cells') ?? '', /miss/);
+  assert.equal(await popup.isVisible('#rate'), false);
+  await shot('1b-checking');
   step('injection reads real video state from both tabs; first poll says Checking');
 
   // A channel change inside Twitch's page, with no reload and no poll asked for by this test: the
@@ -777,6 +786,23 @@ try {
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'idle');
   assert.equal(await popup.textContent('#verdict-title'), 'Already earned on AlphaTV');
   assert.equal(await popup.textContent('#verdict-detail'), doneMsg);
+  // Its row says the same and offers no Reload: the tab works, there is nothing to fix.
+  // The credited tab playing (the hang steps above left its player frozen, which a row says first).
+  const doneRow = () => popup.$eval('#streams .row', (r) => ({ text: r.textContent, buttons: r.querySelectorAll('button').length }));
+  const creditedDone = (message, opens) => popup.evaluate(async ([m, o]) => {
+    const { state } = await chrome.storage.local.get('state');
+    const streams = [{ ...state.streams[0], channelState: 'reward', playerState: 'playing', credited: true }, ...state.streams.slice(1)];
+    await chrome.storage.local.set({ state: { ...state, streams, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', channel: 'AlphaTV', name: 'loyalty badge', opens: o == null ? null : Date.now() + o, actionable: false, message: m } } } });
+  }, [message, opens]);
+  await creditedDone(doneMsg, null);
+  await popup.waitForFunction(() => /Already earned/.test(document.querySelector('#streams .row').textContent));
+  assert.equal((await doneRow()).buttons, 1, 'Reload stays on an already earned row');
+  // A daily drop done for today: the row uses the headline's words, not "Already earned".
+  await creditedDone('Day 3 Crate is earned for today. The next one opens at 9:21 PM.', 4 * 3600000);
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Done for today on AlphaTV');
+  await popup.waitForFunction(() => /Done for today/.test(document.querySelector('#streams .row').textContent));
+  assert.deepEqual([/Already earned/.test((await doneRow()).text), (await doneRow()).buttons], [false, 0]);
+  await shot('13-done-for-today');
   const wastedMsg = "AlphaTV's loyalty badge is already earned, but Twitch is still crediting it, so these minutes do nothing. Bravo can earn Marvel Rivals: close or pause AlphaTV.";
   await popup.evaluate(async (message) => {
     const { state } = await chrome.storage.local.get('state');
@@ -788,6 +814,59 @@ try {
   s = await earningNow(); // A quiet poll keeps the last judgement; a rising minute judges again.
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
   step('minutes credited to an earned drop: amber, says which tab could earn instead; clears on the next minute that rises');
+
+  // A finished reward campaign (drops-tracker#17): with the channel page's answer its row says so;
+  // without it the headline and the row say it cannot be told, in grey, and nothing mentions linking.
+  const unprovenMsg = 'Cannot tell whether you have finished Pokémon Night Out Campaign on AlphaTV. The Drops panel in its chat shows your progress.';
+  const rewardRow = (channelState, verdict) => popup.evaluate(async ([cs, v]) => {
+    const { state } = await chrome.storage.local.get('state');
+    const stream = { ...state.streams[0], login: 'alphatv', displayName: 'AlphaTV', channelState: cs, playerState: 'playing', credited: false, campaignIds: [] };
+    await chrome.storage.local.set({ state: { ...state, active: [], unclaimed: [], session: null, lastPollAt: Date.now(), streams: [stream], verdict: v } });
+  }, [channelState, verdict]);
+  await rewardRow('reward_unproven', { code: 'idle', hasStreams: true, limited: true, badge: false, blocked: false, unstarted: false, unproven: true, message: unprovenMsg });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Cannot tell if finished');
+  assert.equal(await popup.textContent('#verdict-detail'), unprovenMsg);
+  assert.equal(await popup.getAttribute('#verdict', 'data-tone'), 'idle');
+  assert.match(await popup.textContent('#streams'), /Cannot tell if finished/);
+  assert.doesNotMatch(await popup.textContent('body'), /account linked/);
+  await shot('13-cannot-tell-if-finished');
+  await rewardRow('finished', { code: 'idle', hasStreams: true });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Not earning');
+  assert.match(await popup.textContent('#streams'), /Campaign finished/);
+  // Seen finishing (rewardsDone): the headline says so, in grey, with no other tab's progress.
+  const rewardDoneMsg = 'You have earned every watch reward in GTAVI Launch Celebration.';
+  await rewardRow('finished', { code: 'idle', hasStreams: true, rewardDone: true, message: rewardDoneMsg });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Campaign finished');
+  assert.equal(await popup.textContent('#verdict-detail'), rewardDoneMsg);
+  assert.equal(await popup.getAttribute('#verdict', 'data-tone'), 'idle');
+  assert.doesNotMatch(await popup.textContent('body'), /outside this browser|Not earning/);
+  await shot('13-campaign-finished');
+  // A drop likely earned (leftDrops): the row uses the headline's words and not "Campaign
+  // finished", My Drops keeps a full card, and the inventory the sentence names is one click away.
+  const leftMsg = "AlphaTV's Sample Crate is probably earned: it left Twitch's in-progress list at 59 of 60 minutes, and Twitch can remove a finished drop before it shows the last minute. Your Drops inventory on Twitch shows whether you have it.";
+  await popup.evaluate(async (message) => {
+    const { state } = await chrome.storage.local.get('state');
+    const stream = { ...state.streams[0], channelState: 'finished', leftDrop: { id: 'e2e-left', campaignId: 'e2e-campaign', name: 'Sample Crate', minutes: 59, required: 60 } };
+    await chrome.storage.local.set({ state: { ...state, streams: [stream], verdict: { code: 'idle', hasStreams: true, dropLeft: true, message } } });
+  }, leftMsg);
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Drop likely earned');
+  assert.equal(await popup.textContent('#verdict-detail'), `${leftMsg} Open inventory`);
+  assert.equal(await popup.$eval('#verdict-detail a', (a) => a.href), 'https://www.twitch.tv/drops/inventory');
+  assert.match(await popup.textContent('#streams'), /Drop likely earned/);
+  assert.doesNotMatch(await popup.textContent('#streams'), /Campaign finished/);
+  const leftCard = await popup.$eval('#drops .card', (c) => ({ text: c.textContent, fill: c.querySelector('.bar i')?.style.width, minutes: c.querySelectorAll('.bar-min').length }));
+  assert.match(leftCard.text, /Sample Crate.*Probably earned\. Left Twitch's list at 59\/60/);
+  assert.deepEqual([leftCard.fill, leftCard.minutes], ['100%', 0], 'a full bar, with no "59/60" beside it');
+  await shot('13-drop-likely-earned');
+  // The link is not rebuilt on the panel's one-second tick.
+  await popup.evaluate(() => { document.querySelector('#verdict-detail a').dataset.kept = '1'; });
+  await popup.waitForTimeout(1500);
+  assert.equal(await popup.$eval('#verdict-detail a', (a) => a.dataset.kept), '1');
+  s = await earningNow();
+  await popup.waitForFunction(() => !document.querySelector('#verdict-detail a'));
+  await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
+  step('finished reward campaign: "Campaign finished", or "Cannot tell if finished" in grey without the page\'s answer');
+  step('drop likely earned: said result first, row in the same words, card kept, inventory linked');
 
   // A tracker that stopped polling must not keep showing good news.
   await popup.evaluate(async () => {
@@ -909,11 +988,11 @@ try {
     return { text: card.textContent, fill: card.querySelector('.bar i')?.style.width, left: pill?.querySelector('.timer-left')?.textContent, clock: !!pill?.querySelector('svg'), minutes: card.querySelectorAll('.bar-min').length };
   });
   const rest1 = await restCard();
-  assert.match(rest1.text, /Day complete, 60\/60\. Next day at \d{1,2}:\d{2}/);
+  assert.match(rest1.text, /Day complete, 60\/60\. Opens again at \d{1,2}:\d{2}/);
   assert.equal(rest1.fill, '100%', 'a full bar');
   assert.equal(rest1.minutes, 0, 'the timer takes the minutes\' place');
   assert.ok(rest1.clock, 'with a clock');
-  assert.match(rest1.left, /^1:[0-3]\d$/, `about 1:30 left, got ${rest1.left}`);
+  assert.match(rest1.left, /^1m [0-3]?\ds$/, `about 1m 30s left, got ${rest1.left}`);
   await until(alpha, (l) => {
     const pill = document.getElementById('drops-tracker-panel').shadowRoot.querySelector('#drops .timer-pill .timer-left');
     return pill && pill.textContent !== l;
@@ -928,6 +1007,8 @@ try {
   // A badge only ChannelDropsCampaigns lists (captured 2026-11-19), its minutes from the reward
   // inventory, drawn by the real popup.
   const ccFx = loadFixture(root, 'channel-campaigns-2026-11-19.json');
+  // loadFixture shifts from 2026-11-06, so a capture from 11-19 would not have started yet.
+  for (const x of ccFx.answer.data.channelDropCampaigns) x.startAt = new Date(Date.now() - 86400000).toISOString();
   const invFx = loadFixture(root, 'reward-inventory-2026-11-19.json');
   await sw.evaluate(([cc, inv]) => {
     const badgeInv = structuredClone(inv.answer);
@@ -960,6 +1041,131 @@ try {
   assert.doesNotMatch(ccShown, /no open channel lists/, 'placed, so not reported as missing');
   assert.equal(await popup.locator('#view-badges .bar').count(), 1, 'only the watch drop has a bar');
   step('Badges tab: a badge only ChannelDropsCampaigns lists, with minutes from the reward inventory');
+
+  // Badges not earned yet: the same answer's sitewide campaign, remembered by the poll. Its one BADGE
+  // is in no owned list and its chest (POOL) cannot be told; the channel's own badge stays above.
+  await popup.waitForSelector('#unearned-list .dir-row');
+  const unearned = () => popup.$$eval('#unearned-list .dir-row', (list) => list.map((r) => [...r.querySelectorAll('p')].map((p) => p.textContent)));
+  const [gtaRow, ...others] = await unearned();
+  assert.equal(others.length, 0);
+  assert.equal(gtaRow[0], 'GTAVI Launch Celebration');
+  assert.equal(gtaRow[1], 'Not all earned');
+  // Its daily chest, from the reward inventory: today's window done, one of six days granted.
+  assert.equal(gtaRow[2], 'Done for today, then 1h on 5 more days');
+  assert.match(gtaRow[3], /^Ends /);
+  assert.deepEqual(gtaRow.slice(4), ['Golden Iguana: watch 1h', 'GTA DVD Chest: cannot tell if earned, done for today, then 1h on 5 more days', 'Some badges may need more than watching.']);
+  assert.equal(await popup.locator('#unearned-list .tag').count(), 0, 'done for today: not Next');
+  assert.equal(await popup.isVisible('#unearned-close'), false, 'nothing is Next');
+  assert.equal(await popup.textContent('#unearned-status'), 'Sitewide list not loaded');
+  assert.equal(await popup.textContent('#unearned-load'), 'Load');
+  assert.equal(ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length, 0, 'showing the tab opens no page');
+  const seenStored = await popup.evaluate(async () => (await chrome.storage.local.get('seenBadges')).seenBadges);
+  assert.equal(/alphatv|10000001|Foxtrot/i.test(JSON.stringify(seenStored)), false, 'no channel is kept');
+  assert.equal(await popup.$eval('#unearned-list .dir-links a', (a) => a.href), 'https://www.twitch.tv/directory/game/Grand%20Theft%20Auto%20VI');
+  await popup.click('#unearned-list .dir-row summary');
+  assert.equal(await popup.isVisible('#unearned-list .dir-more'), true);
+  await shot('28-badges-not-earned');
+  // Two more campaigns remembered from other channels, as the poll stores them: Evolutions, with no
+  // progress reported, and OSRS, its 59 minutes left known from Inventory and 20 minutes to go.
+  // Meanwhile AlphaTV is earning something else.
+  const osrsFx = loadFixture(root, 'highlight-omitted-2026-11-22.json');
+  const pokeFx = loadFixture(root, 'pokemon-campaigns-2026-11-23.json');
+  const nowThere = await popup.evaluate(() => Date.now());
+  const dated = (list, end) => ({ data: { channelDropCampaigns: list.map((c) => ({ ...c, startAt: new Date(nowThere - 86400000).toISOString(), ...(end ? { endAt: new Date(end).toISOString() } : {}) })) } });
+  const osrsEnd = nowThere + 20 * 60000;
+  const moreSeen = [
+    ...parseSeenBadges(dated(osrsFx.channelCampaigns.data.channelDropCampaigns, osrsEnd), '459931', nowThere),
+    ...parseSeenBadges(dated(pokeFx.list.slice(0, 1)), '509658', nowThere),
+  ].map((c) => ({ ...c, at: nowThere }));
+  assert.equal(moreSeen.length, 2);
+  await popup.evaluate(async (extra) => {
+    const { seenBadges } = await chrome.storage.local.get('seenBadges');
+    await chrome.storage.local.set({ seenBadges: [...seenBadges, ...extra] });
+  }, moreSeen);
+  const bones = { ...osrsFx.inventory, startAt: new Date(nowThere - 86400000).toISOString(), endAt: new Date(osrsEnd).toISOString() };
+  bones.timeBasedDrops = bones.timeBasedDrops.map((d) => ({ ...d, startAt: bones.startAt, endAt: bones.endAt }));
+  await sw.evaluate((camp) => {
+    const before = self.__transform;
+    self.__transform = (answer, ops) => before(answer, ops).map((a, i) => {
+      if (ops[i].operationName !== 'Inventory') return a;
+      const inv = a.data.currentUser.inventory;
+      return { data: { currentUser: { inventory: { ...inv, dropCampaignsInProgress: [...inv.dropCampaignsInProgress, camp] } } } };
+    });
+  }, bones);
+  await popup.waitForFunction(() => document.querySelectorAll('#unearned-list .dir-row').length === 3);
+  await popup.focus('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"] summary');
+  await advance(1, 1);
+  s = await poll();
+  assert.equal(s.verdict.code, 'earning');
+  await popup.waitForFunction(() => /Cannot finish before it ends/.test(document.getElementById('unearned-list').textContent));
+  const heads = await popup.$$eval('#unearned-list .dir-row', (list) => list.map((r) => [...r.querySelectorAll('summary p, summary .tag')].map((p) => p.textContent)));
+  assert.deepEqual(heads.map((h) => h.filter((t) => !/^Ends /.test(t))), [
+    ['Pokemon Evolutions', '0 of 9 owned', 'Each badge: watch 20m on 3 days', 'Next'],
+    ['GTAVI Launch Celebration', 'Not all earned', 'Done for today, then 1h on 5 more days'],
+    ['OSRS Hardcore Worlds', 'Not earned yet', 'Watch 59m more, 1 of 60 min done', 'Cannot finish before it ends'],
+  ]);
+  assert.equal(await popup.textContent('#unearned-close'), 'Close AlphaTV first: Twitch counts one channel at a time.');
+  assert.equal(await popup.evaluate(() => document.activeElement?.closest('.dir-row')?.dataset.id), 'b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0', 'the keyboard stays on its row through a redraw');
+  await popup.evaluate(() => { for (const r of document.querySelectorAll('#unearned-list .dir-row')) r.open = false; });
+  await popup.waitForTimeout(100);
+  await popup.locator('#view-badges').screenshot({ path: join(out, '28b-next-badge.png') });
+  await popup.evaluate(() => { document.getElementById('unearned-list').scrollTop = 1000; });
+  await popup.screenshot({ path: join(out, '28c-next-badge-too-late.png') });
+  const wide = await popup.evaluate(() => [...document.querySelectorAll('#unearned-list, #unearned-list .dir-row, #unearned-list .tag')].filter((x) => x.scrollWidth > x.clientWidth + 1).length);
+  assert.equal(wide, 0, 'nothing is cut off sideways');
+  await popup.evaluate(() => { document.querySelector('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"]').open = true; });
+  // The two are gone again for the rest of the run.
+  await popup.evaluate(async (ids) => {
+    const { seenBadges } = await chrome.storage.local.get('seenBadges');
+    await chrome.storage.local.set({ seenBadges: seenBadges.filter((c) => !ids.includes(c.id)) });
+  }, moreSeen.map((c) => c.id));
+  await popup.waitForFunction(() => document.querySelectorAll('#unearned-list .dir-row').length === 1);
+  step('Badges not earned yet: watch time, Next, done for today, too late, and the line to close the earning channel');
+
+  // Another account signs in between two polls (the cookie changes, nothing is seen signed out) while
+  // the reward inventory cannot be read: the first account's days are no longer shown.
+  const watchLine = () => popup.$eval('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"]', (r) => r.querySelectorAll('summary p')[2].textContent);
+  const loginAs = (value) => sw.evaluate((v) => chrome.cookies.set({ url: 'https://www.twitch.tv', name: 'auth-token', value: v, domain: '.twitch.tv', secure: true }), value);
+  await sw.evaluate(() => {
+    self.__plain = self.__transform;
+    self.__transform = (answer, ops) => self.__plain(answer, ops).map((a, i) => (ops[i].operationName === 'ViewerRewardDropInventory' ? { errors: [{ message: 'service error' }], data: null } : a));
+  });
+  await advance(1, 1);
+  await poll();
+  assert.equal(await watchLine(), 'Done for today, then 1h on 5 more days', 'the same account keeps it through a failed answer');
+  await loginAs('e2eotheraccount000000000000000');
+  await advance(1, 1);
+  await poll();
+  await popup.waitForFunction(() => /Each badge: watch 1h|Watch 1h/.test(document.getElementById('unearned-list').textContent));
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Done for today|done for today/);
+  const kept = await sw.evaluate(async () => JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]));
+  assert.doesNotMatch(kept, /e2eotheraccount|e2einvalidtoken/, 'the sign-in itself is stored nowhere');
+  assert.equal(await sw.evaluate(async () => 'loginPrint' in (await chrome.storage.local.get(null))), false, 'the fingerprint is in memory only');
+  await sw.evaluate(() => { self.__transform = self.__plain; });
+  await loginAs('e2einvalidtoken0000000000000000');
+  await advance(1, 1);
+  await poll();
+  await popup.waitForFunction(() => /Done for today, then 1h on 5 more days/.test(document.getElementById('unearned-list').textContent));
+  step('another account signing in: the last one\'s progress is gone at once, and the sign-in is stored nowhere');
+  // A poll redraws the list when something in it changed: here the badge turns up owned, which
+  // leaves only the chest. The opened row stays open.
+  await sw.evaluate(() => {
+    const before = self.__transform;
+    self.__transform = (answer, ops) => before(answer, ops).map((a, i) => (ops[i].operationName !== 'Inventory' ? a : {
+      data: { currentUser: { inventory: { ...a.data.currentUser.inventory, gameEventDrops: [...a.data.currentUser.inventory.gameEventDrops, { id: '8aada31e-d18c-11f1-a5bd-0a58a9feac02' }] } } },
+    }));
+  });
+  await advance(1);
+  await poll();
+  await popup.waitForFunction(() => /Cannot tell if earned/.test(document.getElementById('unearned-list').textContent));
+  assert.equal(await popup.isVisible('#unearned-list .dir-more'), true, 'an opened row stays open through a redraw');
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Golden Iguana/, 'owned, so not listed');
+  // Twitch's channel page says the chest is finished: nothing left to earn, so the row goes.
+  await popup.evaluate(() => chrome.storage.local.set({ claimedGroups: [{ campaignId: 'b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0', groupId: '2283245e-d15c-11f1-8cdd-0a58a9feac02', endAt: Date.now() + 86400000, at: Date.now() }] }));
+  await popup.waitForFunction(() => document.getElementById('unearned-list').hidden);
+  assert.equal(await popup.textContent('#unearned-none'), 'None among the campaigns seen so far.');
+  await popup.evaluate(() => chrome.storage.local.remove('claimedGroups'));
+  step('Badges not earned yet: missing, unknown, owned and finished, links, opened rows kept, no page opened');
   await sw.evaluate(() => { self.__transform = null; self.__minutes += 1; });
   await advance(1);
   s = await poll();
@@ -1172,6 +1378,33 @@ try {
     }
     return r.fulfill({ headers, body: JSON.stringify(dashboardBody) });
   });
+
+  // A channel page's DropChannelCampaignsProgress answer, read by the real page hook in the page's
+  // own world: the day names reach storage, and the page gets every answer whole, the one read
+  // and one it does not read. The answer is constructed from the query's fields (2026-11-22).
+  const dayAnswer = [{ data: { ok: 'other' } }, { data: { channelDropCampaignsProgress: [{ id: 'e2e-gta', endAt: inDays(30), rewardGroups: [{ id: 'e2e-dvd', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 60 }, repeatableConfig: { repeatableTimes: 6 } }, rewards: [{ id: 'chest', name: 'GTA DVD Chest', distributionType: 'POOL', pool: { id: 'pool', rewards: ['Purple Chain', 'Bronze Chain', 'Silver Chain', 'Gold Chain', 'Diamond Chain', 'Miami Chain'].map((name, i) => ({ id: `r${i}`, name, thumbnailURL: `https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e${i}.png` })) } }], self: { status: 'IN_PROGRESS', currentMinutesWatched: 48, grantCount: 4 } }, { id: 'e2e-ball', progressCriteria: { requirementType: 'WATCH', requirements: { minutesWatched: 20 }, repeatableConfig: { repeatableTimes: 3 } }, rewards: [{ id: 'ball', name: 'Ball', distributionType: 'POOL' }], self: { status: 'CLAIMED', currentMinutesWatched: 20, grantCount: 3 } }] }] } }];
+  await ctx.route('https://gql.twitch.tv/**', (r) => {
+    if (!r.request().postData()?.includes('E2EOtherOperation')) return r.fallback();
+    return r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(dayAnswer) });
+  });
+  const dayPage = await ctx.newPage();
+  await dayPage.goto('https://www.twitch.tv/e2e_days');
+  const pageGot = await dayPage.evaluate(async () => {
+    const r = await fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify([{ operationName: 'E2EOtherOperation' }, { operationName: 'DropChannelCampaignsProgress', variables: { channelID: '1' } }]) });
+    return r.json();
+  });
+  assert.deepEqual(pageGot, dayAnswer, 'the page gets the whole answer');
+  await until(popup, async () => (await chrome.storage.local.get('dayRewards')).dayRewards?.length === 1);
+  const dayStored = await popup.evaluate(async () => (await chrome.storage.local.get('dayRewards')).dayRewards);
+  assert.deepEqual(dayStored.map((x) => [x.campaignId, x.groupId, x.days.map((d) => d.name)[4], x.days[4].image]), [['e2e-gta', 'e2e-dvd', 'Diamond Chain', 'https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/e2e4.png']]);
+  assert.equal(JSON.stringify(dayStored).includes('grantCount'), false, 'no progress kept');
+  // The finished group from the same answer: which one, and when its campaign ends, nothing else.
+  const claimStored = await popup.evaluate(async () => (await chrome.storage.local.get('claimedGroups')).claimedGroups);
+  assert.deepEqual(claimStored.map((x) => Object.keys(x).sort()), [['at', 'campaignId', 'endAt', 'groupId']]);
+  assert.deepEqual([claimStored[0].campaignId, claimStored[0].groupId], ['e2e-gta', 'e2e-ball']);
+  await dayPage.close();
+  await popup.evaluate(() => chrome.storage.local.remove(['dayRewards', 'claimedGroups']));
+  step('channel page: the hook passes its answers through whole, keeps a reward drop\'s day names and which groups are finished');
   // Real Twitch clears an invalid token whenever it sees one, so put it back before each step that needs it.
   const fakeLogin = () => sw.evaluate(() => chrome.cookies.set({ url: 'https://www.twitch.tv', name: 'auth-token', value: 'e2einvalidtoken0000000000000000', domain: '.twitch.tv', secure: true }));
   const campaignTabs = () => ctx.pages().filter((p) => p.url().includes('/drops/campaigns')).length;
@@ -1276,6 +1509,43 @@ try {
   await visit.close();
   step('visiting Twitch\'s page refreshes the list by itself and clears the failure; names cannot inject markup');
 
+  // The same saved list in the Badges tab: showing it loads nothing, however old; Load does.
+  await popup.evaluate(async () => {
+    const { directory } = await chrome.storage.local.get('directory');
+    await chrome.storage.local.set({ directory: { ...directory, at: directory.at - 3 * 3600000, triedAt: directory.at - 3 * 3600000 } });
+  });
+  const beforeBadges = campaignPageLoads;
+  await popup.click('#tab-badges');
+  await popup.waitForFunction(() => /Open a channel in it to see its badges/.test(document.getElementById('unearned-list').textContent));
+  assert.match(await popup.textContent('#unearned-list'), /Pokémon Night Out Campaign/);
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Poke Ball/, 'the one reward the list names is not all of it');
+  assert.match(await popup.textContent('#unearned-status'), /^Sitewide list updated 3h \dm ago$/);
+  await popup.waitForTimeout(600);
+  assert.equal(campaignPageLoads, beforeBadges, 'showing the Badges tab must not open a page');
+  await popup.screenshot({ path: join(out, '29-badges-sitewide-unseen.png') });
+  await fakeLogin();
+  // By keyboard: while it loads the button says so and does nothing, but keeps the focus.
+  await popup.focus('#unearned-load');
+  await popup.keyboard.press('Enter');
+  await popup.waitForFunction(() => document.getElementById('unearned-load').getAttribute('aria-disabled') === 'true');
+  assert.equal(await popup.$eval('#unearned-load', (b) => getComputedStyle(b).opacity), '0.5', 'and is dimmed');
+  await popup.keyboard.press('Enter');
+  assert.equal(await popup.evaluate(() => document.activeElement?.id), 'unearned-load', 'the focus stays on Load while it loads');
+  await popup.locator('#view-badges').screenshot({ path: join(out, '29b-badges-loading.png') });
+  await popup.waitForFunction(() => /^Sitewide list updated \d+s ago$/.test(document.getElementById('unearned-status').textContent), null, { timeout: 15000 });
+  assert.equal(await popup.evaluate(() => document.activeElement?.id), 'unearned-load', 'and after it');
+  assert.equal(await popup.getAttribute('#unearned-load', 'aria-disabled'), 'false');
+  assert.equal(campaignPageLoads, beforeBadges + 1);
+  dashboardMode = 'integrity';
+  await fakeLogin();
+  await popup.click('#unearned-load');
+  await popup.waitForFunction(() => /changed how this list loads/.test(document.getElementById('unearned-error').textContent), null, { timeout: 15000 });
+  assert.match(await popup.textContent('#unearned-list'), /Pokémon Night Out Campaign/, 'a failure keeps the list');
+  await until(popup, async () => (await chrome.tabs.query({ url: 'https://www.twitch.tv/drops/campaigns*' })).length === 0);
+  dashboardMode = 'ok';
+  await popup.click('#tab-all');
+  step('Badges tab: the saved sitewide list with its age; only Load opens a page; a failure says so and keeps it');
+
   // Logged out: says so without opening a page.
   await sw.evaluate(() => chrome.cookies.remove({ url: 'https://www.twitch.tv', name: 'auth-token' }));
   const beforeOut = campaignPageLoads;
@@ -1314,6 +1584,14 @@ try {
   await alpha.keyboard.type('fm');
   assert.equal(await alpha.inputValue('#drops-tracker-panel #dir-search'), 'fm');
   assert.equal(await alpha.evaluate(() => window.__keys), 0, 'typed letters must not reach Twitch\'s page shortcuts');
+  await alpha.click('#drops-tracker-panel #tab-badges');
+  await alpha.waitForSelector('#drops-tracker-panel #unearned-list .dir-row');
+  await alpha.locator('#drops-tracker-panel #unearned-list .dir-row summary').first().click();
+  const unearnedFit = await alpha.evaluate(() => { const h = document.getElementById('drops-tracker-panel'); return [h.scrollHeight - h.clientHeight, h.scrollWidth - h.clientWidth]; });
+  assert.deepEqual(unearnedFit, [0, 0], 'the Badges tab must not scroll');
+  await alpha.screenshot({ path: join(out, '30-badges-not-earned-in-chat.png') });
+  await alpha.click('#drops-tracker-panel #tab-all');
+  await alpha.click('#drops-tracker-panel #dir-search');
   await alpha.keyboard.press('Escape');
   await alpha.waitForFunction(() => !document.getElementById('drops-tracker-panel'));
   step(`in chat: list fits above the chip (${chatFit.avail} free), typing stays out of Twitch's shortcuts, Escape still closes`);

@@ -42,14 +42,14 @@ WHAT YOU SEE
 - A toolbar badge, a desktop notification, and an on-page warning that stays visible in fullscreen
 - My Drops: what the channel you are on can earn, with progress and time left
 - All Drops: every Drops campaign running on Twitch right now
-- Badges: a channel's own sub and watch-time badges
+- Badges: a channel's own sub and watch-time badges, and the badges you have not earned yet: which badge to go for next, and how long it takes
 - Settings: the two helpers below, claim reminders, optional badge alerts, and an optional Developer mode with a per-minute log for bug reports
 
 WHAT IT DOES TO YOUR TABS
 Two helpers, both on by default and both can be switched off in the Settings tab:
 - It reloads open twitch.tv/drops pages every 5 minutes (adjustable), because they never update by themselves.
 - It reloads a stream tab whose minutes have stopped for 6 minutes: at most 3 tries, never on a paused stream or when another stream is the likely cause.
-The All Drops tab briefly opens twitch.tv/drops/campaigns in a background tab to read the list, then closes it.
+The All Drops tab, and the Load button in the Badges tab, briefly open twitch.tv/drops/campaigns in a background tab to read the list, then close it.
 
 WHAT IT NEVER DOES
 It never claims a drop, never simulates watching, and never opens a stream for you. It talks only to Twitch, has no analytics, and sends nothing to the developer.
@@ -81,10 +81,10 @@ Tracks your Twitch Drops: shows whether Twitch is actually crediting your Drops 
 | Permission | Justification |
 |---|---|
 | alarms | Checks Drops progress with Twitch once a minute, and once more when a channel page opens. An alarm keeps that check running while the service worker is asleep. |
-| cookies | Reads the user's own Twitch sign-in cookie (auth-token) on twitch.tv to request their Drops progress from Twitch, the same way twitch.tv does. It is read for each request, sent only to gql.twitch.tv, and never stored or sent anywhere else. |
-| notifications | Shows a desktop notification when Drops minutes stop rising, because the toolbar badge cannot be seen while a stream is fullscreen, and when a drop is ready to claim (can be switched off). |
+| cookies | Reads the user's own Twitch sign-in cookie (auth-token) on twitch.tv to request their Drops progress from Twitch, the same way twitch.tv does. It is read for each request, sent only to gql.twitch.tv, and never stored or sent anywhere else. A short one-way fingerprint of it, which it cannot be worked out from, is held in memory until the browser closes, only to notice another account signing in. |
+| notifications | Shows a desktop notification when Drops minutes stop rising, because the toolbar badge cannot be seen while a stream is fullscreen, when a drop is ready to claim (can be switched off), once when a drop with no claim step has probably been earned, and once when a reward campaign is finished. |
 | scripting | Reads the video player's state (playing, paused, frozen, muted) in open Twitch tabs to explain why minutes stopped, shows a small warning on the Twitch page, and adds the progress chip to Twitch tabs that were already open when the extension was installed or updated. Only on twitch.tv. |
-| storage | Keeps, locally: the latest tracking state, the user's settings, a one-day log of watched minutes, a record of the last 10 drops Twitch credited on a channel its lists did not name (channel, drop, campaign, time), the cached All Drops list, the Twitch query identifiers learned from its page, a list of which requests its page makes (names, identifiers, setting names and types, never values, capped at 150), and small timers for the auto-refresh and auto-reload helpers. |
+| storage | Keeps, locally: the latest tracking state, the user's settings, a one-day log of watched minutes, a record of the last 10 drops Twitch credited on a channel its lists did not name (channel, drop, campaign, time), the cached All Drops list, the reward names and images of up to 20 repeating reward drops read from Twitch's channel page, which reward drops that page says the user has finished (up to 100, each removed when its campaign ends), the badge campaigns seen on channels the user opened (names, dates, images, details links, categories, badge names, watch minutes and repeat settings; up to 100, each removed when its campaign ends, and never the channel), the Twitch query identifiers learned from its page, a list of which requests its page makes (names, identifiers, setting names and types, never values, capped at 150), and small timers for the auto-refresh and auto-reload helpers. |
 | webRequest | Observes the request bodies twitch.tv sends to gql.twitch.tv, to learn the current query identifiers when Twitch rotates them, and to note which requests the page makes (their names, identifiers and the names and types of their settings, never values), so the extension keeps working when Twitch changes how it serves Drops. Non-blocking; nothing else from those requests is kept, and headers are not read. |
 | Host permissions `https://www.twitch.tv/*`, `https://m.twitch.tv/*`, `https://gql.twitch.tv/*` | The extension only works on Twitch. Content scripts on www.twitch.tv and m.twitch.tv add the progress chip and panel, and progress is requested from gql.twitch.tv. It does not run on any other site. |
 
@@ -97,7 +97,7 @@ All JavaScript ships in the package. The only dynamic import() calls load the ex
 - **Authentication information:** the Twitch auth-token cookie, sent to Twitch.
 - **Web history:** the addresses of open twitch.tv tabs, from which channel names are sent to Twitch to look up their Drops, a one-day log of which channel was watched each minute, and the last 10 channels where Twitch credited a drop its lists did not name, all kept on the device.
 - **User activity:** the request bodies Twitch's own page sends to gql.twitch.tv (network monitoring), kept only for query identifiers and request names.
-- **Website content:** video player state and Twitch's Drops data shown in the panel.
+- **Website content:** video player state, Twitch's Drops data shown in the panel, the badge campaigns seen on channels the user opened (names, dates, images, details links, categories, badge names, watch minutes and repeat settings; up to 100, each removed when its campaign ends, no channel kept), and the reward names and images a repeating reward drop has per day and which reward drops are finished, read from the answer Twitch's channel page receives.
 
 **Certifications:** tick all three (not sold to third parties, not used for unrelated purposes, not used for creditworthiness or lending).
 
@@ -110,7 +110,7 @@ All JavaScript ships in the package. The only dynamic import() calls load the ex
 ```
 Sign in to Twitch in the browser, then open any live channel that has Drops enabled (twitch.tv/directory, "Drops Enabled" tag). Within a minute the chip beside the channel points reads the drop's progress, and the toolbar badge shows the percentage. Click the chip or the toolbar icon for the panel.
 
-The All Drops tab lists every campaign on Twitch; to read it, it briefly opens twitch.tv/drops/campaigns in a background tab and closes it.
+The All Drops tab lists every campaign on Twitch; to read it, it briefly opens twitch.tv/drops/campaigns in a background tab and closes it. The Load button in the Badges tab does the same.
 
 The Settings tab has two helpers, both on by default and both can be switched off: reloading open twitch.tv/drops pages every 5 minutes, and reloading a stream tab whose minutes stopped for 6 minutes (at most 3 tries).
 

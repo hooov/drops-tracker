@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { verdictTone, TONE_COLORS, STALL_CAUSES } from '../extension/lib/states.js';
 import { badge, warning } from '../extension/lib/tracker.js';
 import { chipView } from '../extension/lib/chip.js';
-import { verdictText } from '../extension/lib/panel.js';
+import { verdictText, waitedFor } from '../extension/lib/panel.js';
 
 const NOW = Date.parse('2026-11-20T18:00:00Z');
 const MIN = 60000;
@@ -35,6 +35,7 @@ const rows = [
   ['signed out', state({ code: 'signed_out', message: 'x' }), { tone: 'warn', chip: 'Log in', tb: 'OFF', warns: true }],
   ['not counting yet (unstarted)', state({ code: 'idle', hasStreams: true, limited: true, unstarted: true, message: 'x' }), { tone: 'idle', chip: 'Not yet', tb: '', warns: false }],
   ['not counting yet (blocked)', state({ code: 'idle', hasStreams: true, limited: true, blocked: true, message: 'x' }), { tone: 'idle', chip: 'Not yet', tb: '', warns: false }],
+  ['cannot tell if finished', state({ code: 'idle', hasStreams: true, limited: true, unproven: true, message: 'x' }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
   ['cannot track this badge', state({ code: 'idle', hasStreams: true, limited: true, badge: true, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: true }],
   ['cannot check streams, just now', state({ code: 'idle', hasStreams: true, limited: true, since: NOW - MIN, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: false }],
   ['cannot check streams, 3 min', state({ code: 'idle', hasStreams: true, limited: true, since: NOW - 3 * MIN, message: 'x' }), { tone: 'unknown', chip: 'Drops ?', tb: '?', warns: true }],
@@ -45,6 +46,33 @@ const rows = [
   ['reward campaign', state({ code: 'idle', hasStreams: true, reward: true, message: 'x' }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
   ['not earning', state({ code: 'idle', hasStreams: true }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
 ];
+
+// Walk-through, 2026-11-23: "Waiting for the first minute to land" on a drop at 45 of 120, with no
+// word on how long a wait is normal or how long this one had lasted.
+test('checking: "first" only before anything counted, the normal pace, and how long so far', () => {
+  const PACE = 'Twitch adds one about every minute.';
+  const fresh = state({ code: 'waiting', since: NOW - 90000 }, { active: [{ ...drop, minutes: 0, pct: 0, remaining: 60 }] });
+  assert.deepEqual(verdictText(fresh, NOW), ['Checking', `Waiting for the first minute to land. ${PACE}`]);
+  const begun = state({ code: 'waiting', since: NOW - 90000 });
+  assert.deepEqual(verdictText(begun, NOW), ['Checking', `Waiting for the next minute to land. ${PACE}`]);
+  assert.equal(chipView(begun, NOW, 'foxtrot').title, `GTA DVD Chest: 21/60 min. Waiting for the next minute to land. ${PACE}`);
+  // Judged on what the open tabs can earn: minutes gained on another channel before, or another
+  // game's drop in progress, do not make this one's first minute its next (2026-11-23).
+  const other = { ...drop, id: 'd9', campaignId: 'c9', name: 'Other Crate' };
+  const elsewhere = { ...fresh, active: [fresh.active[0], other], lastGainAt: NOW - 60 * MIN };
+  assert.match(verdictText(elsewhere, NOW)[1], /^Waiting for the first minute/);
+  // Two tabs that can earn, one begun: each channel's own panel and chip, and "next" off a channel.
+  const two = state({ code: 'waiting', since: NOW }, { active: [fresh.active[0], { ...other, campaignId: 'c2' }], streams: [foxtrot, echo], session: null });
+  assert.match(verdictText(two, NOW, 'foxtrot')[1], /first minute/);
+  assert.match(verdictText(two, NOW, 'echo_247')[1], /next minute/);
+  assert.match(verdictText(two, NOW)[1], /next minute/);
+  assert.match(chipView(two, NOW, 'foxtrot').title, /first minute/);
+  assert.match(chipView(two, NOW, 'echo_247').title, /next minute/);
+  // A drop already at its requirement is not the one being waited for.
+  const reached = state({ code: 'waiting', since: NOW }, { active: [fresh.active[0], { ...drop, id: 'd8', minutes: 60, pct: 100, remaining: 0 }] });
+  assert.match(verdictText(reached, NOW)[1], /first minute/);
+  assert.deepEqual([waitedFor(NOW - 45000, NOW), waitedFor(NOW - 90000, NOW), waitedFor(undefined, NOW), waitedFor(NOW + MIN, NOW)], ['45s', '1m 30s', '', '']);
+});
 
 for (const [name, s, want] of rows) {
   test(`${name}: one colour on panel, chip and toolbar`, () => {

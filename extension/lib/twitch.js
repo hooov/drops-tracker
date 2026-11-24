@@ -195,20 +195,33 @@ export function normalizeSession(raw) {
 }
 
 /**
+ * Tells one Twitch sign-in from another without keeping it: the start of its SHA-256, which the
+ * sign-in cannot be worked out from. Only compared with itself, in memory (background.js).
+ */
+export async function loginPrint(token) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(hash, 0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Rewards the user already owns. The list is only used to rule campaigns out, so it says whether
- * it is complete: the newer query's connection is paged, and either field can fail outright.
+ * it is complete: the newer query's connection is paged, and either field can fail outright. An
+ * entry with no ID, or an error about the list (errors: the answer's), means part of it is missing.
  * ids: null means unknown, not none.
  */
-export function parseRewards(inventory) {
+export function parseRewards(inventory, errors = []) {
+  const read = (field, list, idOf, lastPage) => {
+    const all = list.map(idOf);
+    const ids = all.filter(Boolean);
+    const failed = errors.some((e) => !Array.isArray(e?.path) || e.path[2] === field);
+    return { ids, complete: lastPage && !failed && ids.length === all.length };
+  };
   if (Array.isArray(inventory?.gameEventDrops)) {
-    return { ids: inventory.gameEventDrops.map((r) => r?.id).filter(Boolean), complete: true };
+    return read('gameEventDrops', inventory.gameEventDrops, (r) => r?.id, true);
   }
   const edges = inventory?.gameEventDropsConnection?.edges;
   if (Array.isArray(edges)) {
-    return {
-      ids: edges.map((e) => e?.node?.id).filter(Boolean),
-      complete: inventory.gameEventDropsConnection.pageInfo?.hasNextPage === false,
-    };
+    return read('gameEventDropsConnection', edges, (e) => e?.node?.id, inventory.gameEventDropsConnection.pageInfo?.hasNextPage === false);
   }
   return { ids: null, complete: false };
 }
@@ -250,7 +263,7 @@ export function parseInventory(item) {
   if (watchDrops.length && !watchDrops.some((d) => typeof d.self?.currentMinutesWatched === 'number')) {
     throw new TwitchError('bad_response', 'Inventory had an unexpected shape');
   }
-  return { campaigns: list, rewards: parseRewards(inventory) };
+  return { campaigns: list, rewards: parseRewards(inventory, errors) };
 }
 
 const httpsOr = (url) => {
@@ -505,6 +518,139 @@ function addListedCampaign(c, x, here, game) {
   });
 }
 
+export const MAX_SEEN_BADGES = 100; // Badge campaigns remembered from opened channels (seenBadges).
+const MAX_SEEN_REWARDS = 40; // Watch groups, and rewards, kept per campaign. Nine seen on one (2026-11-23).
+export const SEEN_AGAIN_MS = 6 * 3600000; // How often an unchanged campaign's age is written again.
+
+/**
+ * Badge campaigns a channel lists, for the "Badges not earned yet" list (drops-tracker#12): sitewide
+ * ones (game null here) and any game's with a BADGE to watch for. A channel's own badge is left out,
+ * and so is a campaign with no watch goal. Read apart from applyChannelCampaigns, which skips
+ * campaigns the highlight answer already gave. An answer with an error adds nothing: a list cut
+ * short would replace a whole one. cut: part of the campaign could not be read or kept, so it can
+ * be neither counted nor called done.
+ * Kept: names, art, dates, reward and group IDs, each group's watch minutes and repeat settings, the
+ * category. Not the channel, nor any progress.
+ * Bounds: MAX_SEEN_REWARDS groups and rewards each, clip() and MAX_NAME on text.
+ */
+export function parseSeenBadges(item, gameId, now) {
+  const list = item?.data?.channelDropCampaigns;
+  if (!Array.isArray(list) || errorsOf(item).length) return [];
+  return list.map((x) => seenBadge(x, gameId, now)).filter(Boolean);
+}
+
+// Bound on each number kept of a group: a year of minutes or seconds, or that many repeats.
+const YEAR_MINUTES = 365 * 24 * 60;
+const YEAR_SECONDS = YEAR_MINUTES * 60;
+const MAX_REPEATS = 1000;
+const positive = (n, max) => (Number.isFinite(n) && n > 0 && n <= max ? n : null);
+
+/**
+ * How often a watch group repeats. times: 1 once, null when it cannot be read, which must not read
+ * as once. all: one reward for doing every repeat (Evolutions), where GTAVI gives one per repeat
+ * (captured 2026-11-23 and 11-19); false too with a last-chance extension, whose rule is not known.
+ */
+function seenRepeats(crit) {
+  const r = crit.repeatableConfig;
+  if (r === null) return { times: 1 };
+  const times = positive(r?.repeatableTimes, MAX_REPEATS);
+  if (times == null || times === 1) return { times };
+  return {
+    times,
+    reset: positive(r.resetIntervalSeconds, YEAR_SECONDS),
+    all: r.shouldCompleteAllRepeatsToEarn === true && r.isLastChanceExtensionEnabled !== true,
+  };
+}
+
+function seenBadge(x, gameId, now) {
+  const endAt = dateOrNull(x?.endAt);
+  if (typeof x?.id !== 'string' || !x.id || typeof x.name !== 'string' || !x.name) return null;
+  if (x.brandName === CREATOR_BADGE_BRAND || !Array.isArray(x.rewardGroups)) return null;
+  if (endAt == null || endAt <= now) return null; // No end date: nothing would ever drop it.
+  const groups = [];
+  const places = new Map();
+  let room = MAX_SEEN_REWARDS;
+  let cut = false;
+  let more = false;
+  let someChannels = false;
+  for (const g of x.rewardGroups) {
+    const crit = g?.progressCriteria;
+    const type = crit?.requirementType;
+    if (typeof g?.id !== 'string' || !g.id || typeof type !== 'string') {
+      cut = true;
+      continue;
+    }
+    if (type !== 'WATCH' || crit.requirements?.subs > 0) more = true;
+    if (type !== 'WATCH') continue;
+    const rewards = (Array.isArray(g.rewards) ? g.rewards : []).filter((r) => typeof r?.id === 'string' && r.id);
+    const kept = rewards.slice(0, room);
+    room -= kept.length;
+    if (!kept.length || kept.length !== g.rewards.length || !(crit.requirements?.minutesWatched > 0)) cut = true;
+    if (!kept.length) continue;
+    groups.push({
+      id: g.id,
+      minutes: positive(crit.requirements?.minutesWatched, YEAR_MINUTES),
+      ...seenRepeats(crit),
+      rewards: kept.map((r) => ({ id: r.id, name: (typeof r.name === 'string' ? r.name : '').slice(0, MAX_NAME), badge: r.distributionType === 'BADGE' })),
+    });
+    if (Array.isArray(crit.channels) && crit.channels.length) someChannels = true;
+    for (const k of Array.isArray(crit.categories) ? crit.categories : []) {
+      if (typeof k?.id === 'string' && typeof k.displayName === 'string' && k.displayName) places.set(k.id, k.displayName.slice(0, MAX_NAME));
+    }
+  }
+  const badge = groups.some((g) => g.rewards.some((r) => r.badge));
+  if (!groups.length || (!badge && x.game !== null)) return null;
+  // Evolutions lists 21 categories (2026-11-23): the one it was seen in is where a channel had it.
+  const seenIn = !someChannels && places.has(gameId);
+  const placeId = someChannels ? undefined : seenIn ? gameId : places.keys().next().value;
+  return {
+    id: x.id,
+    name: clip(x.name),
+    art: httpsOr(x.imageURL),
+    infoUrl: httpsOr(x.detailsURL),
+    startAt: dateOrNull(x.startAt),
+    endAt,
+    gameless: x.game === null,
+    badge,
+    more,
+    cut,
+    someChannels,
+    place: placeId === undefined ? null : { id: placeId, name: places.get(placeId) },
+    places: places.size,
+    placeIds: [...places.keys()].slice(0, MAX_SEEN_REWARDS),
+    seenIn,
+    groups,
+  };
+}
+
+/** JSON with every object's keys in order: chrome.storage gives them back sorted, so plain JSON never matches. */
+const sorted = (value) => JSON.stringify(value, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)))
+  : v));
+
+/**
+ * Stored seen campaigns with fresh ones replacing their own. Never dropped for being absent: no
+ * opened channel need carry one. An unchanged one keeps its stored entry, so the list is only
+ * written when something changed. Dropped when the campaign ends. Bound: MAX_SEEN_BADGES, newest kept.
+ */
+export function mergeSeenBadges(stored, fresh, now) {
+  const out = new Map();
+  for (const c of Array.isArray(stored) ? stored : []) {
+    if (c?.id && now < c.endAt && Array.isArray(c.groups) && c.groups.length) out.set(c.id, c);
+  }
+  // Two tabs listing one campaign in two categories: one of them, the same every poll.
+  const first = new Map();
+  for (const f of Array.isArray(fresh) ? fresh : []) if (!first.get(f.id)?.seenIn && (f.seenIn || !first.has(f.id))) first.set(f.id, f);
+  for (const f of first.values()) {
+    const old = out.get(f.id);
+    let next = { ...f, at: now };
+    if (old?.seenIn && !f.seenIn && old.place && f.placeIds.includes(old.place.id)) next = { ...next, place: old.place, seenIn: true };
+    const age = now - old?.at;
+    out.set(f.id, age >= 0 && age <= SEEN_AGAIN_MS && sorted({ ...old, at: 0 }) === sorted({ ...next, at: 0 }) ? old : next);
+  }
+  return [...out.values()].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).slice(-MAX_SEEN_BADGES);
+}
+
 function applyCampaigns(channel, item) {
   const c = channel;
   if (errorsOf(item).length || !item?.data || !('channel' in item.data)) {
@@ -573,6 +719,102 @@ function applyCampaigns(channel, item) {
  * Returns null when the answer cannot be read, which means unknown, never "nothing in progress".
  * A campaign missing from it is unknown too: a badge already claimed was not listed.
  */
+export const MAX_DAY_GROUPS = 20; // Repeating reward groups whose day rewards are kept (dayRewards).
+const MAX_DAYS = 31;
+const MAX_NAME = 100;
+
+/**
+ * Each repeating watch group's reward per day, from the DropChannelCampaignsProgress answer Twitch's
+ * channel page received (page-hook.js; the query needs Twitch's integrity token, so the extension
+ * never asks it). Read from Twitch's client, 2026-11-22: its generic card shows day n's reward as
+ * rewardGroup.rewards[n], else rewards[0] (module 756662); its GTA6 card replaces that with
+ * pool.rewards[n] of the group's "ordered daily chest", a reward ID from Twitch's remote config
+ * that the extension cannot see (module 635265). GTAVI's group lists one reward, the chest (POOL,
+ * "GTA DVD Chest", default image, in ChannelDropsCampaigns), so a group whose only reward is a pool
+ * holding one reward per repeat is read as that chest. A pool of another size, whose order is not
+ * known, is not. A group with fewer than two days is not kept. Names and art only: the answer's progress (self) is the viewer's and is not kept.
+ * null when unreadable. Bound: MAX_DAY_GROUPS groups of MAX_DAYS.
+ */
+export function parseDayRewards(item) {
+  const list = item?.data?.channelDropCampaignsProgress;
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const c of list) {
+    if (typeof c?.id !== 'string' || !Array.isArray(c.rewardGroups)) continue;
+    for (const g of c.rewardGroups) {
+      const crit = g?.progressCriteria;
+      const times = crit?.repeatableConfig?.repeatableTimes;
+      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH' || !(times > 1) || !Array.isArray(g.rewards)) continue;
+      const pool = g.rewards.length === 1 ? g.rewards[0]?.pool?.rewards : null;
+      const source = Array.isArray(pool) && pool.length === times ? pool : g.rewards;
+      const days = source.slice(0, MAX_DAYS).map((r) => ({ name: typeof r?.name === 'string' ? r.name.slice(0, MAX_NAME) : '', image: httpsOr(r?.thumbnailURL) }));
+      // One reward for every day names no day: the list's own reward stands, and it would take a
+      // slot (2026-11-22: 10 single-reward Pokémon groups out of 20).
+      if (days.length < 2 || !days.some((d) => d.name)) continue;
+      out.push({ campaignId: c.id, groupId: g.id, endAt: dateOrNull(c.endAt), days });
+      if (out.length >= MAX_DAY_GROUPS) return out;
+    }
+  }
+  return out;
+}
+
+/** Stored day rewards with a fresh answer's groups replacing their own. Ended campaigns dropped. Bound: MAX_DAY_GROUPS, newest kept. */
+export function mergeDayRewards(stored, parsed, now) {
+  const fresh = (Array.isArray(parsed) ? parsed : []).map((x) => ({ ...x, at: now }));
+  const key = (x) => `${x.campaignId}/${x.groupId}`;
+  const kept = (Array.isArray(stored) ? stored : []).filter((x) => !fresh.some((f) => key(f) === key(x)));
+  return [...kept, ...fresh]
+    .filter((x) => x.endAt == null || now < x.endAt)
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+    .slice(-MAX_DAY_GROUPS);
+}
+
+export const MAX_CLAIMED_GROUPS = 100; // Reward groups remembered as claimed (claimedGroups). Ten seen on one channel.
+
+/**
+ * Reward groups the DropChannelCampaignsProgress answer calls finished for this viewer: CLAIMED,
+ * with every repeat granted. The one thing found that says so for a reward given as a POOL: the
+ * owned list held neither the ball Night Out lists nor the badge it became, and the reward
+ * inventory lists neither campaign once done (captured 2026-11-23, drops-tracker#17). IDs and the
+ * campaign's end only: no minutes, counts or names. A channel's own badge is left out: it has its
+ * own rules. listed: every watch group the answer names, so a merge can take back a flag the
+ * answer no longer supports (another account). null when unreadable or only partly answered, which
+ * is unknown and must change nothing.
+ */
+export function parseClaimedGroups(item) {
+  const list = item?.data?.channelDropCampaignsProgress;
+  if (!Array.isArray(list) || errorsOf(item).length) return null;
+  const claimed = [];
+  const listed = [];
+  for (const c of list) {
+    if (typeof c?.id !== 'string' || !Array.isArray(c.rewardGroups) || c.brandName === CREATOR_BADGE_BRAND) continue;
+    const endAt = dateOrNull(c.endAt);
+    for (const g of c.rewardGroups) {
+      const crit = g?.progressCriteria;
+      if (typeof g?.id !== 'string' || crit?.requirementType !== 'WATCH') continue;
+      listed.push(claimKey(c.id, g.id));
+      // No end date: nothing would ever drop the flag.
+      if (endAt == null || g.self?.status !== 'CLAIMED') continue;
+      // A repeating group may read CLAIMED after each day's grant, so every repeat has to be.
+      if (crit.repeatableConfig && !(crit.repeatableConfig.repeatableTimes > 0 && g.self.grantCount >= crit.repeatableConfig.repeatableTimes)) continue;
+      claimed.push({ campaignId: c.id, groupId: g.id, endAt });
+    }
+  }
+  return { claimed, listed };
+}
+
+const claimKey = (campaignId, groupId) => `${campaignId}/${groupId}`;
+
+/** Stored claimed groups with a fresh answer's own groups replaced. Ended campaigns dropped. Bound: MAX_CLAIMED_GROUPS, newest kept. */
+export function mergeClaimedGroups(stored, parsed, now) {
+  const answered = new Set(parsed?.listed || []);
+  const kept = (Array.isArray(stored) ? stored : []).filter((x) => x?.campaignId && x.groupId && !answered.has(claimKey(x.campaignId, x.groupId)));
+  return [...kept, ...(parsed?.claimed || []).map((x) => ({ ...x, at: now }))]
+    .filter((x) => now < x.endAt)
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+    .slice(-MAX_CLAIMED_GROUPS);
+}
+
 export function parseRewardInventory(item) {
   if (errorsOf(item).length || needsIntegrity(item) || isStale(item)) return null;
   const list = item?.data?.currentUser?.inventory?.viewerRewardDropCampaignsInProgress;
@@ -641,6 +883,7 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
   // gives a zeroed session. So ask per channel and keep the first real one.
   const liveChannels = Object.values(channels).filter((c) => c.id && c.live);
   const sessions = [];
+  const seenBadges = []; // For the badge list only (background.js, storage seenBadges): tracking never reads it.
   if (liveChannels.length) {
     try {
       const second = await run(token, liveChannels.flatMap((c) => [
@@ -653,6 +896,11 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
         applyChannelCampaigns(c, second[i * 3 + 2], options.now ?? Date.now(), gameIds.get(c.login));
         // For the tracker: a drop placed on this channel by its minutes ends when this changes.
         c.gameId = gameIds.get(c.login);
+        try {
+          seenBadges.push(...parseSeenBadges(second[i * 3 + 2], c.gameId, options.now ?? Date.now()));
+        } catch {
+          // A shape never seen must not cost this poll its channels, which the outer catch would.
+        }
         const sessionAnswer = second[i * 3 + 1];
         // The only source of a badge's minutes. Its query failing is not Twitch reporting none.
         if (errorsOf(sessionAnswer).length && c.campaigns.some((x) => x.channelOwned)) c.unknown = true;
@@ -686,5 +934,5 @@ export async function fetchSnapshot(token, logins, fetchImpl = fetch, known = {}
     }
   }
 
-  return { campaigns, rewards, channels, session: sessions[0] ?? null, sessions, rewardGroups, working: ctx.working };
+  return { campaigns, rewards, channels, session: sessions[0] ?? null, sessions, rewardGroups, seenBadges, working: ctx.working };
 }

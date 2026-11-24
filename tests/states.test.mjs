@@ -73,4 +73,5 @@ test('every verdict code has a deliberate colour', () => {
   assert.equal(verdictTone({ code: 'idle', limited: true }), 'unknown');
   assert.equal(verdictTone({ code: 'idle', limited: true, unstarted: true }), 'idle');
   assert.equal(verdictTone({ code: 'idle', limited: true, blocked: true }), 'idle');
+  assert.equal(verdictTone({ code: 'idle', limited: true, unproven: true }), 'idle');
 });

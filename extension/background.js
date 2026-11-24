@@ -1,4 +1,4 @@
-import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, TwitchError } from './lib/twitch.js';
+import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, mergeSeenBadges, loginPrint, TwitchError } from './lib/twitch.js';
 import { update, events, badge, warning, rewardsDue } from './lib/tracker.js';
 import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
@@ -184,6 +184,22 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   });
 }, { urls: ['https://gql.twitch.tv/*'], types: ['xmlhttprequest'] }, ['requestBody']);
 
+/**
+ * Whether the sign-in is another one than the last poll's, from its fingerprint (twitch.js
+ * loginPrint). In chrome.storage.session: one value, in memory, gone when the browser closes. No
+ * cookie event says it: Chrome sends none for a .twitch.tv cookie to an extension that has only
+ * www.twitch.tv (tried 2026-11-24). Nothing to compare with is not a change.
+ */
+async function checkLogin(token) {
+  try {
+    const print = await loginPrint(token);
+    const { loginPrint: before } = await chrome.storage.session.get('loginPrint');
+    return { loginPrint: print, accountChanged: !!before && before !== print };
+  } catch {
+    return {}; // Must never stop tracking.
+  }
+}
+
 async function observe(prev) {
   const cookie = await chrome.cookies.get({ url: 'https://www.twitch.tv', name: 'auth-token' });
   if (!cookie?.value) {
@@ -193,27 +209,32 @@ async function observe(prev) {
       ? { error: { kind: 'api_changed', message: 'Twitch changed how it stores your login' } }
       : { error: { kind: 'auth', message: 'Not logged in to Twitch in this browser' } };
   }
+  const login = await checkLogin(cookie.value);
   const tabs = await readStreams();
   // Keep channel pages, plus non-channel pages only if they are really playing video (front page).
   const relevant = tabs.filter((t) => t.login || (t.player?.hasVideo && !t.player.paused));
   try {
-    const { hashes } = await chrome.storage.local.get('hashes');
+    const { hashes, dayRewards, claimedGroups } = await chrome.storage.local.get(['hashes', 'dayRewards', 'claimedGroups']);
     // The reward inventory at least every REWARD_HOLD_MS, for badges no channel lists, and once
     // after a window it read has ended.
     const askRewards = rewardsDue(prev, Date.now());
     const snap = await fetchSnapshot(cookie.value, relevant.map((t) => t.login).filter(Boolean), fetch, hashes ?? {}, { askRewards });
     await saveWorkingHashes(snap.working);
     return {
+      ...login,
       campaigns: snap.campaigns,
       rewards: snap.rewards,
       session: snap.session,
       sessions: snap.sessions,
       rewardGroups: snap.rewardGroups,
+      seenBadges: snap.seenBadges,
+      dayRewards: Array.isArray(dayRewards) ? dayRewards : [],
+      claimedGroups: Array.isArray(claimedGroups) ? claimedGroups : [],
       streams: relevant.map((t) => ({ ...t, channel: t.login ? snap.channels[t.login] : null })),
     };
   } catch (e) {
-    if (e instanceof TwitchError) return { error: { kind: e.kind, message: e.message } };
-    return { error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } };
+    if (e instanceof TwitchError) return { ...login, error: { kind: e.kind, message: e.message } };
+    return { ...login, error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } };
   }
 }
 
@@ -223,6 +244,15 @@ async function recordMinute(prev, obs, next, now) {
   if (!entry) return;
   const { minuteLog } = await chrome.storage.local.get('minuteLog');
   await chrome.storage.local.set({ minuteLog: addMinute(minuteLog, entry) });
+}
+
+// Badge campaigns seen on open channels, for "Badges not earned yet". Written only when something
+// changed. Bound: MAX_SEEN_BADGES, each dropped when its campaign ends (mergeSeenBadges).
+async function rememberBadges(obs, now) {
+  const { seenBadges } = await chrome.storage.local.get('seenBadges');
+  const next = mergeSeenBadges(seenBadges, obs.seenBadges, now);
+  const same = Array.isArray(seenBadges) && next.length === seenBadges.length && next.every((c, i) => c === seenBadges[i]);
+  if (!same && (next.length || seenBadges !== undefined)) await chrome.storage.local.set({ seenBadges: next });
 }
 
 async function paintBadge(state, prefs) {
@@ -347,11 +377,14 @@ async function pollOnce() {
   try {
     next = update(prev, obs, now);
   } catch {
-    next = update(prev, { error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }, now);
+    next = update(prev, { accountChanged: obs.accountChanged, error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }, now);
   }
   const evs = events(prev, next, now);
   await chrome.storage.local.set({ state: next });
+  // After the state: a worker stopped in between sees the change again, and clears again.
+  if (obs.loginPrint) await chrome.storage.session.set({ loginPrint: obs.loginPrint }).catch(() => {});
   await recordMinute(prev, obs, next, now).catch(() => {});
+  await rememberBadges(obs, now).catch(() => {});
   // Claim reminders off: no claim notification, no CLM. Claims are still marked as notified, so
   // switching it back on later does not bring a burst of old ones.
   const prefs = normalize((await chrome.storage.local.get('settings')).settings);
@@ -414,6 +447,25 @@ chrome.notifications.onClicked.addListener((id) => {
   chrome.tabs.create({ url: 'https://www.twitch.tv/drops/inventory' });
 });
 
+// A repeating reward drop's per-day rewards, and which reward groups are finished, from the answer
+// Twitch's channel page received (page-hook.js). Names and art only (parseDayRewards); group IDs
+// and an end date only (parseClaimedGroups). Bounds: MAX_DAY_GROUPS, MAX_CLAIMED_GROUPS (the merges).
+// One write at a time, so two tabs answering at once cannot drop each other's groups.
+let dayRewardWrites = Promise.resolve();
+function acceptDayRewards(item) {
+  const parsed = parseDayRewards(item);
+  const claims = parseClaimedGroups(item);
+  if (!parsed?.length && !claims?.listed.length) return Promise.resolve(false);
+  dayRewardWrites = dayRewardWrites.then(async () => {
+    const stored = await chrome.storage.local.get(['dayRewards', 'claimedGroups']);
+    await chrome.storage.local.set({
+      ...(parsed?.length ? { dayRewards: mergeDayRewards(stored.dayRewards, parsed, Date.now()) } : {}),
+      ...(claims?.listed.length ? { claimedGroups: mergeClaimedGroups(stored.claimedGroups, claims, Date.now()) } : {}),
+    });
+  }).catch(() => {});
+  return dayRewardWrites.then(() => true);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'poll') {
     (msg.soon === true ? pollSoon() : poll()).then(reply, () => reply(null));
@@ -425,6 +477,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg?.type === 'directoryCaptured' && sender.tab && sender.url?.startsWith(CAMPAIGNS_PAGE)) {
     acceptCapture(msg.item).then(() => reply(true), () => reply(false));
+    return true;
+  }
+  if (msg?.type === 'dayRewardsCaptured' && sender.tab && sender.url?.startsWith('https://www.twitch.tv/')) {
+    acceptDayRewards(msg.item).then(reply, () => reply(false));
     return true;
   }
   if (msg?.type === 'reloadTab' && Number.isInteger(msg.tabId)) {

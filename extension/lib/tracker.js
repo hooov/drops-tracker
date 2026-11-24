@@ -9,6 +9,7 @@ import { span } from './directory.js';
 export { RATE_MIN_MINUTES };
 
 export const STALL_MS = 4 * 60000; // Credit lands about every 60s (measured); 4 misses is a real stall.
+const FULL_MINUTE_MS = 60000; // Able to earn this long before a minute with no credit is drawn as missed.
 export const REWARD_HOLD_MS = 15 * 60000; // A failed reward inventory call reuses the last good answer this long.
 export const REWARD_RETRY_MS = 5 * 60000; // After a failed call, a window-end re-ask waits this long.
 export const DEAD_PLAYER_MS = 2 * 60000; // Every eligible player is visibly dead: no need to wait the full 4.
@@ -32,6 +33,7 @@ const CLOSE_SETTLE_MS = 2 * 60000; // Credit lands about every 60s, so one can s
 export const LOST_SHOWN_MS = 10 * 60000;
 const LEFT_BADGES_MAX = 20; // Badge groups remembered as having left the in-progress list.
 const LEFT_DROPS_MAX = 20; // Inventory drops remembered as near done (nearDone) or as having left (leftDrops).
+export const REWARDS_DONE_MAX = 20; // Reward campaigns remembered as counting (rewardsCounting) or finished (rewardsDone), and as announced.
 const NOTIFIED_LEFT_MAX = 50; // Drop IDs already announced as likely earned, newest kept (events).
 
 export function emptyState() {
@@ -218,7 +220,7 @@ export function wastedCredit(session, active, streams, risen, running, names = n
     || channelBadges.find((d) => risen.has(d.id) && d.required > 0 && (d.minutes ?? 0) > d.required);
   const name = earned ? badge?.name || names.get(session.dropId) || 'drop' : drop.name;
   // The next start belongs to the session's drop. A badge past its requirement named instead of it
-  // does not repeat, so "the next one can start" would be untrue for it.
+  // does not repeat, so "the next one opens" would be untrue for it.
   const ownDrop = !badge || badge.id === session.dropId;
   return wastedView({ reason: earned ? 'earned' : 'too_late', channel, name, opens: opens != null && earned && ownDrop ? opens : null }, session, active, streams);
 }
@@ -248,7 +250,9 @@ export function wastedView(w, session, active, streams) {
   let message;
   if (w.reason === 'too_late') message = `Twitch is crediting ${w.channel}, but ${w.name} cannot finish before its campaign ends.${fix}`;
   else if (alt) message = `${w.channel}'s ${w.name} is already earned, but Twitch is still crediting it, so these minutes do nothing.${fix}`;
-  else if (w.opens != null) message = `${w.name} is earned for today. The next one can start at ${at(w.opens)}.`;
+  // "Opens", as the My Drops card and its timer say it: three wordings for one time read as three
+  // different things (walk-through, 2026-11-23).
+  else if (w.opens != null) message = `${w.name} is earned for today. The next one opens at ${at(w.opens)}.`;
   else message = `${w.name} is already earned, and nothing else open can earn right now.`;
   return { reason: w.reason, channel: w.channel, name: w.name, opens: w.opens ?? null, actionable: !!alt, message };
 }
@@ -285,9 +289,17 @@ function badgeTooLate(stream, now) {
   return worst;
 }
 
+/** Every watch group of a reward campaign is owned, or called claimed by Twitch's channel page. */
+function rewardProven(c, owned, claimed) {
+  return !!c.rewardCampaign && c.watchDrops?.length > 0 && c.watchDrops.every((d) => claimed.has(`${c.id}/${d.id}`)
+    || (d.benefitIds?.length > 0 && d.benefitIds.every((id) => owned.has(id))));
+}
+
 // notStarted: when given, collects the game campaigns read as not started from nothing (not a
 // session reporting nothing, which state.pending lists), so My Drops can list their drops.
-function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null) {
+// claimed: `campaign/group` keys Twitch's channel page called finished (twitch.js parseClaimedGroups).
+// unproven: when given, collects the reward campaigns nothing says are finished or not started.
+function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending, rewardIds = new Set(), leftNear = null, notStarted = null, claimed = new Set(), unproven = null) {
   if (!stream.login) return 'not_channel';
   // No entry at all means it was not looked up (past the channel limit), not that it is offline.
   if (!stream.channel || stream.channel.unknown) return 'unknown';
@@ -296,6 +308,7 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   if (!campaigns.length) return stream.channel.subOnly ? 'sub_only' : 'no_drops';
   const owned = new Set(rewards.ids);
   let unstarted = false;
+  let rewardUnproven = false;
   let badgeUnseen = false;
   let badgeLeft = false;
   let isBlocked = false;
@@ -331,9 +344,19 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
     if (inventoryIds.has(c.id)) continue;
     const allOwned = c.benefitIds?.length > 0 && c.benefitIds.every((id) => owned.has(id));
     if (allOwned) continue;
+    // A reward given as a POOL is never in the owned list under any ID seen, so for a reward
+    // campaign each group also counts as done when Twitch's channel page called it claimed
+    // (2026-11-23, drops-tracker#17: Night Out, finished, beside nine owned Evolutions rewards).
+    // Only here, after every sign of progress: rising minutes win over a flag that went stale.
+    if (rewardProven(c, owned, claimed)) continue;
     if (left) badgeLeft = true;
     else if (c.channelOwned) badgeUnseen = true;
-    else {
+    else if (c.rewardCampaign && !c.game) {
+      // Finished or not started look the same from here, and there is no game account to link.
+      // One that names a game keeps "may need linking": none has been captured.
+      rewardUnproven = true;
+      unproven?.push(c);
+    } else {
       unstarted = true;
       if (!c.rewardCampaign) notStarted?.push(c);
     }
@@ -343,6 +366,7 @@ function classifyChannel(stream, active, inventoryIds, rewards, blocked, pending
   if (isBlocked) return 'blocked';
   if (reward) return 'reward';
   if (unstarted) return 'unstarted';
+  if (rewardUnproven) return 'reward_unproven';
   // A timer badge with no session: Twitch is not reporting its minutes. There is no game account
   // to link, and what a session looks like once a badge is earned has not been seen, so this may
   // mean already earned. Not knowing is still worth saying. One that left the in-progress list at
@@ -415,6 +439,17 @@ export function leftBadges(prev, before, groups, now) {
 export const LEFT_NEAR_MINUTES = 2;
 
 /**
+ * How a likely-earned drop is said, in the panel and in the notification. The result comes first
+ * and the short reading is explained: "no longer lists ... (last read 59 of 60 minutes), so you
+ * have probably earned it" read as missing it by a minute (walk-through, 2026-11-23).
+ */
+function leftDropText(subject, d) {
+  const read = Math.min(d.minutes, d.required);
+  const why = read < d.required ? ', and Twitch can remove a finished drop before it shows the last minute' : '';
+  return `${subject} is probably earned: it left Twitch's in-progress list at ${read} of ${d.required} minutes${why}.`;
+}
+
+/**
  * Inventory drops seen leaving every list within LEFT_NEAR_MINUTES of their requirement: likely
  * earned. Seen 2026-11-22 (Tyler, granted): RuneScape Bones, a BADGE reward with no claim step, read
  * 59 of 60, and at the next poll Inventory no longer listed it and nothing else did, with nothing
@@ -436,6 +471,38 @@ export function leftDrops(prev, near, open, listed, now) {
 }
 
 const endedAt = (x, now) => x.endsAt != null && now >= x.endsAt;
+
+const keptRewards = (list, now) => (Array.isArray(list) ? list : []).filter((x) => x?.campaignId && !endedAt(x, now));
+
+/**
+ * Reward campaigns an open channel offers that Twitch's reward inventory listed in progress, so
+ * finishing one is a change that was seen: a campaign finished long ago is never here, and nothing
+ * is announced for it. groups: the last good answer, null adds nothing. done: campaign
+ * IDs in rewardsDone. Bound: REWARDS_DONE_MAX, newest kept; dropped when the campaign ends.
+ */
+export function rewardsCounting(prev, streams, groups, done, now) {
+  const out = keptRewards(prev, now).filter((x) => !done.has(x.campaignId));
+  for (const c of Array.isArray(groups) ? (streams || []).flatMap((st) => st.channel?.campaigns || []) : []) {
+    if (!c.rewardCampaign || out.some((x) => x.campaignId === c.id) || !groups.some((g) => g.campaignId === c.id)) continue;
+    out.push({ campaignId: c.id, name: c.name, endsAt: dateOr(c.endAt, null) });
+  }
+  return out.slice(-REWARDS_DONE_MAX);
+}
+
+/**
+ * Reward campaigns seen going from in progress to finished. On 2026-11-23 GTAVI's sixth day was
+ * granted at 22:06:56 UTC: its group left the reward inventory, the page called both its watch
+ * groups claimed a second later, and the session named it for another half minute. Nothing said it
+ * was finished. finished: the campaigns that are so this poll. listed: campaign IDs the reward
+ * inventory lists, whose entry ends (another account, or Twitch restarting it). Bound:
+ * REWARDS_DONE_MAX, newest kept; dropped when the campaign ends.
+ */
+export function rewardsDone(prev, finished, listed, now) {
+  return [
+    ...keptRewards(prev, now).filter((x) => !listed.has(x.campaignId)),
+    ...keptRewards(finished, now).map((x) => ({ ...x, at: now })),
+  ].slice(-REWARDS_DONE_MAX);
+}
 
 /** Drop IDs Inventory lists and has not marked claimed. */
 export function openInInventory(campaigns) {
@@ -467,7 +534,31 @@ export const CREDIT_UNLISTED_MAX = 10;
 /** How long a drop placed on a channel by its minutes stays there with no further rise (update). */
 export const PLACED_KEEP_MS = 30 * 60000;
 
-function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false) {
+/**
+ * Which day of a repeating reward group Twitch's panel shows, 0-based (its client, 2026-11-22):
+ * the day after the last granted, in progress or earned (CLAIMABLE); once today's minutes are done
+ * and not claimable, the day just granted; every day granted, the last. An ended window counts as
+ * 0 minutes. g: a reward inventory group (parseRewardInventory).
+ */
+export function dayIndex(g, required, now) {
+  const total = g?.repeatTimes > 1 ? g.repeatTimes : 1;
+  if (total <= 1) return 0;
+  const grants = Math.max(0, g.grants ?? 0);
+  const expired = g.windowEnd != null && g.windowEnd <= now;
+  const minutes = expired ? 0 : g.minutes ?? 0;
+  if (grants < total && (g.status === 'CLAIMABLE' || !(required > 0 && minutes >= required))) return grants;
+  return Math.max(0, Math.min(grants, total) - 1);
+}
+
+/** Today's reward of a repeating group from the channel page's day rewards (twitch.js parseDayRewards), or null: day n, else the first. */
+function dayReward(dayRewards, campaignId, g, required, now) {
+  const entry = (Array.isArray(dayRewards) ? dayRewards : []).find((x) => x.campaignId === campaignId && x.groupId === g.id);
+  if (!entry?.days?.length) return null;
+  const day = entry.days[dayIndex(g, required, now)] ?? entry.days[0];
+  return day?.name ? day : null;
+}
+
+function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = false, dayRewards = null) {
   const out = new Map();
   if (!groups?.length) return [];
   for (const st of streams) {
@@ -485,12 +576,16 @@ function rewardCampaigns(streams, inventoryIds, groups, sessions, now, fresh = f
         game: { name: c.channelOwned ? st.channel.displayName || st.login : c.game || c.name },
         fromRewards: true,
         timeBasedDrops: matched.map(([d, g]) => {
+          // A repeating drop is named for today's reward, as Twitch's panel names it (2026-11-22:
+          // "Diamond Chain" on day five, where the channel's list says "GTA DVD Chest").
+          const day = g.repeatTimes ? dayReward(dayRewards, c.id, g, d.required, now) : null;
+          const name = day?.name || d.name;
           const base = {
             id: d.id,
-            name: d.name,
+            name,
             requiredMinutesWatched: d.required,
             endAt: d.endAt,
-            benefitEdges: [{ benefit: { name: d.name, imageAssetURL: d.image } }],
+            benefitEdges: [{ benefit: { name, imageAssetURL: day ? day.image || d.image : d.image } }],
             // A channel's own badge is judged like any drop when this poll read it: its minutes
             // here rose one a minute (2026-11-19, 69 to 106 of 180), and leaving it unjudged hid a
             // 10-minute stall behind "today's reward drop is earned". Repeating rewards stay unjudged.
@@ -685,12 +780,20 @@ function restingDrops(fromRewards, now) {
   return out;
 }
 
-/** Remember owned rewards across polls: the field fails on about half of real calls. */
-function mergeRewards(previous, seen) {
-  const before = { ids: [], ...previous };
+/**
+ * Remember owned rewards across polls: the field fails on about half of real calls. wholeAt: when a
+ * whole list was last read, which is what "not owned" may be said from (badges.js rewardOwned).
+ */
+function mergeRewards(previous, seen, now) {
+  const before = { ids: [], wholeAt: null, ...previous };
   if (!seen?.ids) return before;
   const ids = seen.complete ? seen.ids : [...new Set([...before.ids, ...seen.ids])];
-  return { ids: ids.slice(0, REWARDS_MAX) };
+  // An empty list straight after one with rewards in it is either another account or Twitch failing
+  // without saying so: not proof that nothing is owned until a second one.
+  const doubtful = !seen.ids.length && before.ids.length > 0;
+  const whole = seen.complete && !doubtful && ids.length <= REWARDS_MAX;
+  // A partial list says nothing about the last whole one; a doubtful or cut one replaces it.
+  return { ids: ids.slice(0, REWARDS_MAX), wholeAt: whole ? now : seen.complete ? null : before.wholeAt };
 }
 
 /** The drop a minute mark belongs to: a running total is kept as `<drop id>:total`. */
@@ -849,9 +952,28 @@ function diagnose(candidates, streams, active, unclaimed) {
   };
 }
 
+/** What would be said of the next account to sign in, but is only true of the last one. */
+function forgetAccount(s) {
+  // They may own less: nothing is "not owned" until their own list is read.
+  if (s.rewards) s.rewards.wholeAt = null;
+  s.rewardSeen = null; // Their progress, too.
+  // What is only known from one poll to the next, so never from one account to another (replayed
+  // 2026-11-24): a drop or badge of the last one's, in no list of theirs, read as having just left
+  // ("Drop likely earned"); a campaign they finished long ago as finished now; a badge they have more
+  // minutes on as rising ("Badge Drops Tracker cannot show").
+  s.nearDone = [];
+  s.leftDrops = [];
+  s.rewardInv = null;
+  s.leftBadges = [];
+  s.rewardsCounting = [];
+  s.rewardsDone = [];
+  s.unplacedBadges = [];
+}
+
 /**
  * obs: { error?: {kind,message} } or
  *      { campaigns, rewards: {ids, complete}, session, streams: [{tabId, login, channel, tab, player}] }
+ *      either with accountChanged: true when the sign-in is not the last poll's.
  */
 export function update(prev, obs, now) {
   // Over the empty state, so state saved by an older version can never crash a poll.
@@ -859,11 +981,15 @@ export function update(prev, obs, now) {
   if (!Array.isArray(s.timeline)) s.timeline = [];
   if (!s.verdict?.code) s.verdict = { code: 'starting' };
   s.lastPollAt = now;
+  // Signed in as someone else since the last poll, with no poll signed out in between: the same as
+  // the sign-out below forgets, also when this poll failed. This poll's own answers are theirs.
+  if (obs.accountChanged) forgetAccount(s);
 
   if (obs.error) {
     // Unknown is not stalled: keep the last good data and say what we cannot see.
     const code = obs.error.kind === 'auth' ? 'signed_out' : obs.error.kind === 'api_changed' ? 'api_changed' : 'error';
     s.verdict = { code, message: obs.error.message };
+    if (code === 'signed_out') forgetAccount(s);
     return s;
   }
 
@@ -872,12 +998,18 @@ export function update(prev, obs, now) {
   if (firstGoodPoll) s.resumeAt = now;
   s.lastOkAt = now;
 
-  s.rewards = mergeRewards(s.rewards, obs.rewards);
+  s.rewards = mergeRewards(s.rewards, obs.rewards, now);
   // Twitch's reward inventory: this poll's answer, else the last good one for REWARD_HOLD_MS, so
   // one failed call (Inventory's reward fields fail on about half of real calls) does not flip a
   // channel between two sources and re-fire its notification. undefined: not asked this poll.
-  const held = prev?.rewardInv && now - prev.rewardInv.at < REWARD_HOLD_MS ? prev.rewardInv : null;
+  // From s, not prev, like every field forgetAccount empties: it may just have.
+  const lastInv = s.rewardInv;
+  const held = lastInv && now - lastInv.at < REWARD_HOLD_MS ? lastInv : null;
   s.rewardInv = Array.isArray(obs.rewardGroups) ? { at: now, groups: obs.rewardGroups } : held;
+  // The same answer without the hold's end, for "Badges not earned yet" only (badges.js): it is not
+  // asked while no channel is live, and today's window being done and the days granted stay true.
+  // Tracking never reads it. Bound: one answer (MAX_REWARD_GROUPS), replaced by the next good one.
+  if (Array.isArray(obs.rewardGroups)) s.rewardSeen = { at: now, groups: obs.rewardGroups };
   s.rewardCheck = obs.rewardGroups === undefined ? (prev?.rewardCheck ?? null)
     : { at: now, ok: Array.isArray(obs.rewardGroups), groups: Array.isArray(obs.rewardGroups) ? obs.rewardGroups.length : null };
   const inventoryIds0 = new Set(obs.campaigns.map((c) => c.id));
@@ -888,12 +1020,13 @@ export function update(prev, obs, now) {
   // A channel whose list (or badge list) could not be read would make its own badge look
   // unplaced: hold the marks.
   const blind = (obs.streams || []).some((st) => st.channel?.unknown || st.channel?.badgeLookupFailed);
-  s.unplacedBadges = unplacedBadges(prev?.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
-  s.leftBadges = leftBadges(prev?.leftBadges, prev?.rewardInv, obs.rewardGroups, now);
+  s.unplacedBadges = unplacedBadges(s.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
+  s.leftBadges = leftBadges(s.leftBadges, lastInv, obs.rewardGroups, now);
   const leftNear = new Set(s.leftBadges.filter((x) => x.required - x.minutes <= LEFT_NEAR_MINUTES).map((x) => x.id));
   // Fresh: answered this poll. A held answer is up to REWARD_HOLD_MS old, so a badge read from it
   // would look flat and must not be judged.
-  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups));
+  // dayRewards: what Twitch's channel page received (background.js, from page-hook.js), read only for names and art.
+  const fromRewards = rewardCampaigns(obs.streams || [], inventoryIds0, s.rewardInv?.groups, obs.sessions, now, Array.isArray(obs.rewardGroups), obs.dayRewards);
   const fromSessions = sessionCampaigns(obs.streams || [], new Set([...inventoryIds0, ...fromRewards.map((c) => c.id)]), obs.sessions, s.rewards, s.drops, now);
   const allCampaigns = [...obs.campaigns, ...fromRewards, ...fromSessions];
   const { active, unclaimed } = summarize(allCampaigns, now);
@@ -903,10 +1036,10 @@ export function update(prev, obs, now) {
   s.resting = restingDrops(fromRewards, now);
   const listedIds = new Set([...active, ...unclaimed, ...s.pending, ...s.resting].map((d) => d.id));
   const openIds = openInInventory(obs.campaigns);
-  s.leftDrops = leftDrops(prev?.leftDrops, prev?.nearDone, openIds, listedIds, now);
+  s.leftDrops = leftDrops(s.leftDrops, s.nearDone, openIds, listedIds, now);
   for (const x of s.leftDrops) leftNear.add(x.id);
   // Inventory's own drops (rewardCampaigns and sessionCampaigns skip its campaigns), plus carried ones.
-  s.nearDone = nearDrops(prev?.nearDone, active, inventoryIds0, openIds, listedIds, now);
+  s.nearDone = nearDrops(s.nearDone, active, inventoryIds0, openIds, listedIds, now);
   const pending = new Map();
   for (const d of s.pending) if (!pending.has(d.campaignId)) pending.set(d.campaignId, d);
   const known = obs.sessions || (obs.session ? [obs.session] : []);
@@ -928,7 +1061,11 @@ export function update(prev, obs, now) {
     }
   }
   const gained = added > 0;
-  if (gained) s.lastGainAt = now;
+  if (gained) {
+    s.lastGainAt = now;
+    // The channel that gain landed on, or null when no session rose with it (another device).
+    s.lastGainLogin = known.find((x) => risen.has(x.dropId))?.login ?? null;
+  }
 
   const inventoryIds = new Set(allCampaigns.map((c) => c.id));
   // Minutes win over the lists (2026-11-22). Every miss so far was a channel's lists leaving out a
@@ -971,7 +1108,22 @@ export function update(prev, obs, now) {
   s.placed = [...placedHere.values()];
   // States the placement overrides: the lists' view. reward (credited, quiet), unknown, offline
   // and not_channel are left as they are.
-  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
+  const PLACEABLE = new Set(['no_drops', 'sub_only', 'unstarted', 'reward_unproven', 'finished', 'blocked', 'badge_unseen', 'badge_left']);
+  // Read fresh each poll (background.js, storage claimedGroups), never kept in this state.
+  const claimed = new Set((Array.isArray(obs.claimedGroups) ? obs.claimedGroups : []).filter((x) => x?.campaignId && x.groupId && now < x.endAt).map((x) => `${x.campaignId}/${x.groupId}`));
+  // Finished: seen counting before, left out of the last good reward inventory (held, since the call
+  // fails on about half of real polls; not one cut short), every watch group owned or claimed, and
+  // nothing still reading it (the session names a finished drop for a while). Minutes win over a
+  // stale claimed flag, as in classifyChannel.
+  const rewardList = s.rewardInv && s.rewardInv.groups.length < MAX_REWARD_GROUPS ? s.rewardInv.groups : null;
+  const listedRewards = new Set((rewardList || []).map((g) => g.campaignId));
+  const ownedIds = new Set(s.rewards.ids);
+  const offered = (obs.streams || []).flatMap((st) => st.channel?.campaigns || []);
+  const finishedNow = !rewardList ? [] : keptRewards(s.rewardsCounting, now).filter((x) => !listedRewards.has(x.campaignId)
+    && !pending.has(x.campaignId) && !active.some((d) => d.campaignId === x.campaignId)
+    && offered.some((c) => c.id === x.campaignId && rewardProven(c, ownedIds, claimed)));
+  s.rewardsDone = rewardsDone(s.rewardsDone, finishedNow, listedRewards, now);
+  s.rewardsCounting = rewardsCounting(s.rewardsCounting, obs.streams, rewardList, new Set(s.rewardsDone.map((x) => x.campaignId)), now);
   const tabs = {};
   // Drops of campaigns Twitch has not started on an open channel, listed with no minutes (as
   // pending is) so its My Drops is not empty before the first minute (audit, 2026-11-22). Never
@@ -982,7 +1134,8 @@ export function update(prev, obs, now) {
     const rec = old && old.login === st.login ? old : null;
     const { state: playerState, keepReading } = classifyPlayer(st, rec, now);
     const notStarted = [];
-    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted);
+    const unproven = [];
+    const listedState = classifyChannel(st, active, inventoryIds, s.rewards, blocked, pending, new Set(fromRewards.map((c) => c.id)), leftNear, notStarted, claimed, unproven);
     const place = placedHere.get(st.tabId);
     const channelState = place && PLACEABLE.has(listedState) ? (judged(place.dropId) ? 'eligible' : 'reward') : listedState;
     if (channelState === 'unstarted') {
@@ -1033,7 +1186,10 @@ export function update(prev, obs, now) {
       blockedOpens: channelState === 'blocked' ? [...(st.channel?.campaigns || [])].map((c) => blocked.get(c.id)).find(Boolean)?.opens ?? null : null,
       // A reward drop earned for today: when the next one can start.
       rewardOpens: channelState === 'reward' ? (st.channel?.campaigns || []).map((c) => blocked.get(c.id)?.opens).find(Boolean) ?? null : null,
-      ...(leftHere ? { leftDrop: { name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
+      // The reward campaign that cannot be told finished from not started, so the headline can name it.
+      ...(channelState === 'reward_unproven' && unproven[0]?.name ? { unprovenReward: unproven[0].name } : {}),
+      // id and campaignId: My Drops keeps a card for it (chip.js leftCards).
+      ...(leftHere ? { leftDrop: { id: leftHere.id, campaignId: leftHere.campaignId, name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
       // Highest minutes seen, or null when Twitch has reported none. Sub drops never have any.
       badges: (st.channel?.badges || []).map((b) => ({
         ...b,
@@ -1114,7 +1270,13 @@ export function update(prev, obs, now) {
     const ds = s.active.filter((d) => st.campaignIds?.includes(d.campaignId) && d.remaining > 0 && !d.unjudged);
     return ds.length > 0 && ds.every((d) => d.held);
   };
-  const watching = candidates.some((st) => !heldOnly(st));
+  // Nor does a tab able to earn for under a minute, unless credit landed: its first check is only a
+  // baseline and cannot show a gain, and a red square with "0 of the last 1 watched minutes
+  // counted" a second after opening read as a lost minute (2026-11-23). ableSince is kept through
+  // failed lookups and frozen players, so a hang is still drawn; a paused tab has none, and counts
+  // from when it was opened, as before.
+  const settled = (st) => now - Math.max(st.ableSince ?? st.since ?? 0, s.resumeAt ?? 0) >= FULL_MINUTE_MS;
+  const watching = candidates.some((st) => !heldOnly(st) && (gained || settled(st)));
   const last = s.timeline[s.timeline.length - 1];
   if (last && last.m === bucket) {
     last.g = last.g || gained;
@@ -1164,7 +1326,27 @@ export function update(prev, obs, now) {
   // From saved state as well as the last verdict: one failed poll must not make it forget.
   const wasTracking = prev?.tracking === true || ['earning', 'stalled'].includes(prev?.verdict?.code) || prev?.lostAt != null;
   s.lostAt = null;
-  if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null) {
+  // The last minute landed on an open channel whose reward campaign was seen finishing since, so
+  // no more of it is coming. Held as earning for NO_STREAM_MS with the session gone, it said the
+  // minutes came from outside this browser, with another campaign's percentage in green (2026-11-23).
+  const gainedOn = (obs.streams || []).filter((st) => st.login === s.lastGainLogin).flatMap((st) => st.channel?.campaigns || []);
+  const justDone = candidates.length ? null : s.rewardsDone.findLast((x) => x.at >= s.lastGainAt && gainedOn.some((c) => c.id === x.campaignId));
+  // Was earning, and the tab that was no longer can. Finishing with the tab left open is the good
+  // outcome, not a lost one, so it is judged on the tab that was earning: once the session had
+  // gone, any finished tab left open hid the warning for another one that went offline (found
+  // 2026-11-23 replaying GTAVI's last day). Judged here, before the likely-earned headlines: they
+  // last as long as their campaign and hid it the same way (replayed 2026-11-23, not captured).
+  const hasStreams = streams.some((st) => st.login);
+  const earningOn = streams.find((st) => st.login === (prev?.session?.login ?? s.lastGainLogin ?? undefined));
+  const done = (st) => st.channelState === 'finished' || st.channelState === 'badge_left';
+  const finished = earningOn ? done(earningOn) : streams.some(done);
+  // A tab that could earn is still open but no longer can: the channel changed game, went
+  // offline or raided away. Closing it is deliberate, so that stays a plain idle.
+  // Once LOST_SHOWN_MS has passed, lostAt is cleared and tracking drops, so the next poll no
+  // longer counts as wasTracking and what is left to say (plain idle, likely earned) sticks.
+  const lostAt = prev?.lostAt ?? now;
+  const lost = !candidates.length && hasStreams && wasTracking && !finished && s.earnerTabs.length > 0 && now - lostAt < LOST_SHOWN_MS;
+  if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null && !justDone) {
     const slow = ownRate.watched >= RATE_MIN_MINUTES && ownRate.counted / ownRate.watched < SLOW_BELOW;
     // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
     // rather than flickering the warning off and on.
@@ -1210,17 +1392,17 @@ export function update(prev, obs, now) {
     const total = (s.pending || []).find((d) => d.runningTotal && st.campaignIds.includes(d.campaignId));
     const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const message = st.rewardOpens != null
-      ? `${st.displayName}: Twitch says today's reward is earned. The next one can start ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
+      ? `${st.displayName}: Twitch says today's reward is earned. The next one opens ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
       : shown
         ? `${st.displayName}'s ${shown.name}: ${Math.min(shown.minutes, shown.required)} of ${shown.required} minutes, as Twitch reports it.`
         // Why a flat reading here is not judged is in states.js (reward); it is not the user's concern.
         : `Progress for ${st.displayName}'s ${total?.name || 'reward'} could not be read. Twitch's Drops page shows it.`;
     s.verdict = { code: 'idle', hasStreams: true, reward: true, message };
-  } else if (!candidates.length && streams.some((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState))) {
+  } else if (!candidates.length && streams.some((st) => ['unstarted', 'reward_unproven', 'badge_unseen', 'blocked'].includes(st.channelState))) {
     // The tab in front is the one being looked at: a channel just opened gets its own grace and its
     // own name, not those of a background tab Twitch had not started for minutes (audit,
     // 2026-11-22: echo_247's "may need your game account linked" on every channel opened after it).
-    const all = streams.filter((st) => ['unstarted', 'badge_unseen', 'blocked'].includes(st.channelState));
+    const all = streams.filter((st) => ['unstarted', 'reward_unproven', 'badge_unseen', 'blocked'].includes(st.channelState));
     const open = frontFirst(all);
     const inFront = open !== all;
     const since = Math.max(s.resumeAt ?? 0, inFront ? open[0].stateSince : Math.min(...open.map((st) => st.stateSince)));
@@ -1237,6 +1419,8 @@ export function update(prev, obs, now) {
         // locked, ticking with another drop or waiting is not known (2026-11-19).
         ? `No minutes are rising on ${first.displayName}, and Twitch reports none for its ${first.pendingDrop}.`
         : `${first.displayName} has a campaign that has not started counting. It may need your game account linked.`,
+      // Finished and not started look alike, and it has no game account to link (2026-11-23).
+      reward_unproven: `Cannot tell whether you have finished ${first.unprovenReward || 'the reward campaign'} on ${first.displayName}. The Drops panel in its chat shows your progress.`,
       // Within a day, the time: a daily reward's next window opens 24 hours after the last began.
       blocked: first.blockedOpens != null
         ? `${first.displayName}'s next drop opens ${first.blockedOpens - now < 86400000
@@ -1244,7 +1428,11 @@ export function update(prev, obs, now) {
           : new Date(first.blockedOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`
         : `${first.displayName}'s next drop has requirements not met yet. An earlier drop may need claiming first.`,
     }[first.channelState];
-    s.verdict = now - since < STALL_MS
+    // The wait is for what a few more polls may settle. A next drop with an opening time from
+    // Twitch is already settled: "Checking" for four minutes first said less than was known
+    // (walk-through, 2026-11-23). The other three cases keep their wait.
+    const known = first.channelState === 'blocked' && first.blockedOpens != null;
+    s.verdict = now - since < STALL_MS && !known
       ? { code: 'waiting', since }
       : {
         code: 'idle',
@@ -1253,9 +1441,10 @@ export function update(prev, obs, now) {
         badge: first.channelState === 'badge_unseen',
         blocked: first.channelState === 'blocked',
         unstarted: first.channelState === 'unstarted',
+        ...(first.channelState === 'reward_unproven' ? { unproven: true } : {}),
         message,
       };
-  } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
+  } else if (!candidates.length && !lost && streams.some((st) => st.channelState === 'badge_left')) {
     // Not a warning: one reading short of the requirement, then gone from the list, is how an
     // earned badge looked (2026-11-20). The evidence is said, so it can be checked on Twitch.
     const [st] = frontFirst(streams.filter((x) => x.channelState === 'badge_left'));
@@ -1269,7 +1458,7 @@ export function update(prev, obs, now) {
       // The evidence (left the in-progress list one reading short) is in states.js badge_left.
       message: `Twitch stopped listing ${name}'s badge${read}, so you have probably earned it. The badge picker in ${name}'s chat shows whether you have it.`,
     };
-  } else if (!candidates.length && streams.some((st) => st.leftDrop)) {
+  } else if (!candidates.length && !lost && streams.some((st) => st.leftDrop)) {
     // The same for a game drop leaving Inventory (leftDrops): RuneScape Bones, 2026-11-22.
     const [st] = frontFirst(streams.filter((x) => x.leftDrop));
     const d = st.leftDrop;
@@ -1277,23 +1466,20 @@ export function update(prev, obs, now) {
       code: 'idle',
       hasStreams: true,
       dropLeft: true,
-      message: `Twitch no longer lists ${st.displayName || st.login}'s ${d.name} as in progress (last read ${Math.min(d.minutes, d.required)} of ${d.required} minutes), so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.`,
+      message: `${leftDropText(`${st.displayName || st.login}'s ${d.name}`, d)} Your Drops inventory on Twitch shows whether you have it.`,
     };
   } else if (!candidates.length) {
-    const hasStreams = streams.some((st) => st.login);
     s.verdict = { code: 'idle', hasStreams };
-    // Finishing a campaign with the tab left open is the good outcome, not a lost one.
-    const earningOn = streams.find((st) => st.login === prev?.session?.login);
-    const finished = earningOn ? earningOn.channelState === 'finished' : streams.some((st) => st.channelState === 'finished');
-    // A tab that could earn is still open but no longer can: the channel changed game, went
-    // offline or raided away. Closing it is deliberate, so that stays a plain idle.
-    // Once LOST_SHOWN_MS has passed, lostAt is cleared and tracking drops, so the next poll no
-    // longer counts as wasTracking and the plain idle sticks.
-    const lostAt = prev?.lostAt ?? now;
-    if (hasStreams && wasTracking && !finished && s.earnerTabs.length && now - lostAt < LOST_SHOWN_MS) {
+    // lost: judged above, on the tab that was earning.
+    if (lost) {
       s.lostAt = lostAt;
       s.verdict.lost = true;
       s.verdict.message = 'No open stream can earn a drop now. The channel may have changed game, gone offline or raided away.';
+    } else if (justDone && !s.closedName) {
+      // Until a minute lands anywhere again. Said for as long as its campaign ran, it would hide a
+      // tab that was earning since and was left or went offline.
+      s.verdict.rewardDone = true;
+      s.verdict.message = rewardDoneText(justDone.name);
     }
   } else {
     // The longest any tab has been able to earn. With every tab paused, none has, and how long
@@ -1328,7 +1514,8 @@ export function warning(state, now) {
       // A drop that has not started or opens later is being tracked fine: Twitch is not counting
       // it, and there is usually nothing to do but wait. The panel says so; no pill, no
       // notification (Tyler, 2026-11-20).
-      if (v.limited && (v.unstarted || v.blocked)) return null;
+      // One that may be finished has nothing to do either.
+      if (v.limited && (v.unstarted || v.blocked || v.unproven)) return null;
       // A failed channel lookup waits GAP_MS like a failed poll does: one blip is not news.
       // Before 2026-11-20 it notified on the first failed lookup. A badge without minutes has
       // already waited STALL_MS to get here, and has no since.
@@ -1349,6 +1536,9 @@ export function warning(state, now) {
       return null;
   }
 }
+
+/** Watch rewards only: a campaign's sub rewards are not tracked, and may not be earned. */
+const rewardDoneText = (name) => `You have earned every watch reward in ${name || 'this reward campaign'}.`;
 
 /** Things worth interrupting for, once each. Mutates next to record them. */
 export function events(prev, next, now) {
@@ -1391,9 +1581,18 @@ export function events(prev, next, now) {
   for (const x of next.leftDrops || []) {
     if (announced.has(x.id)) continue;
     announced.add(x.id);
-    out.push({ type: 'earned', title: 'Drop likely earned', message: `Twitch no longer lists ${x.name} as in progress (last read ${Math.min(x.minutes, x.required)} of ${x.required} minutes), so you have probably earned it.` });
+    out.push({ type: 'earned', title: 'Drop likely earned', message: leftDropText(x.name, x) });
   }
   next.notifiedLeft = [...announced].slice(-NOTIFIED_LEFT_MAX);
+  // A reward campaign seen finishing: once per campaign. Not a warning: nothing to do. Bound:
+  // REWARDS_DONE_MAX, newest kept.
+  const congratulated = new Set(prev?.notifiedRewards || []);
+  for (const x of next.rewardsDone || []) {
+    if (congratulated.has(x.campaignId)) continue;
+    congratulated.add(x.campaignId);
+    out.push({ type: 'earned', title: 'Campaign finished', message: rewardDoneText(x.name) });
+  }
+  next.notifiedRewards = [...congratulated].slice(-REWARDS_DONE_MAX);
   return out;
 }
 

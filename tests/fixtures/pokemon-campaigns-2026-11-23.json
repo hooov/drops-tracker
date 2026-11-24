@@ -1,0 +1,712 @@
+{
+ "note": "Captured 2026-11-23 from a channel page in DevTools, signed in, campaigns finished. ChannelDropsCampaigns and DropChannelCampaignsProgress, trimmed to the fields the extension reads: categories to one of 21, no watch times. owned: the IDs of this capture that the account's Inventory listed as owned (gameEventDrops); neither Night Out reward ID was.",
+ "list": [
+  {
+   "id": "3e7f0c98-893c-47a7-9044-1c61173b8f94",
+   "name": "Pokemon Evolutions",
+   "brandName": "",
+   "startAt": "2026-10-16T17:00:00Z",
+   "endAt": "2027-01-30T22:59:59.999Z",
+   "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/b6842090-ad12-450b-9a3d-79f53caeb19b.png",
+   "game": null,
+   "rewardGroups": [
+    {
+     "id": "0b44a09e-b792-11f1-8749-0a58a9feac02",
+     "name": "Haunter",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "61f46ca0-b7a5-11f1-af88-0a58a9feac02",
+       "name": "Haunter",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/fb0d904a-0a2c-46aa-a8b4-a681d3680cb5.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "0ef58891-b792-11f1-b0dd-0a58a9feac02",
+     "name": "Gengar",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "6c2583b2-b7a5-11f1-9a6f-0a58a9feac02",
+       "name": "Gengar",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/dadaa055-a916-4216-9500-9d3b8b1638dd.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "574a2f66-b3b0-11f1-937c-0a58a9feac02",
+     "name": "Charmeleon",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "80c2625f-b3b0-11f1-b4f9-0a58a9feac02",
+       "name": "Charmeleon",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/db620bb9-fa93-4f31-b6be-d52fa703fa3f.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "666a2011-b78d-11f1-8d96-0a58a9feac02",
+     "name": "Charizard",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "c305b744-b790-11f1-9c20-0a58a9feac02",
+       "name": "Charizard",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/7d3bdd1a-468b-4148-b28f-90ec2224c828.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "76a7521f-b78d-11f1-9a2a-0a58a9feac02",
+     "name": "Venusaur",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "b50ac496-b790-11f1-af88-0a58a9feac02",
+       "name": "Venusaur",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/41a7fd5c-4f5a-4833-81b4-4adde8ff5db3.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "7ffcdd67-b7a0-11f1-99c5-0a58a9feac02",
+     "name": "Pikachu",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "6fa2245b-b7a0-11f1-b1c3-0a58a9feac02",
+       "name": "Pikachu",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/91d1dbf3-5186-42b5-a2e2-61787dce8c8d.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "80c7bee0-b78d-11f1-9079-0a58a9feac02",
+     "name": "Wartortle",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "d2bdd8bb-b790-11f1-b2a2-0a58a9feac02",
+       "name": "Wartortle",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/b870a67d-78bf-4cb2-908a-210663b883f8.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "83c16151-b3ac-11f1-9193-0a58a9feac02",
+     "name": "Ivysaur",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "8cb4c678-b3aa-11f1-bb5f-0a58a9feac02",
+       "name": "Ivysaur",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/cc95530f-364c-4af2-b831-6766fd5f4323.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    },
+    {
+     "id": "8520b9d2-b78d-11f1-9b28-0a58a9feac02",
+     "name": "Blastoise",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "daff37ac-b790-11f1-8063-0a58a9feac02",
+       "name": "Blastoise",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/c26d93eb-75c5-40f9-84ca-fbd2689aab1a.png",
+       "distributionType": "BADGE"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "26547ffd-3b53-474c-b9ba-766fe4dfca83",
+   "name": "Pokémon Night Out Campaign",
+   "brandName": "Pokemon",
+   "startAt": "2026-10-16T17:00:00Z",
+   "endAt": "2026-11-23T22:59:59.999Z",
+   "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/674f4f9f-83e8-4357-a1ff-c16a599577aa.png",
+   "game": null,
+   "rewardGroups": [
+    {
+     "id": "a19378c9-b78e-11f1-b8d5-0a58a9feac02",
+     "name": "Gastly",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "59fcee3b-b7b0-11f1-9c20-0a58a9feac02",
+       "name": "Pokémon Night Out Themed Poke Ball",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/6fdf13c9-f98f-46cf-ad77-8d6b69557581.png",
+       "distributionType": "POOL"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "progress": [
+  {
+   "id": "3e7f0c98-893c-47a7-9044-1c61173b8f94",
+   "name": "Pokemon Evolutions",
+   "brandName": "",
+   "startAt": "2026-10-16T17:00:00Z",
+   "endAt": "2027-01-30T22:59:59.999Z",
+   "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/b6842090-ad12-450b-9a3d-79f53caeb19b.png",
+   "game": null,
+   "rewardGroups": [
+    {
+     "id": "0b44a09e-b792-11f1-8749-0a58a9feac02",
+     "name": "Haunter",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "61f46ca0-b7a5-11f1-af88-0a58a9feac02",
+       "name": "Haunter",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/fb0d904a-0a2c-46aa-a8b4-a681d3680cb5.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "0ef58891-b792-11f1-b0dd-0a58a9feac02",
+     "name": "Gengar",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "6c2583b2-b7a5-11f1-9a6f-0a58a9feac02",
+       "name": "Gengar",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/dadaa055-a916-4216-9500-9d3b8b1638dd.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "574a2f66-b3b0-11f1-937c-0a58a9feac02",
+     "name": "Charmeleon",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "80c2625f-b3b0-11f1-b4f9-0a58a9feac02",
+       "name": "Charmeleon",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/db620bb9-fa93-4f31-b6be-d52fa703fa3f.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "666a2011-b78d-11f1-8d96-0a58a9feac02",
+     "name": "Charizard",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "c305b744-b790-11f1-9c20-0a58a9feac02",
+       "name": "Charizard",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/7d3bdd1a-468b-4148-b28f-90ec2224c828.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "76a7521f-b78d-11f1-9a2a-0a58a9feac02",
+     "name": "Venusaur",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "b50ac496-b790-11f1-af88-0a58a9feac02",
+       "name": "Venusaur",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/41a7fd5c-4f5a-4833-81b4-4adde8ff5db3.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "7ffcdd67-b7a0-11f1-99c5-0a58a9feac02",
+     "name": "Pikachu",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "6fa2245b-b7a0-11f1-b1c3-0a58a9feac02",
+       "name": "Pikachu",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/91d1dbf3-5186-42b5-a2e2-61787dce8c8d.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "80c7bee0-b78d-11f1-9079-0a58a9feac02",
+     "name": "Wartortle",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "d2bdd8bb-b790-11f1-b2a2-0a58a9feac02",
+       "name": "Wartortle",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/b870a67d-78bf-4cb2-908a-210663b883f8.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "83c16151-b3ac-11f1-9193-0a58a9feac02",
+     "name": "Ivysaur",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "8cb4c678-b3aa-11f1-bb5f-0a58a9feac02",
+       "name": "Ivysaur",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/cc95530f-364c-4af2-b831-6766fd5f4323.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    },
+    {
+     "id": "8520b9d2-b78d-11f1-9b28-0a58a9feac02",
+     "name": "Blastoise",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "daff37ac-b790-11f1-8063-0a58a9feac02",
+       "name": "Blastoise",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/c26d93eb-75c5-40f9-84ca-fbd2689aab1a.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    }
+   ]
+  },
+  {
+   "id": "26547ffd-3b53-474c-b9ba-766fe4dfca83",
+   "name": "Pokémon Night Out Campaign",
+   "brandName": "Pokemon",
+   "startAt": "2026-10-16T17:00:00Z",
+   "endAt": "2026-11-23T22:59:59.999Z",
+   "imageURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/CAMPAIGN/674f4f9f-83e8-4357-a1ff-c16a599577aa.png",
+   "game": null,
+   "rewardGroups": [
+    {
+     "id": "a19378c9-b78e-11f1-b8d5-0a58a9feac02",
+     "name": "Gastly",
+     "progressCriteria": {
+      "requirementType": "WATCH",
+      "requirements": {
+       "minutesWatched": 20,
+       "subs": null
+      },
+      "repeatableConfig": {
+       "repeatableTimes": 3,
+       "resetIntervalSeconds": 86400,
+       "shouldCompleteAllRepeatsToEarn": true
+      },
+      "channels": null,
+      "categories": [
+       {
+        "id": "509658"
+       }
+      ]
+     },
+     "rewards": [
+      {
+       "id": "5130dfac-b7a5-11f1-93ac-0a58a9feac02",
+       "name": "Gastly",
+       "thumbnailURL": "https://static-cdn.jtvnw.net/twitch-quests-assets/REWARD/a2e16350-0781-437f-a3b6-11c1b3db7486.png",
+       "distributionType": "BADGE"
+      }
+     ],
+     "self": {
+      "status": "CLAIMED",
+      "currentMinutesWatched": 20,
+      "grantCount": 3
+     }
+    }
+   ]
+  }
+ ],
+ "owned": [
+  "61f46ca0-b7a5-11f1-af88-0a58a9feac02",
+  "6c2583b2-b7a5-11f1-9a6f-0a58a9feac02",
+  "80c2625f-b3b0-11f1-b4f9-0a58a9feac02",
+  "c305b744-b790-11f1-9c20-0a58a9feac02",
+  "b50ac496-b790-11f1-af88-0a58a9feac02",
+  "6fa2245b-b7a0-11f1-b1c3-0a58a9feac02",
+  "d2bdd8bb-b790-11f1-b2a2-0a58a9feac02",
+  "8cb4c678-b3aa-11f1-bb5f-0a58a9feac02",
+  "daff37ac-b790-11f1-8063-0a58a9feac02"
+ ]
+}

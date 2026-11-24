@@ -135,6 +135,10 @@ test('a next drop whose window opens later reads as blocked with its date', () =
   const { s } = runLaunch(6, { second: { ...chain, startAt: opens } });
   assert.equal(s.streams[0].channelState, 'blocked');
   assert.equal(s.streams[0].blockedOpens, Date.parse(opens));
+  // Twitch's own time is known from the first check: said at once, not after four minutes of "Checking".
+  const first = runLaunch(2, { second: { ...chain, startAt: opens } }).s;
+  assert.deepEqual([first.verdict.code, first.verdict.blocked], ['idle', true]);
+  assert.match(first.verdict.message, /^Charlie's next drop opens /);
 });
 
 test('a drop whose window closed unearned does not hide a later window: blocked, not finished', () => {

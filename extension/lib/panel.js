@@ -1,9 +1,9 @@
 // The details panel, shared by the chat chip and the toolbar popup. Layout and measurements
 // follow Twitch's own "Drops & More" panel; see panel.css.
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
-import { STALE_MS, channelDrops } from './chip.js';
+import { STALE_MS, channelDrops, leftCards, waitingText } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
-import { badgeSections } from './badges.js';
+import { badgeSections, unearnedBadges, closeFirst, badgesListError } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
 import { STALL_CAUSES, PLAYER_STATES, CHANNEL_STATES, verdictTone, canEarn, RATE_MIN_MINUTES } from './states.js';
@@ -62,7 +62,21 @@ const TEMPLATE = `
         <div id="dir-list" class="dir-list" tabindex="-1" hidden></div>
       </div>
     </div>
-    <div id="view-badges" role="tabpanel" aria-labelledby="tab-badges" hidden></div>
+    <div id="view-badges" role="tabpanel" aria-labelledby="tab-badges" hidden>
+      <div id="badge-channels"></div>
+      <div class="section">
+        <p class="strong label">Badges not earned yet</p>
+        <p class="sub">Sitewide, and game badges on channels you open.</p>
+        <div class="unearned-head">
+          <p id="unearned-status" class="sub" role="status"></p>
+          <button id="unearned-load" class="link" type="button">Load</button>
+        </div>
+        <p id="unearned-error" class="sub warn" hidden></p>
+        <p id="unearned-close" class="sub" hidden></p>
+        <div id="unearned-list" class="dir-list" tabindex="-1" hidden></div>
+        <p id="unearned-none" class="sub dir-empty" hidden></p>
+      </div>
+    </div>
     <div id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <div class="section">
       <div class="setting">
@@ -165,9 +179,16 @@ function ago(ms) {
   return `${Math.floor(m / 60)}h ${m % 60}m ago`;
 }
 
+/** How long "Checking" has lasted, beside its headline. Empty when the start is unknown or ahead. */
+export function waitedFor(since, now) {
+  if (!(since > 0) || since > now) return '';
+  const s = Math.round((now - since) / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-export function verdictText(state, now) {
+export function verdictText(state, now, login = null) {
   const v = state.verdict;
   const lastGood = state.lastOkAt ? ` Last good data ${ago(now - state.lastOkAt)}.` : '';
   switch (v.code) {
@@ -183,16 +204,18 @@ export function verdictText(state, now) {
       return [`${v.slow ? 'Earning slowly' : 'Earning'}${where}`, detail];
     }
     case 'waiting':
-      return ['Checking', 'Waiting for the first minute to land.'];
+      return ['Checking', waitingText(state, login)];
     case 'stalled':
       return ['Not counting', v.message];
     case 'idle':
       if (v.lost) return ['Stopped earning', v.message];
       // "Cannot check streams" is for failed lookups only: a campaign Twitch has not started was
       // shown under it (2026-11-13), which read as the extension failing.
+      if (v.unproven) return ['Cannot tell if finished', v.message];
       if (v.limited) return [v.badge ? 'Cannot track this badge' : v.blocked || v.unstarted ? 'Not counting yet' : 'Cannot check streams', v.message];
       if (v.badgeLeft) return ['Badge likely earned', v.message];
       if (v.dropLeft) return ['Drop likely earned', v.message];
+      if (v.rewardDone) return ['Campaign finished', v.message];
       // Twitch's numbers shown, nothing judged: see the reward channel state in states.js.
       if (v.reward) return ['Reward campaign', v.message];
       if (state.closedName) return ['Not earning', `You left ${state.closedName}, so nothing open can earn right now.`];
@@ -357,7 +380,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   });
   $('debug-copy').addEventListener('click', async () => {
     // Read fresh, so it is what is really stored rather than what this panel last saw.
-    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog', 'pageOps']);
+    const stored = await chrome.storage.local.get(['state', 'settings', 'hashes', 'autoReload', 'directory', 'minuteLog', 'pageOps', 'dayRewards']);
     await copyText($('debug-copy'), 'Copy debug info', JSON.stringify(debugBundle({ ...stored, version }, Date.now())));
   });
 
@@ -367,6 +390,15 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   let openRow = null;
   let lastState = null;
   const allShown = () => !$('view-all').hidden;
+  const badgesShown = () => !$('view-badges').hidden;
+  let seenBadges = []; // Storage seenBadges and claimedGroups, with their bounds (twitch.js).
+  let claimedGroups = [];
+  const openUnearned = new Set(); // Rows left open. Bound: the rows drawn (renderUnearned).
+  const keepBadges = (seen, claimed) => {
+    seenBadges = Array.isArray(seen) ? seen : [];
+    claimedGroups = Array.isArray(claimed) ? claimed : [];
+  };
+  const redrawBadges = () => { if (badgesShown() && lastState) renderBadges(lastState, Date.now()); };
 
   function renderDirectory(now) {
     const { rows, total } = directoryRows(directory, lastState?.active, $('dir-search').value, now);
@@ -381,7 +413,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('dir-status').hidden = !status;
     $('dir-error').textContent = directory?.error && !directoryLoading ? directoryError(directory.error) : '';
     $('dir-error').hidden = !$('dir-error').textContent;
-    $('dir-refresh').disabled = directoryLoading;
+    $('dir-refresh').setAttribute('aria-disabled', String(directoryLoading));
 
     const list = $('dir-list');
     list.hidden = !hasList;
@@ -437,6 +469,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   async function loadDirectory(force) {
     directoryLoading = true;
     renderDirectory(Date.now());
+    redrawBadges();
     let reply = null;
     try {
       reply = await chrome.runtime.sendMessage({ type: 'directory', force });
@@ -447,6 +480,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     if (reply) directory = reply;
     else if (directory?.at == null) directory = { campaigns: [], at: null, error: { kind: 'network' } }; // Never a blank tab.
     if (allShown()) renderDirectory(Date.now());
+    redrawBadges();
   }
 
   function showTab(name) {
@@ -458,7 +492,14 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const all = name === 'all';
     $('foot-link').textContent = all ? 'All Campaigns' : 'Inventory';
     $('foot-link').href = all ? CAMPAIGNS_PAGE : 'https://www.twitch.tv/drops/inventory';
-    if (name === 'badges' && lastState) renderBadges(lastState, Date.now());
+    if (name === 'badges') {
+      redrawBadges();
+      chrome.storage.local.get(['directory', 'seenBadges', 'claimedGroups']).then((r) => {
+        directory = r.directory ?? directory;
+        keepBadges(r.seenBadges, r.claimedGroups);
+        redrawBadges();
+      }).catch(() => {}); // The extension was reloaded under this panel: what is drawn stays.
+    }
     if (name === 'settings' && settings.devMode) renderDebug(lastState, Date.now());
     if (!all) return;
     chrome.storage.local.get('directory').then((r) => {
@@ -481,7 +522,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     showTab(name);
     $(`tab-${name}`).focus();
   });
-  $('dir-refresh').addEventListener('click', () => loadDirectory(true));
+  // aria-disabled while it loads, not disabled, which would drop the keyboard's place.
+  for (const id of ['dir-refresh', 'unearned-load']) {
+    $(id).addEventListener('click', () => { if (!directoryLoading) loadDirectory(true); });
+  }
   $('dir-search').addEventListener('input', () => renderDirectory(Date.now()));
   // Twitch's page shortcuts would otherwise take typed letters: f for fullscreen, m for mute.
   // Escape still closes the panel, since that listener runs before this one, on the way down.
@@ -490,9 +534,17 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   const onDirectory = (changes) => {
-    if (!changes.directory?.newValue) return;
-    directory = changes.directory.newValue;
-    if (allShown()) renderDirectory(Date.now());
+    if (changes.seenBadges || changes.claimedGroups) {
+      keepBadges(
+        changes.seenBadges ? changes.seenBadges.newValue : seenBadges,
+        changes.claimedGroups ? changes.claimedGroups.newValue : claimedGroups,
+      );
+    }
+    if (changes.directory?.newValue) {
+      directory = changes.directory.newValue;
+      if (allShown()) renderDirectory(Date.now());
+    }
+    if (changes.seenBadges || changes.claimedGroups || changes.directory) redrawBadges();
   };
   chrome.storage.onChanged.addListener(onDirectory);
 
@@ -500,16 +552,33 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const v = state.verdict;
     $('verdict').dataset.tone = toneOf(v);
     $('tab-mine').dataset.tone = toneOf(v);
-    const [title, detail] = verdictText(state, now);
+    const [title, detail] = verdictText(state, now, channelLogin?.() ?? null);
     $('verdict-title').textContent = title;
-    $('verdict-detail').textContent = detail;
-    $('verdict-detail').hidden = !detail;
+    // "Drop likely earned" sends the reader to their inventory, so the link sits with the sentence
+    // and not only in the footer. Rebuilt only on a change: a link replaced every second loses clicks.
+    const box = $('verdict-detail');
+    const toInventory = v.code === 'idle' && v.dropLeft === true;
+    const sig = `${toInventory ? 'inventory ' : ''}${detail}`;
+    if (box.dataset.sig !== sig) {
+      box.dataset.sig = sig;
+      box.textContent = detail;
+      if (toInventory) {
+        const link = el('a', 'link', 'Open inventory');
+        link.href = 'https://www.twitch.tv/drops/inventory';
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        box.append(' ', link);
+      }
+    }
+    box.hidden = !detail;
     const note = autoReloadNote(reloadMemo, state, now);
     $('auto-reload-note').textContent = note;
     $('auto-reload-note').hidden = !note;
     let age = '';
     if (v.code === 'stalled') age = span(Math.max(0, Math.round((now - v.since) / 60000)));
     else if (state.lastGainAt && v.code === 'earning') age = `+1m ${ago(now - state.lastGainAt)}`;
+    // How long it has been checking, where a hang shows how long it has hung.
+    else if (v.code === 'waiting') age = waitedFor(v.since, now);
     $('verdict-age').textContent = age;
     const action = $('verdict-action');
     // Which causes a reload can help is declared with the causes (STALL_CAUSES in states.js).
@@ -570,9 +639,84 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     }
   }
 
+  // Badges not earned yet. Read from storage only: showing the tab never opens a Twitch page, the
+  // Load button does, as All Drops does when its own tab is shown.
+  function renderUnearned(state, now) {
+    const rows = unearnedBadges({ state, seen: seenBadges, directory, claimed: claimedGroups }, now);
+    const hasList = directory?.at != null;
+    $('unearned-status').textContent = directoryLoading
+      ? 'Loading. A Twitch tab opens in the background for a moment.'
+      : hasList ? `Sitewide list updated ${ago(now - directory.at)}` : 'Sitewide list not loaded';
+    $('unearned-load').textContent = hasList ? 'Load again' : 'Load';
+    $('unearned-load').setAttribute('aria-disabled', String(directoryLoading));
+    $('unearned-error').textContent = directoryLoading ? '' : badgesListError(directory?.error);
+    $('unearned-error').hidden = !$('unearned-error').textContent;
+    // Never "all earned": it only knows the campaigns it has come across.
+    $('unearned-none').textContent = hasList || seenBadges.length ? 'None among the campaigns seen so far.' : '';
+    $('unearned-none').hidden = rows.length > 0 || !$('unearned-none').textContent;
+    $('unearned-close').textContent = closeFirst(rows, state);
+    $('unearned-close').hidden = !$('unearned-close').textContent;
+    const list = $('unearned-list');
+    list.hidden = !rows.length;
+    for (const id of openUnearned) if (!rows.some((r) => r.id === id)) openUnearned.delete(id);
+    // Minutes rising redraw this every minute, which must not throw the keyboard out of the list.
+    const held = list.getRootNode().activeElement;
+    const heldRow = list.contains(held) ? held.closest('.dir-row') : null;
+    const heldPart = held?.tagName === 'A' ? 'a' : 'summary';
+    setList(list, JSON.stringify(rows), () => rows.map((r) => {
+      const row = el('details', 'dir-row');
+      row.dataset.id = r.id;
+      row.open = openUnearned.has(r.id); // A poll redraws the list: what was open stays open.
+      row.addEventListener('toggle', () => { if (row.isConnected) openUnearned[row.open ? 'add' : 'delete'](r.id); });
+      const summary = el('summary');
+      const art = el('div', 'boxart');
+      if (r.art) {
+        const img = el('img');
+        img.loading = 'lazy';
+        img.src = r.art;
+        img.alt = '';
+        img.addEventListener('error', () => img.remove());
+        art.append(img);
+      }
+      const text = el('div', 'row-text');
+      text.append(el('p', 'strong ellipsis', r.name), el('p', 'sub', r.status));
+      if (r.watch) text.append(el('p', 'sub', r.watch));
+      if (r.late) text.append(el('p', 'sub warn', 'Cannot finish before it ends'));
+      text.append(el('p', 'sub ellipsis', r.ends));
+      summary.append(art, text);
+      if (r.next) summary.append(el('span', 'tag next', 'Next'));
+      const more = el('div', 'dir-more');
+      for (const m of r.missing) {
+        const said = [
+          m.unknown && r.kind === 'missing' ? 'cannot tell if earned' : '',
+          m.watch ?? '',
+          m.late ? 'cannot finish before it ends' : '',
+        ].filter(Boolean).join(', ');
+        more.append(el('p', 'sub', said ? `${m.name}: ${said}` : m.name));
+      }
+      if (r.more) more.append(el('p', 'sub', 'Some badges may need more than watching.'));
+      if (r.where) more.append(el('p', 'sub', r.where));
+      if (r.link) {
+        const links = el('div', 'dir-links');
+        const a = el('a', 'link', r.link.label);
+        a.href = r.link.href;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        links.append(a);
+        more.append(links);
+      }
+      row.append(summary, more);
+      return row;
+    }));
+    if (heldRow && !heldRow.isConnected) {
+      [...list.children].find((x) => x.dataset.id === heldRow.dataset.id)?.querySelector(heldPart)?.focus({ preventScroll: true });
+    }
+  }
+
   function renderBadges(state, now) {
     const sections = badgeSections(state.streams, channelLogin?.() ?? null, now, state.unplacedBadges);
-    setList($('view-badges'), JSON.stringify(sections), () => sections.map((sec) => {
+    renderUnearned(state, now);
+    setList($('badge-channels'), JSON.stringify(sections), () => sections.map((sec) => {
       const box = el('div', 'section');
       if (sec.title) box.append(el('p', 'strong label', sec.title));
       if (sec.note) box.append(el('p', 'sub', sec.note));
@@ -613,7 +757,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function renderDrops(state, now) {
-    const { drops: list, from } = channelDrops(state, channelLogin?.() ?? null, { pending: true });
+    const { drops: own, from } = channelDrops(state, channelLogin?.() ?? null, { pending: true });
+    // Likely earned: kept as a card. Not under "Watch Drops on <other tab>", where it would read as
+    // that tab's.
+    const list = from ? own : [...own, ...leftCards(state, channelLogin?.() ?? null)];
     $('drops-section').hidden = !list.length;
     $('drops-label').textContent = from ? `Watch Drops on ${from}` : 'Watch Drops';
     const ratio = state.rate?.watched >= RATE_MIN_MINUTES && state.rate.counted > 0 ? Math.min(1, state.rate.counted / state.rate.watched) : 1;
@@ -628,8 +775,12 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       // Done for today (tracker.js restingDrops): full, with a timer to the next day beside the bar.
       if (d.opensAt != null) {
         const when = d.opensAt - now < 86400000 ? clock(d.opensAt) : `${day(d.opensAt)}, ${clock(d.opensAt)}`;
-        return { ...d, minutes: d.required, pct: 100, line: `Day complete, ${d.required}/${d.required}. Next day at ${when}` };
+        // "Next day at 9:21 PM" read as tomorrow when it was four hours off (walk-through, 2026-11-23).
+        return { ...d, minutes: d.required, pct: 100, line: `Day complete, ${d.required}/${d.required}. Opens again at ${when}` };
       }
+      // Likely earned (chip.js leftCards): full, with the reading it left at in words, since a bar
+      // one minute short beside "probably earned" reads as missed.
+      if (d.likely) return { ...d, minutes: d.required, pct: 100, line: `Probably earned. Left Twitch's list at ${d.read}/${d.required}` };
       // No minutes reported: the whole requirement, no bar and no finish time (as the Badges tab).
       // A sibling can tick with the drop the session names (facts), so the full time is an upper bound.
       if (d.minutes == null) return { ...d, line: d.runningTotal ? `Needs ${span(d.required)}, progress not readable here` : `Watch up to ${span(d.required)} to earn` };
@@ -664,14 +815,17 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       bar.setAttribute('aria-valuenow', String(d.pct));
       bar.setAttribute('aria-valuemin', '0');
       bar.setAttribute('aria-valuemax', '100');
-      bar.setAttribute('aria-label', `${d.name}: ${d.minutes} of ${d.required} minutes`);
-      bar.title = `${d.minutes} of ${d.required} minutes`;
+      bar.setAttribute('aria-label', d.likely ? `${d.name}: probably earned` : `${d.name}: ${d.minutes} of ${d.required} minutes`);
+      bar.title = d.likely ? `Last shown at ${d.read} of ${d.required} minutes` : `${d.minutes} of ${d.required} minutes`;
       const fill = el('i');
       fill.style.width = `${d.pct}%`;
       bar.append(fill);
       // The exact minutes at a glance; they used to show only on hover.
       const barRow = el('div', 'bar-row');
-      if (d.opensAt != null) {
+      if (d.likely) {
+        // The reading is in the line above: "59/60" beside a full bar would contradict it.
+        barRow.append(bar);
+      } else if (d.opensAt != null) {
         // The timer takes the minutes' place (they move to the line above). Its text is set below
         // on every render, so the card is not rebuilt each second.
         const pill = el('span', 'timer-pill');
@@ -706,12 +860,15 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       if (s.credited && earning) {
         // Same rule as the headline: amber only when another tab can earn (2026-11-20).
         const w = state.verdict.wasted;
-        if (w?.reason === 'earned') return { ...s, label: 'Already earned', tone: w.actionable ? 'warn' : '' };
+        // The headline's words (verdictText).
+        if (w?.reason === 'earned') return { ...s, label: w.opens != null && !w.actionable ? 'Done for today' : 'Already earned', tone: w.actionable ? 'warn' : '' };
         return { ...s, label: 'Earning', tone: 'ok' };
       }
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
       // "Not credited" says another channel is getting it, which needs one to be.
       if (s.channelState === 'eligible' && !anyCredited) return { ...s, label: 'Can earn', tone: '' };
+      // The headline's own words: "Campaign finished" under "Drop likely earned" said it for certain.
+      if (s.channelState === 'finished' && s.leftDrop) return { ...s, label: 'Drop likely earned', tone: '' };
       return { ...s, label: CHANNEL_STATES[s.channelState]?.label, tone: '' };
     });
     setList($('streams'), JSON.stringify(rows.map((r) => [r.tabId, r.displayName, r.label, r.tone])), () => rows.map((s) => {
@@ -720,7 +877,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       text.append(el('p', 'strong ellipsis', s.displayName || 'Twitch page'), el('p', `sub ellipsis ${s.tone}`, s.label));
       row.append(text);
       // No reload on the stream that is earning: it only invites breaking what works.
-      if (s.login && s.label !== 'Earning') {
+      // Nor on one done for today: nothing is wrong with it.
+      if (s.login && s.label !== 'Earning' && s.label !== 'Done for today') {
         const btn = el('button', 'round');
         btn.type = 'button';
         btn.innerHTML = RELOAD_ICON;

@@ -91,7 +91,7 @@ test('today\'s already earned: quiet, and the next one starts when the window en
   for (let i = 0; i < 6; i++) s = await poll(s, T + i * MIN, i, gta(withDvd(60)));
   assert.equal(s.streams[0].channelState, 'reward', 'good news, not an amber "not counting yet" every day');
   assert.equal(s.streams[0].rewardOpens, WINDOW_END);
-  assert.match(s.verdict.message, /Twitch says today's reward is earned\. The next one can start at /);
+  assert.match(s.verdict.message, /Twitch says today's reward is earned\. The next one opens at /);
   assert.equal(warning(s, T + 6 * MIN), null);
 });
 
