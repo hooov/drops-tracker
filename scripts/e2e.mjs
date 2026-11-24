@@ -807,6 +807,14 @@ try {
   await rewardRow('finished', { code: 'idle', hasStreams: true });
   await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Not earning');
   assert.match(await popup.textContent('#streams'), /Campaign finished/);
+  // Seen finishing (rewardsDone): the headline says so, in grey, with no other tab's progress.
+  const rewardDoneMsg = 'You have earned every watch reward in GTAVI Launch Celebration.';
+  await rewardRow('finished', { code: 'idle', hasStreams: true, rewardDone: true, message: rewardDoneMsg });
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Campaign finished');
+  assert.equal(await popup.textContent('#verdict-detail'), rewardDoneMsg);
+  assert.equal(await popup.getAttribute('#verdict', 'data-tone'), 'idle');
+  assert.doesNotMatch(await popup.textContent('body'), /outside this browser|Not earning/);
+  await shot('13-campaign-finished');
   s = await earningNow();
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
   step('finished reward campaign: "Campaign finished", or "Cannot tell if finished" in grey without the page\'s answer');

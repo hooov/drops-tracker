@@ -187,8 +187,8 @@ function runningView(v, tone, rate, label, pct, progress, credited) {
     return { tone, text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
   }
   // A reward channel is not known to be idle: Twitch's numbers there are shown, not judged.
-  // Likely earned: the evidence, not "Not earning right now".
-  if (v.reward || v.dropLeft) return { tone, text: label || 'Drops', pct, title: `${progress} ${v.message}`.trim() };
+  // Likely earned, or finished: the evidence, not "Not earning right now".
+  if (v.reward || v.dropLeft || v.rewardDone) return { tone, text: label || 'Drops', pct, title: `${progress} ${v.message}`.trim() };
   return { tone, text: label || 'Drops', pct, title: `${progress} Not earning right now.`.trim() };
 }
 

@@ -12,6 +12,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 |---|---|
 | Wrong headline in the panel ("Earning", "Not counting", "Stopped earning", "Cannot track", "Badge likely earned", "Drop likely earned") or wrong chip colour | [Verdict](#1-verdict) |
 | A drop with no claim step (a BADGE reward) finished and nothing was said, or "Drop likely earned" on one not earned | [Channel state](#4-channel-state), `state.leftDrops` |
+| "Minutes are rising from a stream outside this browser" or another drop's percentage right after a reward campaign finished, or finishing one said nothing | [Channel state](#4-channel-state), `state.rewardsDone` |
 | "Cannot tell if finished", or a finished reward campaign reading "Not counting yet" | [Channel state](#4-channel-state), `reward_unproven` |
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
@@ -35,16 +36,20 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 - `signed_out`, `api_changed`, `error`: from the poll's error kind. That branch returns early, so
   `tracking`, `lostAt`, `streams` and `session` keep the previous poll's values: unknown is never stalled.
 - `earning`: minutes rose within the limit (`STALL_MS`, `DEAD_PLAYER_MS` when every player is
-  visibly dead, `NO_STREAM_MS` with no eligible tab). Flags: `slow` (rate under `SLOW_BELOW` over
+  visibly dead, `NO_STREAM_MS` with no eligible tab), unless no tab can earn and the channel that
+  gain landed on (`state.lastGainLogin`) has had its reward campaign seen finishing since. Flags: `slow` (rate under `SLOW_BELOW` over
   `RATE_MIN_MINUTES`, counted only since the credited channel last changed, carried as `rate`; see
   section 10), `wasted` (see below), `channel` (Twitch's session name).
 - `waiting`: something can earn and the first minute has not landed.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
-- `idle`: nothing open can earn. `lost` (was earning, the tab can no longer), `limited` (cannot
+- `idle`: nothing open can earn. `lost` (was earning, the tab can no longer; not when the tab that
+  was earning, by the last session or `lastGainLogin`, is itself `finished`), `limited` (cannot
   tell: lookups failed, a badge timer, or the next drop cannot count yet), `badgeLeft` (a channel
   is `badge_left`: "Badge likely earned", grey, no warning, the last reading said), `dropLeft` (a
   `finished` channel whose game drop is in `state.leftDrops`: "Drop likely earned", the same, and
-  the chip's title carries the message). Only idle carries these.
+  the chip's title carries the message), `rewardDone` (the `finished` channel the last minute
+  landed on, whose reward campaign is in `state.rewardsDone` since: "Campaign finished", grey, the
+  same, until a minute lands anywhere; after `lost` and a tab just left). Only idle carries these.
   `lost` lasts `LOST_SHOWN_MS` (10 min) from `lostAt`, then settles to a plain idle and does not
   come back until something earns again: left amber with nothing to act on, it read as a fault.
 - Which tab an idle headline names (not counting yet, reward, badge likely earned): the tab in
@@ -150,6 +155,15 @@ campaign ends), which `parseClaimedGroups()` fills from the channel page's
 `DropChannelCampaignsProgress` answer (`page-hook.js`): CLAIMED with every repeat granted. A fresh
 answer replaces its own groups, so a flag it no longer supports (another account) goes; one with an
 error changes nothing. Checked last, so minutes or an in-progress reading win over a flag.
+
+`state.rewardsDone` (`rewardsDone()`): reward campaigns seen going from in progress to finished.
+`state.rewardsCounting` (`rewardsCounting()`) is each reward campaign an open channel offers that the
+reward inventory listed. One of those moves to `rewardsDone` when a later answer (`state.rewardInv`,
+held through failed calls; not one cut short at `MAX_REWARD_GROUPS`) leaves it out, nothing in `active` or `pending` reads it, and
+every watch group is owned or claimed. One finished before it was ever seen counting is in neither:
+its channel reads `finished` with the plain "Not earning". `events()` notifies once per campaign
+("Campaign finished", type `earned`), remembered in `state.notifiedRewards`. An entry ends when the
+inventory lists the campaign again or it ends; newest 20 kept in each list.
 
 `state.leftBadges` (`leftBadges()`): badge groups seen leaving the in-progress list, `{ minutes,
 readAt }` of their last reading. Only a transition counts: listed in the last good answer, absent

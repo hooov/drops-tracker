@@ -77,7 +77,8 @@ export const VERDICT_CODES = {
   earning: ['channel', 'slow', 'wasted', 'rate'], // rate: with slow, the credited channel's own count.
   stalled: ['since', 'cause', 'message', 'tabId', 'otherTabId'],
   // dropLeft: a game drop left every list near its requirement (tracker.js leftDrops).
-  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'unproven', 'reward', 'badgeLeft', 'dropLeft', 'since', 'message'],
+  // rewardDone: a reward campaign was seen going from in progress to finished (tracker.js rewardsDone).
+  idle: ['hasStreams', 'lost', 'limited', 'badge', 'blocked', 'unstarted', 'unproven', 'reward', 'badgeLeft', 'dropLeft', 'rewardDone', 'since', 'message'],
   signed_out: ['message'],
   api_changed: ['message'],
   error: ['message'],
