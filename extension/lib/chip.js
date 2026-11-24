@@ -108,6 +108,17 @@ export function leftCards(state, login = null) {
 }
 
 /**
+ * The line under "Checking", in the panel and the chip's title. "First" only before anything has
+ * counted: on a drop already at 45 of 120 it read as starting over. And how long a wait is normal,
+ * which nothing said (walk-through, 2026-11-23). The pace is the measured one: credit lands about
+ * every 60 seconds (tracker.js STALL_MS).
+ */
+export function waitingText(state) {
+  const begun = state?.lastGainAt != null || (state?.active || []).some((d) => d.minutes > 0);
+  return `Waiting for the ${begun ? 'next' : 'first'} minute to land. Twitch adds one about every minute.`;
+}
+
+/**
  * What the chip shows. `claims` is how many earned drops wait to be claimed, the same list as the
  * panel's "Ready to claim", drawn as a purple count (inside the ring beside the label, or on its
  * corner when chat is narrow) and never as the ring's colour: amber for a reward waiting read as
@@ -174,14 +185,14 @@ function chipViewOf(state, now, login) {
   }
   // Nothing left to earn here, only a reward: a full purple ring, not a warning.
   if (claim && !top) return { tone: 'info', text: connectOnly ? 'Connect' : 'Claim', pct: 100, title: claimNote.trim() };
-  const view = runningView(v, tone, state.rate, label, pct, progress, login && login === state.session?.login);
+  const view = runningView(v, tone, state.rate, label, pct, progress, login && login === state.session?.login, waitingText(state));
   // A claim can wait a long time, so it must not hide the progress of the next drop or change what
   // the ring's colour says about earning. The count says it instead.
   return claim ? { ...view, title: `${claimNote}${view.title}` } : view;
 }
 
 // credited: this tab is the channel Twitch is crediting.
-function runningView(v, tone, rate, label, pct, progress, credited) {
+function runningView(v, tone, rate, label, pct, progress, credited, waitLine) {
   if (v.code === 'earning') {
     const where = v.channel ? ` on ${v.channel}` : '';
     if (v.wasted) {
@@ -203,7 +214,7 @@ function runningView(v, tone, rate, label, pct, progress, credited) {
   // Before the first poll lands. It used to fall through to "Not earning right now" in grey.
   if (v.code === 'starting') return { tone, text: label || 'Drops', pct, title: 'Checking your Drops progress.' };
   if (v.code === 'waiting') {
-    return { tone, text: label || 'Drops', pct, title: `${progress} Waiting for the first minute to land.`.trim() };
+    return { tone, text: label || 'Drops', pct, title: `${progress} ${waitLine}`.trim() };
   }
   // A reward channel is not known to be idle: Twitch's numbers there are shown, not judged.
   // Likely earned, or finished: the evidence, not "Not earning right now".

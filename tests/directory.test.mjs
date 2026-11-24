@@ -10,9 +10,10 @@ test('countdown: days and hours, hours and minutes, then seconds in the last hou
   assert.equal(countdown(at, before(26 * 3600 + 5)), '1d 2h');
   assert.equal(countdown(at, before(3 * 3600 + 59 * 60 + 30)), '3h 59m');
   assert.equal(countdown(at, before(3600)), '1h 0m');
-  assert.equal(countdown(at, before(3599)), '59:59');
-  assert.equal(countdown(at, before(34 * 60 + 12)), '34:12');
-  assert.equal(countdown(at, before(0.4)), '0:01', 'a part second still to go is not open yet');
+  assert.equal(countdown(at, before(3599)), '59m 59s');
+  assert.equal(countdown(at, before(34 * 60 + 12)), '34m 12s');
+  assert.equal(countdown(at, before(89)), '1m 29s', 'not "1:29", which read as an hour and a half');
+  assert.equal(countdown(at, before(0.4)), '1s', 'a part second still to go is not open yet');
   assert.equal(countdown(at, at), 'Open now');
   assert.equal(countdown(at, at + 5000), 'Open now', 'until the next poll picks the new day up');
   assert.equal(countdown(NaN, at), 'Open now', 'never "NaN:NaN"');

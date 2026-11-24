@@ -1384,7 +1384,11 @@ export function update(prev, obs, now) {
           : new Date(first.blockedOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`
         : `${first.displayName}'s next drop has requirements not met yet. An earlier drop may need claiming first.`,
     }[first.channelState];
-    s.verdict = now - since < STALL_MS
+    // The wait is for what a few more polls may settle. A next drop with an opening time from
+    // Twitch is already settled: "Checking" for four minutes first said less than was known
+    // (walk-through, 2026-11-23). The other three cases keep their wait.
+    const known = first.channelState === 'blocked' && first.blockedOpens != null;
+    s.verdict = now - since < STALL_MS && !known
       ? { code: 'waiting', since }
       : {
         code: 'idle',

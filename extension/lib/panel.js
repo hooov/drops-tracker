@@ -1,7 +1,7 @@
 // The details panel, shared by the chat chip and the toolbar popup. Layout and measurements
 // follow Twitch's own "Drops & More" panel; see panel.css.
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
-import { STALE_MS, channelDrops, leftCards } from './chip.js';
+import { STALE_MS, channelDrops, leftCards, waitingText } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
 import { badgeSections } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
@@ -165,6 +165,13 @@ function ago(ms) {
   return `${Math.floor(m / 60)}h ${m % 60}m ago`;
 }
 
+/** How long "Checking" has lasted, beside its headline. Empty when the start is unknown or ahead. */
+export function waitedFor(since, now) {
+  if (!(since > 0) || since > now) return '';
+  const s = Math.round((now - since) / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 export function verdictText(state, now) {
@@ -183,7 +190,7 @@ export function verdictText(state, now) {
       return [`${v.slow ? 'Earning slowly' : 'Earning'}${where}`, detail];
     }
     case 'waiting':
-      return ['Checking', 'Waiting for the first minute to land.'];
+      return ['Checking', waitingText(state)];
     case 'stalled':
       return ['Not counting', v.message];
     case 'idle':
@@ -527,6 +534,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     let age = '';
     if (v.code === 'stalled') age = span(Math.max(0, Math.round((now - v.since) / 60000)));
     else if (state.lastGainAt && v.code === 'earning') age = `+1m ${ago(now - state.lastGainAt)}`;
+    // How long it has been checking, where a hang shows how long it has hung.
+    else if (v.code === 'waiting') age = waitedFor(v.since, now);
     $('verdict-age').textContent = age;
     const action = $('verdict-action');
     // Which causes a reload can help is declared with the causes (STALL_CAUSES in states.js).
@@ -733,7 +742,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       if (s.credited && earning) {
         // Same rule as the headline: amber only when another tab can earn (2026-11-20).
         const w = state.verdict.wasted;
-        if (w?.reason === 'earned') return { ...s, label: 'Already earned', tone: w.actionable ? 'warn' : '' };
+        // The headline's words (verdictText), and no Reload: the tab works, and Twitch credits it.
+        if (w?.reason === 'earned') return { ...s, label: w.opens != null && !w.actionable ? 'Done for today' : 'Already earned', tone: w.actionable ? 'warn' : '', noReload: true };
         return { ...s, label: 'Earning', tone: 'ok' };
       }
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
@@ -749,7 +759,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       text.append(el('p', 'strong ellipsis', s.displayName || 'Twitch page'), el('p', `sub ellipsis ${s.tone}`, s.label));
       row.append(text);
       // No reload on the stream that is earning: it only invites breaking what works.
-      if (s.login && s.label !== 'Earning') {
+      if (s.login && s.label !== 'Earning' && !s.noReload) {
         const btn = el('button', 'round');
         btn.type = 'button';
         btn.innerHTML = RELOAD_ICON;

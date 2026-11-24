@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { verdictTone, TONE_COLORS, STALL_CAUSES } from '../extension/lib/states.js';
 import { badge, warning } from '../extension/lib/tracker.js';
 import { chipView } from '../extension/lib/chip.js';
-import { verdictText } from '../extension/lib/panel.js';
+import { verdictText, waitedFor } from '../extension/lib/panel.js';
 
 const NOW = Date.parse('2026-11-20T18:00:00Z');
 const MIN = 60000;
@@ -46,6 +46,20 @@ const rows = [
   ['reward campaign', state({ code: 'idle', hasStreams: true, reward: true, message: 'x' }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
   ['not earning', state({ code: 'idle', hasStreams: true }), { tone: 'idle', chip: '35%', tb: '', warns: false }],
 ];
+
+// Walk-through, 2026-11-23: "Waiting for the first minute to land" on a drop at 45 of 120, with no
+// word on how long a wait is normal or how long this one had lasted.
+test('checking: "first" only before anything counted, the normal pace, and how long so far', () => {
+  const PACE = 'Twitch adds one about every minute.';
+  const fresh = state({ code: 'waiting', since: NOW - 90000 }, { active: [{ ...drop, minutes: 0, pct: 0, remaining: 60 }] });
+  assert.deepEqual(verdictText(fresh, NOW), ['Checking', `Waiting for the first minute to land. ${PACE}`]);
+  const begun = state({ code: 'waiting', since: NOW - 90000 });
+  assert.deepEqual(verdictText(begun, NOW), ['Checking', `Waiting for the next minute to land. ${PACE}`]);
+  assert.equal(chipView(begun, NOW, 'foxtrot').title, `GTA DVD Chest: 21/60 min. Waiting for the next minute to land. ${PACE}`);
+  const earnedBefore = state({ code: 'waiting', since: NOW - 90000 }, { active: [], lastGainAt: NOW - 60 * MIN });
+  assert.match(verdictText(earnedBefore, NOW)[1], /^Waiting for the next minute/);
+  assert.deepEqual([waitedFor(NOW - 45000, NOW), waitedFor(NOW - 90000, NOW), waitedFor(undefined, NOW), waitedFor(NOW + MIN, NOW)], ['45s', '1m 30s', '', '']);
+});
 
 for (const [name, s, want] of rows) {
   test(`${name}: one colour on panel, chip and toolbar`, () => {

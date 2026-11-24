@@ -40,7 +40,9 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
   gain landed on (`state.lastGainLogin`) has had its reward campaign seen finishing since. Flags: `slow` (rate under `SLOW_BELOW` over
   `RATE_MIN_MINUTES`, counted only since the credited channel last changed, carried as `rate`; see
   section 10), `wasted` (see below), `channel` (Twitch's session name).
-- `waiting`: something can earn and the first minute has not landed.
+- `waiting`: something can earn and the first minute has not landed. Also the first `STALL_MS` of
+  a channel that cannot count yet (`unstarted`, `reward_unproven`, `badge_unseen`, `blocked`),
+  except a `blocked` one with `blockedOpens`: Twitch's own opening time is said at once.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
 - `idle`: nothing open can earn. `lost` (was earning, the tab can no longer; not when the tab that
   was earning, by the last session or `lastGainLogin`, is itself `finished` or `badge_left`; judged

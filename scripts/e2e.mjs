@@ -221,6 +221,11 @@ try {
   assert.equal(s.verdict.code, 'waiting');
   assert.equal(s.streams.length, 2);
   assert.equal(s.streams.every((t) => t.playerState === 'playing'), true);
+  // "Checking" says what it waits for, how long that normally takes, and how long it has been.
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Checking');
+  assert.match(await popup.textContent('#verdict-detail'), /^Waiting for the (first|next) minute to land\. Twitch adds one about every minute\.$/);
+  await popup.waitForFunction(() => /^(\d+m )?\d+s$/.test(document.querySelector('#verdict-age').textContent));
+  await shot('1b-checking');
   step('injection reads real video state from both tabs; first poll says Checking');
 
   // A channel change inside Twitch's page, with no reload and no poll asked for by this test: the
@@ -777,6 +782,23 @@ try {
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'idle');
   assert.equal(await popup.textContent('#verdict-title'), 'Already earned on AlphaTV');
   assert.equal(await popup.textContent('#verdict-detail'), doneMsg);
+  // Its row says the same and offers no Reload: the tab works, there is nothing to fix.
+  // The credited tab playing (the hang steps above left its player frozen, which a row says first).
+  const doneRow = () => popup.$eval('#streams .row', (r) => ({ text: r.textContent, buttons: r.querySelectorAll('button').length }));
+  const creditedDone = (message, opens) => popup.evaluate(async ([m, o]) => {
+    const { state } = await chrome.storage.local.get('state');
+    const streams = [{ ...state.streams[0], channelState: 'reward', playerState: 'playing', credited: true }, ...state.streams.slice(1)];
+    await chrome.storage.local.set({ state: { ...state, streams, verdict: { ...state.verdict, code: 'earning', wasted: { reason: 'earned', channel: 'AlphaTV', name: 'loyalty badge', opens: o == null ? null : Date.now() + o, actionable: false, message: m } } } });
+  }, [message, opens]);
+  await creditedDone(doneMsg, null);
+  await popup.waitForFunction(() => /Already earned/.test(document.querySelector('#streams .row').textContent));
+  assert.equal((await doneRow()).buttons, 0, 'no Reload on a tab that is done');
+  // A daily drop done for today: the row uses the headline's words, not "Already earned".
+  await creditedDone('Day 3 Crate is earned for today. The next one opens at 9:21 PM.', 4 * 3600000);
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Done for today on AlphaTV');
+  await popup.waitForFunction(() => /Done for today/.test(document.querySelector('#streams .row').textContent));
+  assert.deepEqual([/Already earned/.test((await doneRow()).text), (await doneRow()).buttons], [false, 0]);
+  await shot('13-done-for-today');
   const wastedMsg = "AlphaTV's loyalty badge is already earned, but Twitch is still crediting it, so these minutes do nothing. Bravo can earn Marvel Rivals: close or pause AlphaTV.";
   await popup.evaluate(async (message) => {
     const { state } = await chrome.storage.local.get('state');
@@ -966,7 +988,7 @@ try {
   assert.equal(rest1.fill, '100%', 'a full bar');
   assert.equal(rest1.minutes, 0, 'the timer takes the minutes\' place');
   assert.ok(rest1.clock, 'with a clock');
-  assert.match(rest1.left, /^1:[0-3]\d$/, `about 1:30 left, got ${rest1.left}`);
+  assert.match(rest1.left, /^1m [0-3]?\ds$/, `about 1m 30s left, got ${rest1.left}`);
   await until(alpha, (l) => {
     const pill = document.getElementById('drops-tracker-panel').shadowRoot.querySelector('#drops .timer-pill .timer-left');
     return pill && pill.textContent !== l;

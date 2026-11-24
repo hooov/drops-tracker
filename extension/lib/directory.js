@@ -24,7 +24,8 @@ export function countdown(at, now) {
   if (!(s > 0)) return 'Open now';
   if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
   if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  // With units, as the lines above: "1:29" beside "4h 11m" read as an hour and a half.
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
 
 export function isFresh(dir, now) {
