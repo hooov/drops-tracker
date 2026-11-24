@@ -282,8 +282,14 @@ days and one reward for every repeat (`all`: `shouldCompleteAllRepeatsToEarn`, n
 extension). "Close <channel> first" (`closeFirst()`): verdict `earning`, the session's channel open
 here, and neither crediting nor carrying the Next campaign.
 
-Known limits: a switch of account with no poll signed out in between can show the last account's badges
-and progress until its own are read; two categories can share a name, and the link opens the one Twitch
+A switch of account with no poll signed out in between clears `wholeAt` and `rewardSeen` too
+(`obs.accountChanged`). Each poll compares a fingerprint of the sign-in (`loginPrint()`: the start of
+its SHA-256) with the last poll's, in `chrome.storage.session` (one value, in memory, gone when the
+browser closes; nothing to compare with is not a change). A new sign-in of the same account clears them
+too, which only reads as unknown until the next answer.
+
+Known limits: after a switch of account, badges the last one owned read as owned until a whole list of
+the new one's is read, and rewards its channel pages called claimed until a page answers; two categories can share a name, and the link opens the one Twitch
 picks; an account that owns nothing may be answered `null` (not captured), which reads as unknown. A
 badge that needs more than its own minutes (GTAVI's Golden Iguana: all 12 rewards) can be Next while
 only its sub rewards are left, when nothing says its days are finished. Granted days part-way through a

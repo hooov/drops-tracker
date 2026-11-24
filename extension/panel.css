@@ -91,7 +91,7 @@ button.link { padding: 0; }
 .tag.next { color: var(--dt-text); }
 #unearned-close { margin: 4px 0; }
 .unearned-head .link { flex: none; }
-.unearned-head .link:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+.unearned-head .link[aria-disabled="true"] { opacity: 0.5; cursor: default; text-decoration: none; }
 
 /* All Drops */
 .dir-head { display: flex; align-items: center; gap: 4px; }
@@ -133,7 +133,7 @@ button.link { padding: 0; }
 .dir-more { padding: 4px 2px 8px 49px; }
 .dir-links { display: flex; gap: 12px; margin-top: 4px; }
 .dir-empty { padding: 8px 2px; }
-.round:disabled { opacity: 0.5; cursor: default; background: none; }
+.round:disabled, .round[aria-disabled="true"] { opacity: 0.5; cursor: default; background: none; }
 
 /* Status */
 .status { --tone: var(--dt-idle); }

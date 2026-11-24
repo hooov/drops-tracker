@@ -1,4 +1,4 @@
-import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, mergeSeenBadges, TwitchError } from './lib/twitch.js';
+import { fetchSnapshot, extractHashes, parseLogin, parseDirectory, parseDayRewards, mergeDayRewards, parseClaimedGroups, mergeClaimedGroups, mergeSeenBadges, loginPrint, TwitchError } from './lib/twitch.js';
 import { update, events, badge, warning, rewardsDue } from './lib/tracker.js';
 import { normalize, notifiable, refreshDue, autoReloadStep, DROPS_PAGES } from './lib/settings.js';
 import { CAMPAIGNS_PAGE, LOAD_TIMEOUT_MS, isFresh, failedDirectory } from './lib/directory.js';
@@ -184,6 +184,22 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   });
 }, { urls: ['https://gql.twitch.tv/*'], types: ['xmlhttprequest'] }, ['requestBody']);
 
+/**
+ * Whether the sign-in is another one than the last poll's, from its fingerprint (twitch.js
+ * loginPrint). In chrome.storage.session: one value, in memory, gone when the browser closes. No
+ * cookie event says it: Chrome sends none for a .twitch.tv cookie to an extension that has only
+ * www.twitch.tv (tried 2026-11-24). Nothing to compare with is not a change.
+ */
+async function checkLogin(token) {
+  try {
+    const print = await loginPrint(token);
+    const { loginPrint: before } = await chrome.storage.session.get('loginPrint');
+    return { loginPrint: print, accountChanged: !!before && before !== print };
+  } catch {
+    return {}; // Must never stop tracking.
+  }
+}
+
 async function observe(prev) {
   const cookie = await chrome.cookies.get({ url: 'https://www.twitch.tv', name: 'auth-token' });
   if (!cookie?.value) {
@@ -193,6 +209,7 @@ async function observe(prev) {
       ? { error: { kind: 'api_changed', message: 'Twitch changed how it stores your login' } }
       : { error: { kind: 'auth', message: 'Not logged in to Twitch in this browser' } };
   }
+  const login = await checkLogin(cookie.value);
   const tabs = await readStreams();
   // Keep channel pages, plus non-channel pages only if they are really playing video (front page).
   const relevant = tabs.filter((t) => t.login || (t.player?.hasVideo && !t.player.paused));
@@ -204,6 +221,7 @@ async function observe(prev) {
     const snap = await fetchSnapshot(cookie.value, relevant.map((t) => t.login).filter(Boolean), fetch, hashes ?? {}, { askRewards });
     await saveWorkingHashes(snap.working);
     return {
+      ...login,
       campaigns: snap.campaigns,
       rewards: snap.rewards,
       session: snap.session,
@@ -215,8 +233,8 @@ async function observe(prev) {
       streams: relevant.map((t) => ({ ...t, channel: t.login ? snap.channels[t.login] : null })),
     };
   } catch (e) {
-    if (e instanceof TwitchError) return { error: { kind: e.kind, message: e.message } };
-    return { error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } };
+    if (e instanceof TwitchError) return { ...login, error: { kind: e.kind, message: e.message } };
+    return { ...login, error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } };
   }
 }
 
@@ -359,10 +377,12 @@ async function pollOnce() {
   try {
     next = update(prev, obs, now);
   } catch {
-    next = update(prev, { error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }, now);
+    next = update(prev, { accountChanged: obs.accountChanged, error: { kind: 'bad_response', message: 'Unexpected data from Twitch' } }, now);
   }
   const evs = events(prev, next, now);
   await chrome.storage.local.set({ state: next });
+  // After the state: a worker stopped in between sees the change again, and clears again.
+  if (obs.loginPrint) await chrome.storage.session.set({ loginPrint: obs.loginPrint }).catch(() => {});
   await recordMinute(prev, obs, next, now).catch(() => {});
   await rememberBadges(obs, now).catch(() => {});
   // Claim reminders off: no claim notification, no CLM. Claims are still marked as notified, so

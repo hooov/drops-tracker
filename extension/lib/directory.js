@@ -106,7 +106,7 @@ export function directoryRows(dir, mine, query, now) {
         pct: pct ?? null,
         // The furthest drop still being earned, not the campaign: earned drops are not in the list.
         tag: pct != null ? `Next drop ${pct}%` : (c.linked ? 'Linked' : ''),
-        browseUrl: c.kind === 'reward' ? null : `https://www.twitch.tv/directory/game/${encodeURIComponent(c.game)}`,
+        browseUrl: c.kind === 'reward' ? null : categoryUrl(c.game),
       };
     })
     .sort((a, b) => (

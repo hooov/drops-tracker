@@ -152,7 +152,7 @@ Before changing behaviour, read [CONTRIBUTING.md](CONTRIBUTING.md). It lists the
 
 ## Privacy
 - Talks only to `twitch.tv` and `gql.twitch.tv`. No analytics, no other servers.
-- The Twitch `auth-token` cookie is read for each request and never stored, logged or returned.
+- The Twitch `auth-token` cookie is read for each request and never stored, logged or returned. A short one-way fingerprint of it is held in memory until the browser closes, to notice another account signing in.
 - Everything it keeps (state, settings, the minute log) stays in `chrome.storage.local` in your browser. **Copy debug info** and **Copy log** build their output from a fixed list of fields, so they never hold your login, but they do hold which channels you watched, minute by minute, for up to a day.
 
 ## License

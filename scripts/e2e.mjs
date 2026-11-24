@@ -1121,6 +1121,32 @@ try {
   }, moreSeen.map((c) => c.id));
   await popup.waitForFunction(() => document.querySelectorAll('#unearned-list .dir-row').length === 1);
   step('Badges not earned yet: watch time, Next, done for today, too late, and the line to close the earning channel');
+
+  // Another account signs in between two polls (the cookie changes, nothing is seen signed out) while
+  // the reward inventory cannot be read: the first account's days are no longer shown.
+  const watchLine = () => popup.$eval('#unearned-list .dir-row[data-id="b7669f9e-c69c-4a9b-a3b2-36266c1bdfc0"]', (r) => r.querySelectorAll('summary p')[2].textContent);
+  const loginAs = (value) => sw.evaluate((v) => chrome.cookies.set({ url: 'https://www.twitch.tv', name: 'auth-token', value: v, domain: '.twitch.tv', secure: true }), value);
+  await sw.evaluate(() => {
+    self.__plain = self.__transform;
+    self.__transform = (answer, ops) => self.__plain(answer, ops).map((a, i) => (ops[i].operationName === 'ViewerRewardDropInventory' ? { errors: [{ message: 'service error' }], data: null } : a));
+  });
+  await advance(1, 1);
+  await poll();
+  assert.equal(await watchLine(), 'Done for today, then 1h on 5 more days', 'the same account keeps it through a failed answer');
+  await loginAs('e2eotheraccount000000000000000');
+  await advance(1, 1);
+  await poll();
+  await popup.waitForFunction(() => /Each badge: watch 1h|Watch 1h/.test(document.getElementById('unearned-list').textContent));
+  assert.doesNotMatch(await popup.textContent('#unearned-list'), /Done for today|done for today/);
+  const kept = await sw.evaluate(async () => JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]));
+  assert.doesNotMatch(kept, /e2eotheraccount|e2einvalidtoken/, 'the sign-in itself is stored nowhere');
+  assert.equal(await sw.evaluate(async () => 'loginPrint' in (await chrome.storage.local.get(null))), false, 'the fingerprint is in memory only');
+  await sw.evaluate(() => { self.__transform = self.__plain; });
+  await loginAs('e2einvalidtoken0000000000000000');
+  await advance(1, 1);
+  await poll();
+  await popup.waitForFunction(() => /Done for today, then 1h on 5 more days/.test(document.getElementById('unearned-list').textContent));
+  step('another account signing in: the last one\'s progress is gone at once, and the sign-in is stored nowhere');
   // A poll redraws the list when something in it changed: here the badge turns up owned, which
   // leaves only the chest. The opened row stays open.
   await sw.evaluate(() => {
@@ -1498,8 +1524,17 @@ try {
   assert.equal(campaignPageLoads, beforeBadges, 'showing the Badges tab must not open a page');
   await popup.screenshot({ path: join(out, '29-badges-sitewide-unseen.png') });
   await fakeLogin();
-  await popup.click('#unearned-load');
+  // By keyboard: while it loads the button says so and does nothing, but keeps the focus.
+  await popup.focus('#unearned-load');
+  await popup.keyboard.press('Enter');
+  await popup.waitForFunction(() => document.getElementById('unearned-load').getAttribute('aria-disabled') === 'true');
+  assert.equal(await popup.$eval('#unearned-load', (b) => getComputedStyle(b).opacity), '0.5', 'and is dimmed');
+  await popup.keyboard.press('Enter');
+  assert.equal(await popup.evaluate(() => document.activeElement?.id), 'unearned-load', 'the focus stays on Load while it loads');
+  await popup.locator('#view-badges').screenshot({ path: join(out, '29b-badges-loading.png') });
   await popup.waitForFunction(() => /^Sitewide list updated \d+s ago$/.test(document.getElementById('unearned-status').textContent), null, { timeout: 15000 });
+  assert.equal(await popup.evaluate(() => document.activeElement?.id), 'unearned-load', 'and after it');
+  assert.equal(await popup.getAttribute('#unearned-load', 'aria-disabled'), 'false');
   assert.equal(campaignPageLoads, beforeBadges + 1);
   dashboardMode = 'integrity';
   await fakeLogin();

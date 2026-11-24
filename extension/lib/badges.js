@@ -127,9 +127,11 @@ function watchLeft(c, open, now) {
   const missing = open.filter((o) => o.missing);
   const allLate = missing.length > 0 && missing.every((o) => o.need?.late);
   const todo = open.filter((o) => o.need && !o.need.reached && !o.need.late);
-  const days = todo.filter((o) => o.need.daily);
+  const daily = open.filter((o) => o.need?.daily && !o.need.reached);
+  const inTime = daily.filter((o) => !o.need.late);
+  const days = inTime.length ? inTime : daily;
   // Every daily group done today: one with no reading got those same minutes, so it is not "none
-  // done" (GTAVI's last badge, listed as an hour, waits on its days).
+  // done" (GTAVI's last badge, listed as an hour, waits on its days). Too late to finish or not.
   const dayDone = days.length > 0 && days.every((o) => o.need.today);
   const gains = todo.filter((o) => !o.need.today && !o.need.blocked && (!dayDone || o.need.known));
   // A missing badge itself, or one that waits on the campaign's other rewards (GTAVI's last badge:

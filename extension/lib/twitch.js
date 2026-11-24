@@ -195,6 +195,15 @@ export function normalizeSession(raw) {
 }
 
 /**
+ * Tells one Twitch sign-in from another without keeping it: the start of its SHA-256, which the
+ * sign-in cannot be worked out from. Only compared with itself, in memory (background.js).
+ */
+export async function loginPrint(token) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(hash, 0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Rewards the user already owns. The list is only used to rule campaigns out, so it says whether
  * it is complete: the newer query's connection is paged, and either field can fail outright. An
  * entry with no ID, or an error about the list (errors: the answer's), means part of it is missing.
