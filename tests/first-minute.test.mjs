@@ -198,7 +198,7 @@ test('a slow channel does not make the next one read slow', () => {
     assert.ok(!/slowly/.test(chipView(p.s, p.now, 'bravo', {}).title));
   }
   // The strip under it still covers every minute shown.
-  assert.equal(seen[23].s.rate.watched, 24);
+  assert.equal(seen[23].s.rate.watched, 23, 'all but the first check, a baseline');
 });
 
 test('a session that fails on some polls does not hide a channel that really is slow', () => {

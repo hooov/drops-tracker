@@ -113,8 +113,13 @@ export function leftCards(state, login = null) {
  * which nothing said (walk-through, 2026-11-23). The pace is the measured one: credit lands about
  * every 60 seconds (tracker.js STALL_MS).
  */
-export function waitingText(state) {
-  const begun = state?.lastGainAt != null || (state?.active || []).some((d) => d.minutes > 0);
+export function waitingText(state, login = null) {
+  // Only drops the open tabs can still earn (this channel's, on one that can): another game's drop
+  // in progress, or a minute gained elsewhere before, says nothing about this one's first.
+  const earners = (state?.streams || []).filter((s) => s.channelState === 'eligible');
+  const here = earners.filter((s) => s.login === login);
+  const ids = new Set((here.length ? here : earners).flatMap((s) => s.campaignIds || []));
+  const begun = (state?.active || []).some((d) => ids.has(d.campaignId) && d.minutes > 0 && d.remaining > 0);
   return `Waiting for the ${begun ? 'next' : 'first'} minute to land. Twitch adds one about every minute.`;
 }
 
@@ -185,7 +190,7 @@ function chipViewOf(state, now, login) {
   }
   // Nothing left to earn here, only a reward: a full purple ring, not a warning.
   if (claim && !top) return { tone: 'info', text: connectOnly ? 'Connect' : 'Claim', pct: 100, title: claimNote.trim() };
-  const view = runningView(v, tone, state.rate, label, pct, progress, login && login === state.session?.login, waitingText(state));
+  const view = runningView(v, tone, state.rate, label, pct, progress, login && login === state.session?.login, waitingText(state, login));
   // A claim can wait a long time, so it must not hide the progress of the next drop or change what
   // the ring's colour says about earning. The count says it instead.
   return claim ? { ...view, title: `${claimNote}${view.title}` } : view;

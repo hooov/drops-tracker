@@ -9,6 +9,7 @@ import { span } from './directory.js';
 export { RATE_MIN_MINUTES };
 
 export const STALL_MS = 4 * 60000; // Credit lands about every 60s (measured); 4 misses is a real stall.
+const FULL_MINUTE_MS = 60000; // Able to earn this long before a minute with no credit is drawn as missed.
 export const REWARD_HOLD_MS = 15 * 60000; // A failed reward inventory call reuses the last good answer this long.
 export const REWARD_RETRY_MS = 5 * 60000; // After a failed call, a window-end re-ask waits this long.
 export const DEAD_PLAYER_MS = 2 * 60000; // Every eligible player is visibly dead: no need to wait the full 4.
@@ -1232,7 +1233,13 @@ export function update(prev, obs, now) {
     const ds = s.active.filter((d) => st.campaignIds?.includes(d.campaignId) && d.remaining > 0 && !d.unjudged);
     return ds.length > 0 && ds.every((d) => d.held);
   };
-  const watching = candidates.some((st) => !heldOnly(st));
+  // Nor does a tab able to earn for under a minute, unless credit landed: its first check is only a
+  // baseline and cannot show a gain, and a red square with "0 of the last 1 watched minutes
+  // counted" a second after opening read as a lost minute (2026-11-23). ableSince is kept through
+  // failed lookups and frozen players, so a hang is still drawn; a paused tab has none, and counts
+  // from when it was opened, as before.
+  const settled = (st) => now - Math.max(st.ableSince ?? st.since ?? 0, s.resumeAt ?? 0) >= FULL_MINUTE_MS;
+  const watching = candidates.some((st) => !heldOnly(st) && (gained || settled(st)));
   const last = s.timeline[s.timeline.length - 1];
   if (last && last.m === bucket) {
     last.g = last.g || gained;

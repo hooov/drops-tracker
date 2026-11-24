@@ -363,12 +363,45 @@ test('rate counts minutes added, not polls with a gain, and calls half speed slo
   const s = run(half, (i) => [stream(1, alpha, 100 + i * 60)]);
   assert.equal(s.verdict.code, 'earning');
   assert.equal(s.verdict.slow, true);
-  assert.deepEqual(s.rate, { watched: 21, counted: 10 });
+  assert.deepEqual(s.rate, { watched: 20, counted: 10 }, 'the first check is a baseline, not a watched minute');
   // Two minutes landing in one poll is full speed that arrived late, not half speed.
   const batched = Array.from({ length: 21 }, (_, i) => 195 + i - (i % 2));
   const b = run(batched, (i) => [stream(1, alpha, 100 + i * 60)]);
   assert.equal(b.verdict.slow, false);
   assert.ok(b.rate.counted >= 19);
+});
+
+// The first check is only a baseline, so it cannot show a gain: drawn red with "0 of the last 1
+// watched minutes counted" a second after opening, it read as a lost minute (2026-11-23).
+test('a tab able to earn for under a minute is not a missed minute', () => {
+  const one = (t) => [stream(1, alpha, 100 + t)];
+  let s = update(undefined, obs(195, one(0)), T0);
+  assert.deepEqual([timelineCells(s.timeline).at(-1), s.rate.watched], ['', 0], 'the first check');
+  // A page asking for a check ten seconds later, in the same clock minute.
+  s = update(s, obs(195, one(10)), T0 + 10000);
+  assert.deepEqual([timelineCells(s.timeline).at(-1), s.rate.watched], ['', 0], 'ten seconds in');
+  s = update(s, obs(195, one(60)), T0 + MIN);
+  assert.deepEqual([timelineCells(s.timeline).slice(-2), s.rate], [['', 'miss'], { watched: 1, counted: 0 }], 'a whole minute with nothing is a miss');
+  // Credit inside the first minute still counts.
+  let q = update(undefined, obs(195, one(0)), T0);
+  q = update(q, obs(196, one(30)), T0 + 30000);
+  assert.deepEqual([timelineCells(q.timeline).at(-1), q.rate], ['gain', { watched: 1, counted: 1 }]);
+  // The same for a channel opened later, with the extension already running.
+  let late = update(undefined, obs(195, [stream(2, bravo, 100)]), T0);
+  late = update(late, obs(195, [stream(2, bravo, 160), stream(1, alpha, 100)]), T0 + MIN);
+  assert.deepEqual([timelineCells(late.timeline).at(-1), late.rate.watched], ['', 0], 'a channel just opened');
+  // And after a gap with no data, which restarts the clock.
+  let gap = run([195, 196, 197], (i) => one(i * 60));
+  gap = update(gap, obs(197, one(900)), T0 + 20 * MIN);
+  assert.equal(timelineCells(gap.timeline).at(-1), '', 'the first check after a gap');
+});
+
+test('a hang is still drawn minute by minute, through failed lookups and a second tab opening', () => {
+  // Every other lookup failing: the minutes that answered are still misses, not fresh starts.
+  const flaky = run([195, 196, 196, 196, 196, 196], (i) => [stream(1, i % 2 && i > 1 ? { ...alpha, unknown: true } : alpha, 100 + i * 60)]);
+  assert.deepEqual(timelineCells(flaky.timeline).slice(-6), ['', 'gain', 'miss', '', 'miss', '']);
+  const s = run([195, 196, 196, 196, 196, 196], (i) => [stream(1, alpha, 100 + i * 60), ...(i >= 3 ? [stream(2, { ...alpha, id: '10000009', login: 'echo_247', displayName: 'echo_247' }, 100 + i * 60)] : [])]);
+  assert.deepEqual(timelineCells(s.timeline).slice(-6), ['', 'gain', 'miss', 'miss', 'miss', 'miss']);
 });
 
 test('full speed is not slow, and too little data never is', () => {

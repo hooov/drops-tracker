@@ -225,6 +225,9 @@ try {
   await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Checking');
   assert.match(await popup.textContent('#verdict-detail'), /^Waiting for the (first|next) minute to land\. Twitch adds one about every minute\.$/);
   await popup.waitForFunction(() => /^(\d+m )?\d+s$/.test(document.querySelector('#verdict-age').textContent));
+  // The first check is only a baseline: no red square, and no "0 of the last 1".
+  assert.doesNotMatch(await popup.getAttribute('#timeline', 'data-cells') ?? '', /miss/);
+  assert.equal(await popup.isVisible('#rate'), false);
   await shot('1b-checking');
   step('injection reads real video state from both tabs; first poll says Checking');
 
@@ -792,7 +795,7 @@ try {
   }, [message, opens]);
   await creditedDone(doneMsg, null);
   await popup.waitForFunction(() => /Already earned/.test(document.querySelector('#streams .row').textContent));
-  assert.equal((await doneRow()).buttons, 0, 'no Reload on a tab that is done');
+  assert.equal((await doneRow()).buttons, 1, 'Reload stays on an already earned row');
   // A daily drop done for today: the row uses the headline's words, not "Already earned".
   await creditedDone('Day 3 Crate is earned for today. The next one opens at 9:21 PM.', 4 * 3600000);
   await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Done for today on AlphaTV');

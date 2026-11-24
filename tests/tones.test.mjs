@@ -56,8 +56,21 @@ test('checking: "first" only before anything counted, the normal pace, and how l
   const begun = state({ code: 'waiting', since: NOW - 90000 });
   assert.deepEqual(verdictText(begun, NOW), ['Checking', `Waiting for the next minute to land. ${PACE}`]);
   assert.equal(chipView(begun, NOW, 'foxtrot').title, `GTA DVD Chest: 21/60 min. Waiting for the next minute to land. ${PACE}`);
-  const earnedBefore = state({ code: 'waiting', since: NOW - 90000 }, { active: [], lastGainAt: NOW - 60 * MIN });
-  assert.match(verdictText(earnedBefore, NOW)[1], /^Waiting for the next minute/);
+  // Judged on what the open tabs can earn: minutes gained on another channel before, or another
+  // game's drop in progress, do not make this one's first minute its next (2026-11-23).
+  const other = { ...drop, id: 'd9', campaignId: 'c9', name: 'Other Crate' };
+  const elsewhere = { ...fresh, active: [fresh.active[0], other], lastGainAt: NOW - 60 * MIN };
+  assert.match(verdictText(elsewhere, NOW)[1], /^Waiting for the first minute/);
+  // Two tabs that can earn, one begun: each channel's own panel and chip, and "next" off a channel.
+  const two = state({ code: 'waiting', since: NOW }, { active: [fresh.active[0], { ...other, campaignId: 'c2' }], streams: [foxtrot, echo], session: null });
+  assert.match(verdictText(two, NOW, 'foxtrot')[1], /first minute/);
+  assert.match(verdictText(two, NOW, 'echo_247')[1], /next minute/);
+  assert.match(verdictText(two, NOW)[1], /next minute/);
+  assert.match(chipView(two, NOW, 'foxtrot').title, /first minute/);
+  assert.match(chipView(two, NOW, 'echo_247').title, /next minute/);
+  // A drop already at its requirement is not the one being waited for.
+  const reached = state({ code: 'waiting', since: NOW }, { active: [fresh.active[0], { ...drop, id: 'd8', minutes: 60, pct: 100, remaining: 0 }] });
+  assert.match(verdictText(reached, NOW)[1], /first minute/);
   assert.deepEqual([waitedFor(NOW - 45000, NOW), waitedFor(NOW - 90000, NOW), waitedFor(undefined, NOW), waitedFor(NOW + MIN, NOW)], ['45s', '1m 30s', '', '']);
 });
 

@@ -225,7 +225,9 @@ tried as working, then pinned in twitch.js, then learned from twitch.tv's own re
 `state.drops[id]` `{ peak, low, at, session }` (`trackMinutes()`): a lower reading must last
 `DIP_POLLS` polls and `DIP_MS` (`lowAt`) before it is believed, so extra polls (a page asking for a
 check, below) cannot shorten it; a gap longer than `GAP_MS` re-baselines. `state.timeline`
-`{ m, g, w, d }` per wall-clock minute, at most `TIMELINE_MAX`. `creditRate()` sums `d`;
+`{ m, g, w, d }` per wall-clock minute, at most `TIMELINE_MAX`; `w` (watched) needs a tab able to
+earn for a full minute (`FULL_MINUTE_MS`, from `ableSince` or `resumeAt`) or credit landing, since
+a first check is only a baseline. `creditRate()` sums `d`;
 `timelineCells()` (minutelog.js) draws late credit on the minute it belonged to. `state.rate` covers
 the whole strip and is what its caption says; `verdict.slow` is judged on the minutes since the
 credited channel (`rateLogin`) last changed (`rateFrom`, a minute number), so a channel just opened

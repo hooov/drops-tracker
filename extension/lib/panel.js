@@ -174,7 +174,7 @@ export function waitedFor(since, now) {
 
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-export function verdictText(state, now) {
+export function verdictText(state, now, login = null) {
   const v = state.verdict;
   const lastGood = state.lastOkAt ? ` Last good data ${ago(now - state.lastOkAt)}.` : '';
   switch (v.code) {
@@ -190,7 +190,7 @@ export function verdictText(state, now) {
       return [`${v.slow ? 'Earning slowly' : 'Earning'}${where}`, detail];
     }
     case 'waiting':
-      return ['Checking', waitingText(state)];
+      return ['Checking', waitingText(state, login)];
     case 'stalled':
       return ['Not counting', v.message];
     case 'idle':
@@ -509,7 +509,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const v = state.verdict;
     $('verdict').dataset.tone = toneOf(v);
     $('tab-mine').dataset.tone = toneOf(v);
-    const [title, detail] = verdictText(state, now);
+    const [title, detail] = verdictText(state, now, channelLogin?.() ?? null);
     $('verdict-title').textContent = title;
     // "Drop likely earned" sends the reader to their inventory, so the link sits with the sentence
     // and not only in the footer. Rebuilt only on a change: a link replaced every second loses clicks.
@@ -742,8 +742,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       if (s.credited && earning) {
         // Same rule as the headline: amber only when another tab can earn (2026-11-20).
         const w = state.verdict.wasted;
-        // The headline's words (verdictText), and no Reload: the tab works, and Twitch credits it.
-        if (w?.reason === 'earned') return { ...s, label: w.opens != null && !w.actionable ? 'Done for today' : 'Already earned', tone: w.actionable ? 'warn' : '', noReload: true };
+        // The headline's words (verdictText).
+        if (w?.reason === 'earned') return { ...s, label: w.opens != null && !w.actionable ? 'Done for today' : 'Already earned', tone: w.actionable ? 'warn' : '' };
         return { ...s, label: 'Earning', tone: 'ok' };
       }
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
@@ -759,7 +759,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       text.append(el('p', 'strong ellipsis', s.displayName || 'Twitch page'), el('p', `sub ellipsis ${s.tone}`, s.label));
       row.append(text);
       // No reload on the stream that is earning: it only invites breaking what works.
-      if (s.login && s.label !== 'Earning' && !s.noReload) {
+      // Nor on one done for today: nothing is wrong with it.
+      if (s.login && s.label !== 'Earning' && s.label !== 'Done for today') {
         const btn = el('button', 'round');
         btn.type = 'button';
         btn.innerHTML = RELOAD_ICON;
