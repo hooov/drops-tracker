@@ -3,7 +3,7 @@
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
 import { STALE_MS, channelDrops, leftCards, waitingText } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
-import { badgeSections, unearnedBadges, badgesListError } from './badges.js';
+import { badgeSections, unearnedBadges, closeFirst, badgesListError } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
 import { STALL_CAUSES, PLAYER_STATES, CHANNEL_STATES, verdictTone, canEarn, RATE_MIN_MINUTES } from './states.js';
@@ -72,6 +72,7 @@ const TEMPLATE = `
           <button id="unearned-load" class="link" type="button">Load</button>
         </div>
         <p id="unearned-error" class="sub warn" hidden></p>
+        <p id="unearned-close" class="sub" hidden></p>
         <div id="unearned-list" class="dir-list" tabindex="-1" hidden></div>
         <p id="unearned-none" class="sub dir-empty" hidden></p>
       </div>
@@ -651,11 +652,18 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     // Never "all earned": it only knows the campaigns it has come across.
     $('unearned-none').textContent = hasList || seenBadges.length ? 'None among the campaigns seen so far.' : '';
     $('unearned-none').hidden = rows.length > 0 || !$('unearned-none').textContent;
+    $('unearned-close').textContent = closeFirst(rows, state);
+    $('unearned-close').hidden = !$('unearned-close').textContent;
     const list = $('unearned-list');
     list.hidden = !rows.length;
     for (const id of openUnearned) if (!rows.some((r) => r.id === id)) openUnearned.delete(id);
+    // Minutes rising redraw this every minute, which must not throw the keyboard out of the list.
+    const held = list.getRootNode().activeElement;
+    const heldRow = list.contains(held) ? held.closest('.dir-row') : null;
+    const heldPart = held?.tagName === 'A' ? 'a' : 'summary';
     setList(list, JSON.stringify(rows), () => rows.map((r) => {
       const row = el('details', 'dir-row');
+      row.dataset.id = r.id;
       row.open = openUnearned.has(r.id); // A poll redraws the list: what was open stays open.
       row.addEventListener('toggle', () => { if (row.isConnected) openUnearned[row.open ? 'add' : 'delete'](r.id); });
       const summary = el('summary');
@@ -669,10 +677,21 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
         art.append(img);
       }
       const text = el('div', 'row-text');
-      text.append(el('p', 'strong ellipsis', r.name), el('p', 'sub', r.status), el('p', 'sub ellipsis', r.ends));
+      text.append(el('p', 'strong ellipsis', r.name), el('p', 'sub', r.status));
+      if (r.watch) text.append(el('p', 'sub', r.watch));
+      if (r.late) text.append(el('p', 'sub warn', 'Cannot finish before it ends'));
+      text.append(el('p', 'sub ellipsis', r.ends));
       summary.append(art, text);
+      if (r.next) summary.append(el('span', 'tag next', 'Next'));
       const more = el('div', 'dir-more');
-      for (const m of r.missing) more.append(el('p', 'sub', m.unknown && r.kind === 'missing' ? `${m.name}: cannot tell if earned` : m.name));
+      for (const m of r.missing) {
+        const said = [
+          m.unknown && r.kind === 'missing' ? 'cannot tell if earned' : '',
+          m.watch ?? '',
+          m.late ? 'cannot finish before it ends' : '',
+        ].filter(Boolean).join(', ');
+        more.append(el('p', 'sub', said ? `${m.name}: ${said}` : m.name));
+      }
       if (r.more) more.append(el('p', 'sub', 'Some badges may need more than watching.'));
       if (r.where) more.append(el('p', 'sub', r.where));
       if (r.link) {
@@ -687,6 +706,9 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       row.append(summary, more);
       return row;
     }));
+    if (heldRow && !heldRow.isConnected) {
+      [...list.children].find((x) => x.dataset.id === heldRow.dataset.id)?.querySelector(heldPart)?.focus({ preventScroll: true });
+    }
   }
 
   function renderBadges(state, now) {

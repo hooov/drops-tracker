@@ -88,6 +88,8 @@ button.link { padding: 0; }
 .unearned-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 8px; }
 /* Scrolls by itself, like All Drops: 420px is the rest of this view with two badge cards above it. */
 #unearned-list { max-height: max(120px, min(300px, calc(var(--dt-avail, 600px) - 420px))); }
+.tag.next { color: var(--dt-text); }
+#unearned-close { margin: 4px 0; }
 .unearned-head .link { flex: none; }
 .unearned-head .link:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
 

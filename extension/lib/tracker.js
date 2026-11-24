@@ -969,6 +969,7 @@ export function update(prev, obs, now) {
     s.verdict = { code, message: obs.error.message };
     // Whoever signs in next may own less: nothing is "not owned" until their own list is read.
     if (code === 'signed_out' && s.rewards) s.rewards.wholeAt = null;
+    if (code === 'signed_out') s.rewardSeen = null; // Their progress, too.
     return s;
   }
 
@@ -983,6 +984,10 @@ export function update(prev, obs, now) {
   // channel between two sources and re-fire its notification. undefined: not asked this poll.
   const held = prev?.rewardInv && now - prev.rewardInv.at < REWARD_HOLD_MS ? prev.rewardInv : null;
   s.rewardInv = Array.isArray(obs.rewardGroups) ? { at: now, groups: obs.rewardGroups } : held;
+  // The same answer without the hold's end, for "Badges not earned yet" only (badges.js): it is not
+  // asked while no channel is live, and today's window being done and the days granted stay true.
+  // Tracking never reads it. Bound: one answer (MAX_REWARD_GROUPS), replaced by the next good one.
+  if (Array.isArray(obs.rewardGroups)) s.rewardSeen = { at: now, groups: obs.rewardGroups };
   s.rewardCheck = obs.rewardGroups === undefined ? (prev?.rewardCheck ?? null)
     : { at: now, ok: Array.isArray(obs.rewardGroups), groups: Array.isArray(obs.rewardGroups) ? obs.rewardGroups.length : null };
   const inventoryIds0 = new Set(obs.campaigns.map((c) => c.id));

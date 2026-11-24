@@ -88,7 +88,7 @@ test('GTAVI: missing, unknown and claimed parts together', () => {
   const [row] = rows({ seen });
   assert.equal(row.kind, 'missing');
   assert.equal(row.status, 'Not all earned', 'the chest is not countable');
-  assert.deepEqual(row.missing, [{ name: 'Golden Iguana', unknown: false }, { name: 'GTA DVD Chest', unknown: true }]);
+  assert.deepEqual(row.missing, [{ name: 'Golden Iguana', unknown: false, watch: 'watch 1h' }, { name: 'GTA DVD Chest', unknown: true, watch: 'watch 1h on 6 days' }]);
   assert.equal(row.more, true);
   const iguana = rows({ state: owning(IGUANA), seen })[0];
   assert.deepEqual([iguana.kind, iguana.missing], ['unknown', [{ name: 'GTA DVD Chest', unknown: true }]]);

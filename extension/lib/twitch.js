@@ -520,13 +520,37 @@ export const SEEN_AGAIN_MS = 6 * 3600000; // How often an unchanged campaign's a
  * campaigns the highlight answer already gave. An answer with an error adds nothing: a list cut
  * short would replace a whole one. cut: part of the campaign could not be read or kept, so it can
  * be neither counted nor called done.
- * Kept: names, art, dates, reward and group IDs, the category. Not the channel, nor any progress.
+ * Kept: names, art, dates, reward and group IDs, each group's watch minutes and repeat settings, the
+ * category. Not the channel, nor any progress.
  * Bounds: MAX_SEEN_REWARDS groups and rewards each, clip() and MAX_NAME on text.
  */
 export function parseSeenBadges(item, gameId, now) {
   const list = item?.data?.channelDropCampaigns;
   if (!Array.isArray(list) || errorsOf(item).length) return [];
   return list.map((x) => seenBadge(x, gameId, now)).filter(Boolean);
+}
+
+// Bound on each number kept of a group: a year of minutes or seconds, or that many repeats.
+const YEAR_MINUTES = 365 * 24 * 60;
+const YEAR_SECONDS = YEAR_MINUTES * 60;
+const MAX_REPEATS = 1000;
+const positive = (n, max) => (Number.isFinite(n) && n > 0 && n <= max ? n : null);
+
+/**
+ * How often a watch group repeats. times: 1 once, null when it cannot be read, which must not read
+ * as once. all: one reward for doing every repeat (Evolutions), where GTAVI gives one per repeat
+ * (captured 2026-11-23 and 11-19); false too with a last-chance extension, whose rule is not known.
+ */
+function seenRepeats(crit) {
+  const r = crit.repeatableConfig;
+  if (r === null) return { times: 1 };
+  const times = positive(r?.repeatableTimes, MAX_REPEATS);
+  if (times == null || times === 1) return { times };
+  return {
+    times,
+    reset: positive(r.resetIntervalSeconds, YEAR_SECONDS),
+    all: r.shouldCompleteAllRepeatsToEarn === true && r.isLastChanceExtensionEnabled !== true,
+  };
 }
 
 function seenBadge(x, gameId, now) {
@@ -556,6 +580,8 @@ function seenBadge(x, gameId, now) {
     if (!kept.length) continue;
     groups.push({
       id: g.id,
+      minutes: positive(crit.requirements?.minutesWatched, YEAR_MINUTES),
+      ...seenRepeats(crit),
       rewards: kept.map((r) => ({ id: r.id, name: (typeof r.name === 'string' ? r.name : '').slice(0, MAX_NAME), badge: r.distributionType === 'BADGE' })),
     });
     if (Array.isArray(crit.channels) && crit.channels.length) someChannels = true;
