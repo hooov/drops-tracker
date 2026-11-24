@@ -952,6 +952,24 @@ function diagnose(candidates, streams, active, unclaimed) {
   };
 }
 
+/** What would be said of the next account to sign in, but is only true of the last one. */
+function forgetAccount(s) {
+  // They may own less: nothing is "not owned" until their own list is read.
+  if (s.rewards) s.rewards.wholeAt = null;
+  s.rewardSeen = null; // Their progress, too.
+  // What is only known from one poll to the next, so never from one account to another (replayed
+  // 2026-11-24): a drop or badge of the last one's, in no list of theirs, read as having just left
+  // ("Drop likely earned"); a campaign they finished long ago as finished now; a badge they have more
+  // minutes on as rising ("Badge Drops Tracker cannot show").
+  s.nearDone = [];
+  s.leftDrops = [];
+  s.rewardInv = null;
+  s.leftBadges = [];
+  s.rewardsCounting = [];
+  s.rewardsDone = [];
+  s.unplacedBadges = [];
+}
+
 /**
  * obs: { error?: {kind,message} } or
  *      { campaigns, rewards: {ids, complete}, session, streams: [{tabId, login, channel, tab, player}] }
@@ -963,20 +981,15 @@ export function update(prev, obs, now) {
   if (!Array.isArray(s.timeline)) s.timeline = [];
   if (!s.verdict?.code) s.verdict = { code: 'starting' };
   s.lastPollAt = now;
-  // Signed in as someone else since the last poll, with no poll signed out in between: the same two
+  // Signed in as someone else since the last poll, with no poll signed out in between: the same as
   // the sign-out below forgets, also when this poll failed. This poll's own answers are theirs.
-  if (obs.accountChanged) {
-    if (s.rewards) s.rewards.wholeAt = null;
-    s.rewardSeen = null;
-  }
+  if (obs.accountChanged) forgetAccount(s);
 
   if (obs.error) {
     // Unknown is not stalled: keep the last good data and say what we cannot see.
     const code = obs.error.kind === 'auth' ? 'signed_out' : obs.error.kind === 'api_changed' ? 'api_changed' : 'error';
     s.verdict = { code, message: obs.error.message };
-    // Whoever signs in next may own less: nothing is "not owned" until their own list is read.
-    if (code === 'signed_out' && s.rewards) s.rewards.wholeAt = null;
-    if (code === 'signed_out') s.rewardSeen = null; // Their progress, too.
+    if (code === 'signed_out') forgetAccount(s);
     return s;
   }
 
@@ -989,7 +1002,9 @@ export function update(prev, obs, now) {
   // Twitch's reward inventory: this poll's answer, else the last good one for REWARD_HOLD_MS, so
   // one failed call (Inventory's reward fields fail on about half of real calls) does not flip a
   // channel between two sources and re-fire its notification. undefined: not asked this poll.
-  const held = prev?.rewardInv && now - prev.rewardInv.at < REWARD_HOLD_MS ? prev.rewardInv : null;
+  // From s, not prev, like every field forgetAccount empties: it may just have.
+  const lastInv = s.rewardInv;
+  const held = lastInv && now - lastInv.at < REWARD_HOLD_MS ? lastInv : null;
   s.rewardInv = Array.isArray(obs.rewardGroups) ? { at: now, groups: obs.rewardGroups } : held;
   // The same answer without the hold's end, for "Badges not earned yet" only (badges.js): it is not
   // asked while no channel is live, and today's window being done and the days granted stay true.
@@ -1005,8 +1020,8 @@ export function update(prev, obs, now) {
   // A channel whose list (or badge list) could not be read would make its own badge look
   // unplaced: hold the marks.
   const blind = (obs.streams || []).some((st) => st.channel?.unknown || st.channel?.badgeLookupFailed);
-  s.unplacedBadges = unplacedBadges(prev?.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
-  s.leftBadges = leftBadges(prev?.leftBadges, prev?.rewardInv, obs.rewardGroups, now);
+  s.unplacedBadges = unplacedBadges(s.unplacedBadges, blind ? undefined : obs.rewardGroups, placed, now);
+  s.leftBadges = leftBadges(s.leftBadges, lastInv, obs.rewardGroups, now);
   const leftNear = new Set(s.leftBadges.filter((x) => x.required - x.minutes <= LEFT_NEAR_MINUTES).map((x) => x.id));
   // Fresh: answered this poll. A held answer is up to REWARD_HOLD_MS old, so a badge read from it
   // would look flat and must not be judged.
@@ -1021,10 +1036,10 @@ export function update(prev, obs, now) {
   s.resting = restingDrops(fromRewards, now);
   const listedIds = new Set([...active, ...unclaimed, ...s.pending, ...s.resting].map((d) => d.id));
   const openIds = openInInventory(obs.campaigns);
-  s.leftDrops = leftDrops(prev?.leftDrops, prev?.nearDone, openIds, listedIds, now);
+  s.leftDrops = leftDrops(s.leftDrops, s.nearDone, openIds, listedIds, now);
   for (const x of s.leftDrops) leftNear.add(x.id);
   // Inventory's own drops (rewardCampaigns and sessionCampaigns skip its campaigns), plus carried ones.
-  s.nearDone = nearDrops(prev?.nearDone, active, inventoryIds0, openIds, listedIds, now);
+  s.nearDone = nearDrops(s.nearDone, active, inventoryIds0, openIds, listedIds, now);
   const pending = new Map();
   for (const d of s.pending) if (!pending.has(d.campaignId)) pending.set(d.campaignId, d);
   const known = obs.sessions || (obs.session ? [obs.session] : []);
@@ -1104,11 +1119,11 @@ export function update(prev, obs, now) {
   const listedRewards = new Set((rewardList || []).map((g) => g.campaignId));
   const ownedIds = new Set(s.rewards.ids);
   const offered = (obs.streams || []).flatMap((st) => st.channel?.campaigns || []);
-  const finishedNow = !rewardList ? [] : keptRewards(prev?.rewardsCounting, now).filter((x) => !listedRewards.has(x.campaignId)
+  const finishedNow = !rewardList ? [] : keptRewards(s.rewardsCounting, now).filter((x) => !listedRewards.has(x.campaignId)
     && !pending.has(x.campaignId) && !active.some((d) => d.campaignId === x.campaignId)
     && offered.some((c) => c.id === x.campaignId && rewardProven(c, ownedIds, claimed)));
-  s.rewardsDone = rewardsDone(prev?.rewardsDone, finishedNow, listedRewards, now);
-  s.rewardsCounting = rewardsCounting(prev?.rewardsCounting, obs.streams, rewardList, new Set(s.rewardsDone.map((x) => x.campaignId)), now);
+  s.rewardsDone = rewardsDone(s.rewardsDone, finishedNow, listedRewards, now);
+  s.rewardsCounting = rewardsCounting(s.rewardsCounting, obs.streams, rewardList, new Set(s.rewardsDone.map((x) => x.campaignId)), now);
   const tabs = {};
   // Drops of campaigns Twitch has not started on an open channel, listed with no minutes (as
   // pending is) so its My Drops is not empty before the first minute (audit, 2026-11-22). Never

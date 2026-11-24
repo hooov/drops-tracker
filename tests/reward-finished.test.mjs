@@ -92,7 +92,9 @@ async function run(polls, from) {
     const streams = p.echoClosed ? [] : [{ tabId: 1, login: 'echo_247', channel: snap.channels.echo_247, tab: {}, player: { ...player, hidden: false } }];
     if (p.home) streams.push({ tabId: 3, login: null, channel: null, tab: {}, player: null });
     if (!p.closed) streams.push({ tabId: 2, login: 'foxtrot', channel: snap.channels.foxtrot, tab: {}, player: { ...player, hidden: true } });
-    const obs = { ...snap, dayRewards: [], claimedGroups: p.claimed || [], streams };
+    // error: the poll failed with that kind. accountChanged: the sign-in is not the last poll's.
+    const answers = p.error ? { error: { kind: p.error, message: 'x' } } : { ...snap, dayRewards: [], claimedGroups: p.claimed || [], streams };
+    const obs = { ...answers, ...(p.accountChanged ? { accountChanged: true } : {}) };
     const prev = s;
     s = update(s, obs, now);
     // As storage holds it between checks: nothing may depend on an object staying alive.
@@ -332,6 +334,44 @@ test('counting again after it: the headline goes, and it is not announced a seco
   assert.deepEqual(byTime(polls, '22:10:56').s.rewardsDone, []);
   assert.notEqual(views(byTime(polls, '22:10:56')).headline, FINISHED);
   assert.equal(earned(polls).length, 1);
+});
+
+// Replayed 2026-11-24, not captured: the last account was counting it, the new one finished it long ago.
+test('another account signs in having finished it long ago: nothing is announced to them', async () => {
+  const theirs = { dvd: null, total: null, owned: true, claimed: CLAIMED };
+  const rest = ['22:08:56', '22:09:56', '22:10:56'].map((t) => ({ t, ...theirs }));
+  for (const [name, between] of [
+    ['straight after', [{ t: '22:06:51', ...theirs, accountChanged: true }]],
+    // Its failed answer must not leave the last account's held one to count again from.
+    ['their first reward answer failing', [{ t: '22:06:51', ...theirs, claimed: [], invFails: true, accountChanged: true }]],
+    ['a signed-out poll between', [{ t: '22:06:51', ...theirs, error: 'auth' }, { t: '22:07:56', ...theirs, accountChanged: true }]],
+    ['a signed-out poll, then no fingerprint', [{ t: '22:06:51', ...theirs, error: 'auth' }]],
+    ['their first poll failing', [{ t: '22:06:51', ...theirs, error: 'network', accountChanged: true }]],
+  ]) {
+    const polls = await run([...CAPTURED.slice(0, 2), ...between, ...rest]);
+    assert.deepEqual(earned(polls), [], name);
+    const last = polls.at(-1);
+    assert.deepEqual([last.s.rewardsDone, last.s.rewardsCounting, last.s.verdict.rewardDone ?? false], [[], [], false], name);
+    assert.equal(views(last).headline, 'Not earning', name);
+  }
+});
+
+test('another account signs in after one finished it: the headline goes, and it is not said again', async () => {
+  for (const step of [{ accountChanged: true }, { error: 'auth' }]) {
+    const polls = await run([...CAPTURED, { ...CAPTURED.at(-1), t: '22:10:56', ...step }, { ...CAPTURED.at(-1), t: '22:11:56' }]);
+    assert.equal(views(byTime(polls, '22:09:56')).headline, FINISHED);
+    assert.notEqual(views(polls.at(-1)).headline, FINISHED);
+    assert.equal(earned(polls).length, 1);
+  }
+});
+
+test('the new account finishing it itself is announced, and a failed poll forgets nothing', async () => {
+  const own = await run([{ ...CAPTURED[0], accountChanged: true }, ...CAPTURED.slice(1)]);
+  assert.equal(earned(own).length, 1);
+  for (const error of ['network', 'api_changed']) {
+    const failed = await run([...CAPTURED.slice(0, 3), { ...CAPTURED[3], error }, ...CAPTURED.slice(4)]);
+    assert.equal(earned(failed).length, 1, error);
+  }
 });
 
 test('rewardsCounting: only a reward campaign, and not one already finished', () => {

@@ -195,6 +195,14 @@ listed again for a poll is not announced twice. Entries end when Inventory lists
 unclaimed again or its window ends; newest 20 kept, 50 notified IDs. Seen 2026-11-22: RuneScape Bones, a BADGE
 reward with no claim step, left at 59 of 60 with nothing said, and Tyler had it.
 
+On a sign-out or `obs.accountChanged`, `forgetAccount()` empties what is only known from one poll to the
+next: `nearDone`, `leftDrops`, `rewardInv`, `leftBadges`, `rewardsCounting`, `rewardsDone`, `unplacedBadges`.
+Compared across two accounts, the last one's drop or badge read as having left, a campaign finished long
+ago as finished now, and more minutes as rising (replayed 2026-11-24). A new sign-in of the same account
+loses them too, and can hear "Badge Drops Tracker cannot show" a second time after a sign-out. The
+notified IDs (`notifiedLeft`, `notifiedRewards`) are kept, so the new account gets no notification for one
+the last account was told about; its headline still shows.
+
 ## 5. Player state
 `stream.playerState`, from `classifyPlayer()`: asleep (tab discarded or frozen by the browser),
 no_video, ended, paused, frozen (time not moving, or not ready on first sight), playing. For 5s after
@@ -283,7 +291,7 @@ extension). "Close <channel> first" (`closeFirst()`): verdict `earning`, the ses
 here, and neither crediting nor carrying the Next campaign.
 
 A switch of account with no poll signed out in between clears `wholeAt` and `rewardSeen` too
-(`obs.accountChanged`). Each poll compares a fingerprint of the sign-in (`loginPrint()`: the start of
+(`obs.accountChanged`, `forgetAccount()`). Each poll compares a fingerprint of the sign-in (`loginPrint()`: the start of
 its SHA-256) with the last poll's, in `chrome.storage.session` (one value, in memory, gone when the
 browser closes; nothing to compare with is not a change). A new sign-in of the same account clears them
 too, which only reads as unknown until the next answer.
