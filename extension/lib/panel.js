@@ -3,7 +3,7 @@
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
 import { STALE_MS, channelDrops, leftCards, waitingText } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
-import { badgeSections } from './badges.js';
+import { badgeSections, unearnedBadges, badgesListError } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
 import { debugRows, debugStreams, debugBundle } from './debug.js';
 import { STALL_CAUSES, PLAYER_STATES, CHANNEL_STATES, verdictTone, canEarn, RATE_MIN_MINUTES } from './states.js';
@@ -62,7 +62,20 @@ const TEMPLATE = `
         <div id="dir-list" class="dir-list" tabindex="-1" hidden></div>
       </div>
     </div>
-    <div id="view-badges" role="tabpanel" aria-labelledby="tab-badges" hidden></div>
+    <div id="view-badges" role="tabpanel" aria-labelledby="tab-badges" hidden>
+      <div id="badge-channels"></div>
+      <div class="section">
+        <p class="strong label">Badges not earned yet</p>
+        <p class="sub">Sitewide, and game badges on channels you open.</p>
+        <div class="unearned-head">
+          <p id="unearned-status" class="sub" role="status"></p>
+          <button id="unearned-load" class="link" type="button">Load</button>
+        </div>
+        <p id="unearned-error" class="sub warn" hidden></p>
+        <div id="unearned-list" class="dir-list" tabindex="-1" hidden></div>
+        <p id="unearned-none" class="sub dir-empty" hidden></p>
+      </div>
+    </div>
     <div id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <div class="section">
       <div class="setting">
@@ -376,6 +389,15 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   let openRow = null;
   let lastState = null;
   const allShown = () => !$('view-all').hidden;
+  const badgesShown = () => !$('view-badges').hidden;
+  let seenBadges = []; // Storage seenBadges and claimedGroups, with their bounds (twitch.js).
+  let claimedGroups = [];
+  const openUnearned = new Set(); // Rows left open. Bound: the rows drawn (renderUnearned).
+  const keepBadges = (seen, claimed) => {
+    seenBadges = Array.isArray(seen) ? seen : [];
+    claimedGroups = Array.isArray(claimed) ? claimed : [];
+  };
+  const redrawBadges = () => { if (badgesShown() && lastState) renderBadges(lastState, Date.now()); };
 
   function renderDirectory(now) {
     const { rows, total } = directoryRows(directory, lastState?.active, $('dir-search').value, now);
@@ -446,6 +468,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   async function loadDirectory(force) {
     directoryLoading = true;
     renderDirectory(Date.now());
+    redrawBadges();
     let reply = null;
     try {
       reply = await chrome.runtime.sendMessage({ type: 'directory', force });
@@ -456,6 +479,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     if (reply) directory = reply;
     else if (directory?.at == null) directory = { campaigns: [], at: null, error: { kind: 'network' } }; // Never a blank tab.
     if (allShown()) renderDirectory(Date.now());
+    redrawBadges();
   }
 
   function showTab(name) {
@@ -467,7 +491,14 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     const all = name === 'all';
     $('foot-link').textContent = all ? 'All Campaigns' : 'Inventory';
     $('foot-link').href = all ? CAMPAIGNS_PAGE : 'https://www.twitch.tv/drops/inventory';
-    if (name === 'badges' && lastState) renderBadges(lastState, Date.now());
+    if (name === 'badges') {
+      redrawBadges();
+      chrome.storage.local.get(['directory', 'seenBadges', 'claimedGroups']).then((r) => {
+        directory = r.directory ?? directory;
+        keepBadges(r.seenBadges, r.claimedGroups);
+        redrawBadges();
+      }).catch(() => {}); // The extension was reloaded under this panel: what is drawn stays.
+    }
     if (name === 'settings' && settings.devMode) renderDebug(lastState, Date.now());
     if (!all) return;
     chrome.storage.local.get('directory').then((r) => {
@@ -491,6 +522,7 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $(`tab-${name}`).focus();
   });
   $('dir-refresh').addEventListener('click', () => loadDirectory(true));
+  $('unearned-load').addEventListener('click', () => loadDirectory(true));
   $('dir-search').addEventListener('input', () => renderDirectory(Date.now()));
   // Twitch's page shortcuts would otherwise take typed letters: f for fullscreen, m for mute.
   // Escape still closes the panel, since that listener runs before this one, on the way down.
@@ -499,9 +531,17 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   const onDirectory = (changes) => {
-    if (!changes.directory?.newValue) return;
-    directory = changes.directory.newValue;
-    if (allShown()) renderDirectory(Date.now());
+    if (changes.seenBadges || changes.claimedGroups) {
+      keepBadges(
+        changes.seenBadges ? changes.seenBadges.newValue : seenBadges,
+        changes.claimedGroups ? changes.claimedGroups.newValue : claimedGroups,
+      );
+    }
+    if (changes.directory?.newValue) {
+      directory = changes.directory.newValue;
+      if (allShown()) renderDirectory(Date.now());
+    }
+    if (changes.seenBadges || changes.claimedGroups || changes.directory) redrawBadges();
   };
   chrome.storage.onChanged.addListener(onDirectory);
 
@@ -596,9 +636,63 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     }
   }
 
+  // Badges not earned yet. Read from storage only: showing the tab never opens a Twitch page, the
+  // Load button does, as All Drops does when its own tab is shown.
+  function renderUnearned(state, now) {
+    const rows = unearnedBadges({ state, seen: seenBadges, directory, claimed: claimedGroups }, now);
+    const hasList = directory?.at != null;
+    $('unearned-status').textContent = directoryLoading
+      ? 'Loading. A Twitch tab opens in the background for a moment.'
+      : hasList ? `Sitewide list updated ${ago(now - directory.at)}` : 'Sitewide list not loaded';
+    $('unearned-load').textContent = hasList ? 'Load again' : 'Load';
+    $('unearned-load').disabled = directoryLoading;
+    $('unearned-error').textContent = directoryLoading ? '' : badgesListError(directory?.error);
+    $('unearned-error').hidden = !$('unearned-error').textContent;
+    // Never "all earned": it only knows the campaigns it has come across.
+    $('unearned-none').textContent = hasList || seenBadges.length ? 'None among the campaigns seen so far.' : '';
+    $('unearned-none').hidden = rows.length > 0 || !$('unearned-none').textContent;
+    const list = $('unearned-list');
+    list.hidden = !rows.length;
+    for (const id of openUnearned) if (!rows.some((r) => r.id === id)) openUnearned.delete(id);
+    setList(list, JSON.stringify(rows), () => rows.map((r) => {
+      const row = el('details', 'dir-row');
+      row.open = openUnearned.has(r.id); // A poll redraws the list: what was open stays open.
+      row.addEventListener('toggle', () => { if (row.isConnected) openUnearned[row.open ? 'add' : 'delete'](r.id); });
+      const summary = el('summary');
+      const art = el('div', 'boxart');
+      if (r.art) {
+        const img = el('img');
+        img.loading = 'lazy';
+        img.src = r.art;
+        img.alt = '';
+        img.addEventListener('error', () => img.remove());
+        art.append(img);
+      }
+      const text = el('div', 'row-text');
+      text.append(el('p', 'strong ellipsis', r.name), el('p', 'sub', r.status), el('p', 'sub ellipsis', r.ends));
+      summary.append(art, text);
+      const more = el('div', 'dir-more');
+      for (const m of r.missing) more.append(el('p', 'sub', m.unknown && r.kind === 'missing' ? `${m.name}: cannot tell if earned` : m.name));
+      if (r.more) more.append(el('p', 'sub', 'Some badges may need more than watching.'));
+      if (r.where) more.append(el('p', 'sub', r.where));
+      if (r.link) {
+        const links = el('div', 'dir-links');
+        const a = el('a', 'link', r.link.label);
+        a.href = r.link.href;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        links.append(a);
+        more.append(links);
+      }
+      row.append(summary, more);
+      return row;
+    }));
+  }
+
   function renderBadges(state, now) {
     const sections = badgeSections(state.streams, channelLogin?.() ?? null, now, state.unplacedBadges);
-    setList($('view-badges'), JSON.stringify(sections), () => sections.map((sec) => {
+    renderUnearned(state, now);
+    setList($('badge-channels'), JSON.stringify(sections), () => sections.map((sec) => {
       const box = el('div', 'section');
       if (sec.title) box.append(el('p', 'strong label', sec.title));
       if (sec.note) box.append(el('p', 'sub', sec.note));
