@@ -815,9 +815,32 @@ try {
   assert.equal(await popup.getAttribute('#verdict', 'data-tone'), 'idle');
   assert.doesNotMatch(await popup.textContent('body'), /outside this browser|Not earning/);
   await shot('13-campaign-finished');
+  // A drop likely earned (leftDrops): the row uses the headline's words and not "Campaign
+  // finished", My Drops keeps a full card, and the inventory the sentence names is one click away.
+  const leftMsg = "AlphaTV's Sample Crate is probably earned: it left Twitch's in-progress list at 59 of 60 minutes, and Twitch can remove a finished drop before it shows the last minute. Your Drops inventory on Twitch shows whether you have it.";
+  await popup.evaluate(async (message) => {
+    const { state } = await chrome.storage.local.get('state');
+    const stream = { ...state.streams[0], channelState: 'finished', leftDrop: { id: 'e2e-left', campaignId: 'e2e-campaign', name: 'Sample Crate', minutes: 59, required: 60 } };
+    await chrome.storage.local.set({ state: { ...state, streams: [stream], verdict: { code: 'idle', hasStreams: true, dropLeft: true, message } } });
+  }, leftMsg);
+  await popup.waitForFunction(() => document.querySelector('#verdict-title').textContent === 'Drop likely earned');
+  assert.equal(await popup.textContent('#verdict-detail'), `${leftMsg} Open inventory`);
+  assert.equal(await popup.$eval('#verdict-detail a', (a) => a.href), 'https://www.twitch.tv/drops/inventory');
+  assert.match(await popup.textContent('#streams'), /Drop likely earned/);
+  assert.doesNotMatch(await popup.textContent('#streams'), /Campaign finished/);
+  const leftCard = await popup.$eval('#drops .card', (c) => ({ text: c.textContent, fill: c.querySelector('.bar i')?.style.width, minutes: c.querySelectorAll('.bar-min').length }));
+  assert.match(leftCard.text, /Sample Crate.*Probably earned\. Left Twitch's list at 59\/60/);
+  assert.deepEqual([leftCard.fill, leftCard.minutes], ['100%', 0], 'a full bar, with no "59/60" beside it');
+  await shot('13-drop-likely-earned');
+  // The link is not rebuilt on the panel's one-second tick.
+  await popup.evaluate(() => { document.querySelector('#verdict-detail a').dataset.kept = '1'; });
+  await popup.waitForTimeout(1500);
+  assert.equal(await popup.$eval('#verdict-detail a', (a) => a.dataset.kept), '1');
   s = await earningNow();
+  await popup.waitForFunction(() => !document.querySelector('#verdict-detail a'));
   await popup.waitForFunction(() => document.getElementById('verdict').dataset.tone === 'ok');
   step('finished reward campaign: "Campaign finished", or "Cannot tell if finished" in grey without the page\'s answer');
+  step('drop likely earned: said result first, row in the same words, card kept, inventory linked');
 
   // A tracker that stopped polling must not keep showing good news.
   await popup.evaluate(async () => {
@@ -939,7 +962,7 @@ try {
     return { text: card.textContent, fill: card.querySelector('.bar i')?.style.width, left: pill?.querySelector('.timer-left')?.textContent, clock: !!pill?.querySelector('svg'), minutes: card.querySelectorAll('.bar-min').length };
   });
   const rest1 = await restCard();
-  assert.match(rest1.text, /Day complete, 60\/60\. Next day at \d{1,2}:\d{2}/);
+  assert.match(rest1.text, /Day complete, 60\/60\. Opens again at \d{1,2}:\d{2}/);
   assert.equal(rest1.fill, '100%', 'a full bar');
   assert.equal(rest1.minutes, 0, 'the timer takes the minutes\' place');
   assert.ok(rest1.clock, 'with a clock');

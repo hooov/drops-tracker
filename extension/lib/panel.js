@@ -1,7 +1,7 @@
 // The details panel, shared by the chat chip and the toolbar popup. Layout and measurements
 // follow Twitch's own "Drops & More" panel; see panel.css.
 import { INTERVALS, normalize, autoReloadNote } from './settings.js';
-import { STALE_MS, channelDrops } from './chip.js';
+import { STALE_MS, channelDrops, leftCards } from './chip.js';
 import { CAMPAIGNS_PAGE, directoryRows, directoryError, span, day, countdown } from './directory.js';
 import { badgeSections } from './badges.js';
 import { compareMinutes, timelineCells } from './minutelog.js';
@@ -504,8 +504,23 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
     $('tab-mine').dataset.tone = toneOf(v);
     const [title, detail] = verdictText(state, now);
     $('verdict-title').textContent = title;
-    $('verdict-detail').textContent = detail;
-    $('verdict-detail').hidden = !detail;
+    // "Drop likely earned" sends the reader to their inventory, so the link sits with the sentence
+    // and not only in the footer. Rebuilt only on a change: a link replaced every second loses clicks.
+    const box = $('verdict-detail');
+    const toInventory = v.code === 'idle' && v.dropLeft === true;
+    const sig = `${toInventory ? 'inventory ' : ''}${detail}`;
+    if (box.dataset.sig !== sig) {
+      box.dataset.sig = sig;
+      box.textContent = detail;
+      if (toInventory) {
+        const link = el('a', 'link', 'Open inventory');
+        link.href = 'https://www.twitch.tv/drops/inventory';
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        box.append(' ', link);
+      }
+    }
+    box.hidden = !detail;
     const note = autoReloadNote(reloadMemo, state, now);
     $('auto-reload-note').textContent = note;
     $('auto-reload-note').hidden = !note;
@@ -615,7 +630,10 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
   }
 
   function renderDrops(state, now) {
-    const { drops: list, from } = channelDrops(state, channelLogin?.() ?? null, { pending: true });
+    const { drops: own, from } = channelDrops(state, channelLogin?.() ?? null, { pending: true });
+    // Likely earned: kept as a card. Not under "Watch Drops on <other tab>", where it would read as
+    // that tab's.
+    const list = from ? own : [...own, ...leftCards(state, channelLogin?.() ?? null)];
     $('drops-section').hidden = !list.length;
     $('drops-label').textContent = from ? `Watch Drops on ${from}` : 'Watch Drops';
     const ratio = state.rate?.watched >= RATE_MIN_MINUTES && state.rate.counted > 0 ? Math.min(1, state.rate.counted / state.rate.watched) : 1;
@@ -630,8 +648,12 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       // Done for today (tracker.js restingDrops): full, with a timer to the next day beside the bar.
       if (d.opensAt != null) {
         const when = d.opensAt - now < 86400000 ? clock(d.opensAt) : `${day(d.opensAt)}, ${clock(d.opensAt)}`;
-        return { ...d, minutes: d.required, pct: 100, line: `Day complete, ${d.required}/${d.required}. Next day at ${when}` };
+        // "Next day at 9:21 PM" read as tomorrow when it was four hours off (walk-through, 2026-11-23).
+        return { ...d, minutes: d.required, pct: 100, line: `Day complete, ${d.required}/${d.required}. Opens again at ${when}` };
       }
+      // Likely earned (chip.js leftCards): full, with the reading it left at in words, since a bar
+      // one minute short beside "probably earned" reads as missed.
+      if (d.likely) return { ...d, minutes: d.required, pct: 100, line: `Probably earned. Left Twitch's list at ${d.read}/${d.required}` };
       // No minutes reported: the whole requirement, no bar and no finish time (as the Badges tab).
       // A sibling can tick with the drop the session names (facts), so the full time is an upper bound.
       if (d.minutes == null) return { ...d, line: d.runningTotal ? `Needs ${span(d.required)}, progress not readable here` : `Watch up to ${span(d.required)} to earn` };
@@ -666,14 +688,17 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       bar.setAttribute('aria-valuenow', String(d.pct));
       bar.setAttribute('aria-valuemin', '0');
       bar.setAttribute('aria-valuemax', '100');
-      bar.setAttribute('aria-label', `${d.name}: ${d.minutes} of ${d.required} minutes`);
-      bar.title = `${d.minutes} of ${d.required} minutes`;
+      bar.setAttribute('aria-label', d.likely ? `${d.name}: probably earned` : `${d.name}: ${d.minutes} of ${d.required} minutes`);
+      bar.title = d.likely ? `Last shown at ${d.read} of ${d.required} minutes` : `${d.minutes} of ${d.required} minutes`;
       const fill = el('i');
       fill.style.width = `${d.pct}%`;
       bar.append(fill);
       // The exact minutes at a glance; they used to show only on hover.
       const barRow = el('div', 'bar-row');
-      if (d.opensAt != null) {
+      if (d.likely) {
+        // The reading is in the line above: "59/60" beside a full bar would contradict it.
+        barRow.append(bar);
+      } else if (d.opensAt != null) {
         // The timer takes the minutes' place (they move to the line above). Its text is set below
         // on every render, so the card is not rebuilt each second.
         const pill = el('span', 'timer-pill');
@@ -714,6 +739,8 @@ export function createPanel(root, { reloadTab, onClose, channelLogin } = {}) {
       if (s.credited) return { ...s, label: 'Last credited', tone: '' };
       // "Not credited" says another channel is getting it, which needs one to be.
       if (s.channelState === 'eligible' && !anyCredited) return { ...s, label: 'Can earn', tone: '' };
+      // The headline's own words: "Campaign finished" under "Drop likely earned" said it for certain.
+      if (s.channelState === 'finished' && s.leftDrop) return { ...s, label: 'Drop likely earned', tone: '' };
       return { ...s, label: CHANNEL_STATES[s.channelState]?.label, tone: '' };
     });
     setList($('streams'), JSON.stringify(rows.map((r) => [r.tabId, r.displayName, r.label, r.tone])), () => rows.map((s) => {

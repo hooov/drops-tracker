@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { fetchSnapshot } from '../extension/lib/twitch.js';
 import { events, badge, warning } from '../extension/lib/tracker.js';
 import { update } from './invariants.mjs';
-import { chipView, channelDrops } from '../extension/lib/chip.js';
+import { chipView, channelDrops, leftCards } from '../extension/lib/chip.js';
 import { badgeSections } from '../extension/lib/badges.js';
 import { verdictText } from '../extension/lib/panel.js';
 
@@ -28,7 +28,37 @@ const BONES_REWARD = 'daa5f04b-e34f-11f1-976b-0a58a9feac02';
  * owned: its reward among the earned ones (assumed ID match, see the fixture). noSession: the
  * session answers null. cdc: a ChannelDropsCampaigns answer in place of the captured one.
  */
-function twitchAt({ minutes, echo, game, claimed = false, gone = false, owned = gone, noSession = false, cdc = fx.channelCampaigns, noBroadcastSettings = false, endAt }) {
+// A made-up game campaign for echo_247 (not captured), shaped from the captured answers, so a
+// second tab can earn: "Echo Crate", 120 minutes, in Inventory, the highlight and the channel's list.
+const E_CAMPAIGN = 'e0000000-0000-4000-8000-000000000001';
+const E_DROP = 'e0000000-0000-4000-8000-000000000002';
+const E_REWARD = 'e0000000-0000-4000-8000-000000000003';
+const E_GAME = { id: '500000', name: 'Echo Game' };
+function echoCampaign(minutes) {
+  const inventory = structuredClone(fx.inventory);
+  Object.assign(inventory, { id: E_CAMPAIGN, name: 'Echo Campaign', game: { ...E_GAME, slug: 'echo-game' } });
+  Object.assign(inventory.timeBasedDrops[0], { id: E_DROP, name: 'Echo Crate', requiredMinutesWatched: 120 });
+  inventory.timeBasedDrops[0].benefitEdges[0].benefit = { id: E_REWARD, name: 'Echo Crate' };
+  inventory.timeBasedDrops[0].self.currentMinutesWatched = minutes;
+  const listed = structuredClone(fx.channelCampaigns.data.channelDropCampaigns[1]);
+  Object.assign(listed, { id: E_CAMPAIGN, name: 'Echo Campaign', game: { ...E_GAME, __typename: 'Game' } });
+  Object.assign(listed.rewardGroups[0], { id: E_DROP, name: 'Echo Crate' });
+  listed.rewardGroups[0].progressCriteria.requirements.minutesWatched = 120;
+  listed.rewardGroups[0].progressCriteria.categories = [{ id: E_GAME.id, displayName: E_GAME.name, __typename: 'Game' }];
+  listed.rewardGroups[0].rewards = [{ ...listed.rewardGroups[0].rewards[0], id: E_REWARD, name: 'Echo Crate', distributionType: 'ITEM' }];
+  const highlight = structuredClone(fx.highlight.data.channel.viewerDropCampaigns[0]);
+  Object.assign(highlight, { id: E_CAMPAIGN, name: 'Echo Campaign', game: { ...E_GAME, __typename: 'Game' } });
+  Object.assign(highlight.timeBasedDrops[0], { id: E_DROP, name: 'Echo Crate', requiredMinutesWatched: 120, requiredSubs: 0 });
+  highlight.timeBasedDrops[0].benefitEdges[0].benefit = { ...highlight.timeBasedDrops[0].benefitEdges[0].benefit, id: E_REWARD, name: 'Echo Crate', game: { ...E_GAME, __typename: 'Game' } };
+  highlight.summary = { ...highlight.summary, includesMWRequirement: true, includesSubRequirement: false };
+  const session = { channel: { displayName: 'echo_247', id: ECHO_ID, name: 'echo_247' }, currentMinutesWatched: minutes, dropID: E_DROP, game: { displayName: E_GAME.name, id: E_GAME.id }, requiredMinutesWatched: 120 };
+  return { inventory, listed, highlight, session };
+}
+
+// echoMinutes: echo_247 has the made-up campaign at that many minutes. echoSession: Twitch's
+// session names echo_247 (and not charlie). echoLive: echo_247's stream is up.
+function twitchAt({ minutes, echo, game, claimed = false, gone = false, owned = gone, noSession = false, cdc = fx.channelCampaigns, noBroadcastSettings = false, endAt, echoMinutes = null, echoSession = false, echoLive = true }) {
+  const theirs = echoMinutes != null ? echoCampaign(echoMinutes) : null;
   const overlay = structuredClone(fx.overlay);
   if (game !== undefined) overlay.data.user.broadcastSettings.game = game;
   if (noBroadcastSettings) delete overlay.data.user.broadcastSettings;
@@ -42,16 +72,16 @@ function twitchAt({ minutes, echo, game, claimed = false, gone = false, owned = 
     for (const c of cdc.data?.channelDropCampaigns || []) c.endAt = endAt;
   }
   if (claimed) Object.assign(campaign.timeBasedDrops[0].self, { isClaimed: true, dropInstanceID: 'USERID#a8ce1281#0cc61e0f' });
-  const session = noSession ? null : { ...fx.session, currentMinutesWatched: minutes };
+  const session = noSession || echoSession ? null : { ...fx.session, currentMinutesWatched: minutes };
   return async (_url, init) => json(JSON.parse(init.body).map((o) => {
     const isEcho = o.variables?.channel === 'echo_247' || o.variables?.channelID === ECHO_ID;
     switch (o.operationName) {
-      case 'Inventory': return { data: { currentUser: { inventory: { dropCampaignsInProgress: gone ? [] : [campaign], gameEventDrops: owned ? [{ id: BONES_REWARD, name: 'RuneScape Bones' }] : [] } } } };
+      case 'Inventory': return { data: { currentUser: { inventory: { dropCampaignsInProgress: [...(gone ? [] : [campaign]), ...(theirs ? [theirs.inventory] : [])], gameEventDrops: owned ? [{ id: BONES_REWARD, name: 'RuneScape Bones' }] : [] } } } };
       case 'VideoPlayerStreamInfoOverlayChannel':
-        return isEcho ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', stream: { id: '2' } } } } : overlay;
-      case 'DropsHighlightService_AvailableDrops': return isEcho ? { data: { channel: { id: ECHO_ID, viewerDropCampaigns: [] } } } : fx.highlight;
-      case 'ChannelDropsCampaigns': return isEcho ? { data: { channelDropCampaigns: [] } } : cdc;
-      case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: isEcho ? null : session } } };
+        return isEcho ? { data: { user: { id: ECHO_ID, login: 'echo_247', displayName: 'echo_247', ...(theirs ? { broadcastSettings: { id: ECHO_ID, game: { ...E_GAME, displayName: E_GAME.name, slug: 'echo-game' } } } : {}), stream: echoLive ? { id: '2' } : null } } } : overlay;
+      case 'DropsHighlightService_AvailableDrops': return isEcho ? { data: { channel: { id: ECHO_ID, viewerDropCampaigns: theirs ? [theirs.highlight] : [] } } } : fx.highlight;
+      case 'ChannelDropsCampaigns': return isEcho ? { data: { channelDropCampaigns: theirs ? [theirs.listed] : [] } } : cdc;
+      case 'DropCurrentSessionContext': return { data: { currentUser: { dropCurrentSession: isEcho ? (echoSession && theirs ? theirs.session : null) : session } } };
       case 'ViewerRewardDropInventory': return { data: { currentUser: { inventory: { viewerRewardDropCampaignsInProgress: [] } } } };
       default: throw new Error(o.operationName);
     }
@@ -167,8 +197,9 @@ test('Bones at 59 of 60, then gone from every list: likely earned, said once', a
     if (process.env.PRINT === '1') console.log(name, JSON.stringify({ ...v, fired }, null, 1));
     assert.deepEqual(fired, ['earned'], `${name}: one notification`);
     assert.equal(said[0].title, 'Drop likely earned', name);
-    assert.equal(said[0].message, 'Twitch no longer lists RuneScape Bones as in progress (last read 59 of 60 minutes), so you have probably earned it.', name);
-    const line = "Twitch no longer lists Charlie's RuneScape Bones as in progress (last read 59 of 60 minutes), so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.";
+    // The result first, and why 59 is not a miss: "last read 59 of 60 ... probably" read as one short.
+    assert.equal(said[0].message, "RuneScape Bones is probably earned: it left Twitch's in-progress list at 59 of 60 minutes, and Twitch can remove a finished drop before it shows the last minute.", name);
+    const line = "Charlie's RuneScape Bones is probably earned: it left Twitch's in-progress list at 59 of 60 minutes, and Twitch can remove a finished drop before it shows the last minute. Your Drops inventory on Twitch shows whether you have it.";
     assert.equal(v.states, 'charlie:finished echo_247:no_drops', `${name}: not "Not counting yet"`);
     assert.deepEqual([v.verdict, v.warning, v.toolbar, v.chip.tone, v.chipEcho.tone], ['idle', null, ' #667085', 'idle', 'idle'], name);
     assert.equal(v.headline, 'Drop likely earned', name);
@@ -176,7 +207,38 @@ test('Bones at 59 of 60, then gone from every list: likely earned, said once', a
     assert.equal(chipView(s, now, fx.login).title, line, `${name}: chip title`);
     // Done: not re-listed as a drop that has not started.
     assert.deepEqual([v.drops, v.dropsEcho, s.upcoming], [[], [], []], name);
+    // My Drops keeps a card for it on its own channel and in the toolbar popup, never on the other tab.
+    const card = { id: `left:${s.leftDrops[0].id}`, name: 'RuneScape Bones', campaignId: s.leftDrops[0].campaignId, game: 'Charlie', image: null, required: 60, read: 59, likely: true };
+    assert.deepEqual([leftCards(s, fx.login), leftCards(s, null), leftCards(s, 'echo_247')], [[card], [card], []], name);
   }
+});
+
+// Replayed with made-up polls for the second tab, not captured (2026-11-23): "Drop likely earned"
+// was decided before "Stopped earning" and lasts as long as the campaign, so with the finished tab
+// left open another tab that earned since could go offline with nothing said.
+test('a tab that earned since goes offline beside the likely-earned tab: "Stopped earning", then back', async () => {
+  const rise = steps(3, (i) => ({ minutes: 57 + i, echo: true, echoMinutes: 10 }));
+  const left = { minutes: 59, gone: true, owned: false, echo: true };
+  const echoEarns = steps(5, (i) => ({ ...left, echoMinutes: 11 + i, echoSession: true }));
+  const offline = (n) => steps(n, () => ({ ...left, echoMinutes: 15, echoLive: false, noSession: true }));
+  const earning = await run([...rise, ...echoEarns]);
+  assert.equal(views(earning.s, earning.now).headline, 'Earning on echo_247');
+  const { s, now, fired } = await run([...rise, ...echoEarns, ...offline(4)]);
+  const v = views(s, now);
+  assert.equal(v.states, 'charlie:finished echo_247:offline');
+  assert.deepEqual([v.headline, v.warning, v.chip.tone], ['Stopped earning', 'Stopped earning Drops', 'warn']);
+  assert.deepEqual(fired, ['earned', 'warning'], 'the drop announced once, then one warning');
+  // After LOST_SHOWN_MS the warning settles, and the finished tab's news is what is left to say.
+  const later = await run([...rise, ...echoEarns, ...offline(16)]);
+  assert.deepEqual([views(later.s, later.now).headline, views(later.s, later.now).warning], ['Drop likely earned', null]);
+  // Closing the tab that was earning is deliberate: no warning, as without a finished tab.
+  const closed = await run([...rise, ...echoEarns, ...steps(4, () => ({ ...left, echo: false, noSession: true }))]);
+  assert.deepEqual([views(closed.s, closed.now).warning, closed.fired], [null, ['earned']]);
+});
+
+test('Bones gone from Inventory at 60 of 60: no "before it shows the last minute"', async () => {
+  const { said } = await run([...steps(4, (i) => ({ minutes: 57 + i })), ...steps(4, () => ({ minutes: 60, gone: true, owned: false, noSession: true }))]);
+  assert.equal(said[0].message, "RuneScape Bones is probably earned: it left Twitch's in-progress list at 60 of 60 minutes.");
 });
 
 // Only Inventory's own answer counts. A drop built from the session (Inventory not listing it)

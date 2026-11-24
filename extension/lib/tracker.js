@@ -219,7 +219,7 @@ export function wastedCredit(session, active, streams, risen, running, names = n
     || channelBadges.find((d) => risen.has(d.id) && d.required > 0 && (d.minutes ?? 0) > d.required);
   const name = earned ? badge?.name || names.get(session.dropId) || 'drop' : drop.name;
   // The next start belongs to the session's drop. A badge past its requirement named instead of it
-  // does not repeat, so "the next one can start" would be untrue for it.
+  // does not repeat, so "the next one opens" would be untrue for it.
   const ownDrop = !badge || badge.id === session.dropId;
   return wastedView({ reason: earned ? 'earned' : 'too_late', channel, name, opens: opens != null && earned && ownDrop ? opens : null }, session, active, streams);
 }
@@ -249,7 +249,9 @@ export function wastedView(w, session, active, streams) {
   let message;
   if (w.reason === 'too_late') message = `Twitch is crediting ${w.channel}, but ${w.name} cannot finish before its campaign ends.${fix}`;
   else if (alt) message = `${w.channel}'s ${w.name} is already earned, but Twitch is still crediting it, so these minutes do nothing.${fix}`;
-  else if (w.opens != null) message = `${w.name} is earned for today. The next one can start at ${at(w.opens)}.`;
+  // "Opens", as the My Drops card and its timer say it: three wordings for one time read as three
+  // different things (walk-through, 2026-11-23).
+  else if (w.opens != null) message = `${w.name} is earned for today. The next one opens at ${at(w.opens)}.`;
   else message = `${w.name} is already earned, and nothing else open can earn right now.`;
   return { reason: w.reason, channel: w.channel, name: w.name, opens: w.opens ?? null, actionable: !!alt, message };
 }
@@ -434,6 +436,17 @@ export function leftBadges(prev, before, groups, now) {
 
 /** Within this many minutes of its requirement, a badge or drop leaving the list reads as likely earned. */
 export const LEFT_NEAR_MINUTES = 2;
+
+/**
+ * How a likely-earned drop is said, in the panel and in the notification. The result comes first
+ * and the short reading is explained: "no longer lists ... (last read 59 of 60 minutes), so you
+ * have probably earned it" read as missing it by a minute (walk-through, 2026-11-23).
+ */
+function leftDropText(subject, d) {
+  const read = Math.min(d.minutes, d.required);
+  const why = read < d.required ? ', and Twitch can remove a finished drop before it shows the last minute' : '';
+  return `${subject} is probably earned: it left Twitch's in-progress list at ${read} of ${d.required} minutes${why}.`;
+}
 
 /**
  * Inventory drops seen leaving every list within LEFT_NEAR_MINUTES of their requirement: likely
@@ -1137,7 +1150,8 @@ export function update(prev, obs, now) {
       rewardOpens: channelState === 'reward' ? (st.channel?.campaigns || []).map((c) => blocked.get(c.id)?.opens).find(Boolean) ?? null : null,
       // The reward campaign that cannot be told finished from not started, so the headline can name it.
       ...(channelState === 'reward_unproven' && unproven[0]?.name ? { unprovenReward: unproven[0].name } : {}),
-      ...(leftHere ? { leftDrop: { name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
+      // id and campaignId: My Drops keeps a card for it (chip.js leftCards).
+      ...(leftHere ? { leftDrop: { id: leftHere.id, campaignId: leftHere.campaignId, name: leftHere.name, minutes: leftHere.minutes, required: leftHere.required } } : {}),
       // Highest minutes seen, or null when Twitch has reported none. Sub drops never have any.
       badges: (st.channel?.badges || []).map((b) => ({
         ...b,
@@ -1273,6 +1287,21 @@ export function update(prev, obs, now) {
   // minutes came from outside this browser, with another campaign's percentage in green (2026-11-23).
   const gainedOn = (obs.streams || []).filter((st) => st.login === s.lastGainLogin).flatMap((st) => st.channel?.campaigns || []);
   const justDone = candidates.length ? null : s.rewardsDone.findLast((x) => x.at >= s.lastGainAt && gainedOn.some((c) => c.id === x.campaignId));
+  // Was earning, and the tab that was no longer can. Finishing with the tab left open is the good
+  // outcome, not a lost one, so it is judged on the tab that was earning: once the session had
+  // gone, any finished tab left open hid the warning for another one that went offline (found
+  // 2026-11-23 replaying GTAVI's last day). Judged here, before the likely-earned headlines: they
+  // last as long as their campaign and hid it the same way (replayed 2026-11-23, not captured).
+  const hasStreams = streams.some((st) => st.login);
+  const earningOn = streams.find((st) => st.login === (prev?.session?.login ?? s.lastGainLogin ?? undefined));
+  const done = (st) => st.channelState === 'finished' || st.channelState === 'badge_left';
+  const finished = earningOn ? done(earningOn) : streams.some(done);
+  // A tab that could earn is still open but no longer can: the channel changed game, went
+  // offline or raided away. Closing it is deliberate, so that stays a plain idle.
+  // Once LOST_SHOWN_MS has passed, lostAt is cleared and tracking drops, so the next poll no
+  // longer counts as wasTracking and what is left to say (plain idle, likely earned) sticks.
+  const lostAt = prev?.lostAt ?? now;
+  const lost = !candidates.length && hasStreams && wasTracking && !finished && s.earnerTabs.length > 0 && now - lostAt < LOST_SHOWN_MS;
   if (s.lastGainAt != null && now - s.lastGainAt < limit && s.closedAt == null && !justDone) {
     const slow = ownRate.watched >= RATE_MIN_MINUTES && ownRate.counted / ownRate.watched < SLOW_BELOW;
     // Judged on a poll where something rose; a quiet poll between credits keeps the last judgement
@@ -1319,7 +1348,7 @@ export function update(prev, obs, now) {
     const total = (s.pending || []).find((d) => d.runningTotal && st.campaignIds.includes(d.campaignId));
     const at = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const message = st.rewardOpens != null
-      ? `${st.displayName}: Twitch says today's reward is earned. The next one can start ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
+      ? `${st.displayName}: Twitch says today's reward is earned. The next one opens ${st.rewardOpens - now < 86400000 ? `at ${at(st.rewardOpens)}` : `on ${new Date(st.rewardOpens).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}.`
       : shown
         ? `${st.displayName}'s ${shown.name}: ${Math.min(shown.minutes, shown.required)} of ${shown.required} minutes, as Twitch reports it.`
         // Why a flat reading here is not judged is in states.js (reward); it is not the user's concern.
@@ -1367,7 +1396,7 @@ export function update(prev, obs, now) {
         ...(first.channelState === 'reward_unproven' ? { unproven: true } : {}),
         message,
       };
-  } else if (!candidates.length && streams.some((st) => st.channelState === 'badge_left')) {
+  } else if (!candidates.length && !lost && streams.some((st) => st.channelState === 'badge_left')) {
     // Not a warning: one reading short of the requirement, then gone from the list, is how an
     // earned badge looked (2026-11-20). The evidence is said, so it can be checked on Twitch.
     const [st] = frontFirst(streams.filter((x) => x.channelState === 'badge_left'));
@@ -1381,7 +1410,7 @@ export function update(prev, obs, now) {
       // The evidence (left the in-progress list one reading short) is in states.js badge_left.
       message: `Twitch stopped listing ${name}'s badge${read}, so you have probably earned it. The badge picker in ${name}'s chat shows whether you have it.`,
     };
-  } else if (!candidates.length && streams.some((st) => st.leftDrop)) {
+  } else if (!candidates.length && !lost && streams.some((st) => st.leftDrop)) {
     // The same for a game drop leaving Inventory (leftDrops): RuneScape Bones, 2026-11-22.
     const [st] = frontFirst(streams.filter((x) => x.leftDrop));
     const d = st.leftDrop;
@@ -1389,22 +1418,12 @@ export function update(prev, obs, now) {
       code: 'idle',
       hasStreams: true,
       dropLeft: true,
-      message: `Twitch no longer lists ${st.displayName || st.login}'s ${d.name} as in progress (last read ${Math.min(d.minutes, d.required)} of ${d.required} minutes), so you have probably earned it. Your Drops inventory on Twitch shows whether you have it.`,
+      message: `${leftDropText(`${st.displayName || st.login}'s ${d.name}`, d)} Your Drops inventory on Twitch shows whether you have it.`,
     };
   } else if (!candidates.length) {
-    const hasStreams = streams.some((st) => st.login);
     s.verdict = { code: 'idle', hasStreams };
-    // Finishing a campaign with the tab left open is the good outcome, not a lost one. Judged on the
-    // tab that was earning: once the session had gone, any finished tab left open hid the warning
-    // for another one that went offline (found 2026-11-23 replaying GTAVI's last day).
-    const earningOn = streams.find((st) => st.login === (prev?.session?.login ?? s.lastGainLogin ?? undefined));
-    const finished = earningOn ? earningOn.channelState === 'finished' : streams.some((st) => st.channelState === 'finished');
-    // A tab that could earn is still open but no longer can: the channel changed game, went
-    // offline or raided away. Closing it is deliberate, so that stays a plain idle.
-    // Once LOST_SHOWN_MS has passed, lostAt is cleared and tracking drops, so the next poll no
-    // longer counts as wasTracking and the plain idle sticks.
-    const lostAt = prev?.lostAt ?? now;
-    if (hasStreams && wasTracking && !finished && s.earnerTabs.length && now - lostAt < LOST_SHOWN_MS) {
+    // lost: judged above, on the tab that was earning.
+    if (lost) {
       s.lostAt = lostAt;
       s.verdict.lost = true;
       s.verdict.message = 'No open stream can earn a drop now. The channel may have changed game, gone offline or raided away.';
@@ -1514,7 +1533,7 @@ export function events(prev, next, now) {
   for (const x of next.leftDrops || []) {
     if (announced.has(x.id)) continue;
     announced.add(x.id);
-    out.push({ type: 'earned', title: 'Drop likely earned', message: `Twitch no longer lists ${x.name} as in progress (last read ${Math.min(x.minutes, x.required)} of ${x.required} minutes), so you have probably earned it.` });
+    out.push({ type: 'earned', title: 'Drop likely earned', message: leftDropText(x.name, x) });
   }
   next.notifiedLeft = [...announced].slice(-NOTIFIED_LEFT_MAX);
   // A reward campaign seen finishing: once per campaign. Not a warning: nothing to do. Bound:

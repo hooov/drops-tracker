@@ -223,7 +223,7 @@ test('the badge campaign over: gone from both answers', async () => {
   assert.deepEqual([v.verdict, v.wasted], ['earning', 'earned'], 'all-views check: was a green "Earning"');
   // Today's drop done and nothing else to earn: done for today, with the next start (2026-11-20).
   assert.equal(v.headline[0], 'Done for today on Foxtrot');
-  assert.match(v.headline[1], /^GTA DVD Chest is earned for today\. The next one can start at /);
+  assert.match(v.headline[1], /^GTA DVD Chest is earned for today\. The next one opens at /);
   assert.equal(v.toolbar, ' #667085');
   assert.deepEqual(v.badgesTab, ['No badge drops on this channel.']);
 });

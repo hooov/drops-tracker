@@ -17,7 +17,7 @@ Measured Twitch behaviour behind the rules is in [twitch-drops-facts.md](twitch-
 | "Not counting" names the wrong reason, or Reload is offered or not offered | [Stall cause](#2-stall-cause) |
 | A hang reported too early or too late, or the hang's age jumps | [Hang clock](#3-hang-clock) |
 | An Open streams row label is wrong ("Campaign finished", "Can earn, not credited") | [Channel state](#4-channel-state) and [Player state](#5-player-state) |
-| A daily drop done for today missing from Watch Drops, or its clock pill / "Next day at" wrong | [Channel state](#4-channel-state), `state.resting` |
+| A daily drop done for today missing from Watch Drops, or its clock pill / "Opens again at" wrong | [Channel state](#4-channel-state), `state.resting` |
 | A reward drop's card names the list's reward ("GTA DVD Chest") or the wrong day, not the badge Twitch's panel shows | [Channel state](#4-channel-state), storage `dayRewards` |
 | "You left X", or "Stopped earning" after closing a tab | [Leaving the earning tab](#6-leaving-the-earning-tab) |
 | Auto-reload reloads too often, never, or its note is wrong | [Auto-reload](#7-auto-reload) |
@@ -43,7 +43,9 @@ may carry: `VERDICT_CODES` in states.js. A field not listed for a code is left o
 - `waiting`: something can earn and the first minute has not landed.
 - `stalled`: the hang clock passed the limit; `cause` from `diagnose()`.
 - `idle`: nothing open can earn. `lost` (was earning, the tab can no longer; not when the tab that
-  was earning, by the last session or `lastGainLogin`, is itself `finished`), `limited` (cannot
+  was earning, by the last session or `lastGainLogin`, is itself `finished` or `badge_left`; judged
+  before `badgeLeft` and `dropLeft`, which last as long as their campaign and would hide it for
+  another tab), `limited` (cannot
   tell: lookups failed, a badge timer, or the next drop cannot count yet), `badgeLeft` (a channel
   is `badge_left`: "Badge likely earned", grey, no warning, the last reading said), `dropLeft` (a
   `finished` channel whose game drop is in `state.leftDrops`: "Drop likely earned", the same, and
@@ -182,7 +184,9 @@ by Inventory, before its window ends, is recorded: likely earned. Only Inventory
 a candidate, since a drop built from the session or the reward inventory lapses whenever its tab
 closes or a lookup fails. Inventory listing it as claimed counts as gone (no claim step was seen). A channel whose every watch drop of a game campaign is there
 reads `finished` (not `unstarted`, "may need linking"), with nothing re-listed in `upcoming`, and
-the idle verdict is `dropLeft`. `events()` notifies once per drop ("Drop likely earned", type
+the idle verdict is `dropLeft`. Its Open streams row reads "Drop likely earned" too, and My Drops
+keeps a full card for it (`leftCards` in chip.js, from the stream's `leftDrop`; never in
+`channelDrops`, so the chip's percentage ignores it). `events()` notifies once per drop ("Drop likely earned", type
 `earned`, not a warning), remembered in `state.notifiedLeft` apart from `leftDrops`, so a drop
 listed again for a poll is not announced twice. Entries end when Inventory lists the drop
 unclaimed again or its window ends; newest 20 kept, 50 notified IDs. Seen 2026-11-22: RuneScape Bones, a BADGE

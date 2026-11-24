@@ -89,6 +89,25 @@ export function channelDrops(state, login, { pending = false } = {}) {
 }
 
 /**
+ * Drops likely earned (tracker.js leftDrops), as cards for My Drops: without one, the drop being
+ * watched vanished from the list under a headline about it (walk-through, 2026-11-23). On a
+ * channel, that channel's; off one (the toolbar popup), every open channel's. Not progress, so
+ * kept out of channelDrops, which the chip's percentage reads. Bound: one per open tab.
+ */
+export function leftCards(state, login = null) {
+  const streams = Array.isArray(state?.streams) ? state.streams : [];
+  const out = [];
+  for (const s of streams) {
+    const d = s.leftDrop;
+    if (!d || s.channelState !== 'finished' || (login && s.login !== login)) continue;
+    const id = `left:${d.id ?? d.name}`;
+    if (out.some((x) => x.id === id)) continue;
+    out.push({ id, name: d.name, campaignId: d.campaignId ?? null, game: s.displayName || s.login, image: null, required: d.required, read: Math.min(d.minutes, d.required), likely: true });
+  }
+  return out;
+}
+
+/**
  * What the chip shows. `claims` is how many earned drops wait to be claimed, the same list as the
  * panel's "Ready to claim", drawn as a purple count (inside the ring beside the label, or on its
  * corner when chat is narrow) and never as the ring's colour: amber for a reward waiting read as
